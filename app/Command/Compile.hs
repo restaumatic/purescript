@@ -30,6 +30,9 @@ import           System.FilePath.Glob (glob)
 import           System.IO (hPutStr, hPutStrLn, stderr)
 import           System.IO.UTF8 (readUTF8FileT)
 
+import Timing
+import Control.Concurrent
+
 data PSCMakeOptions = PSCMakeOptions
   { pscmInput        :: [FilePath]
   , pscmOutputDir    :: FilePath
@@ -58,22 +61,21 @@ printWarningsAndErrors verbose True warnings errors = do
   either (const exitFailure) (const (return ())) errors
 
 compile :: PSCMakeOptions -> IO ()
-compile PSCMakeOptions{..} = do
-  input <- globWarningOnMisses (unless pscmJSONErrors . warnFileTypeNotFound) pscmInput
+compile PSCMakeOptions{..} = timedIO "compile (total)" $ do
+  input <- timedIO "glob" $ globWarningOnMisses (unless pscmJSONErrors . warnFileTypeNotFound) pscmInput
   when (null input && not pscmJSONErrors) $ do
     hPutStr stderr $ unlines [ "purs compile: No input files."
                              , "Usage: For basic information, try the `--help' option."
                              ]
     exitFailure
-  moduleFiles <- readInput input
+  moduleFiles <- timedIO "readInput" $ readInput input
   (makeErrors, makeWarnings) <- runMake pscmOpts $ do
-    ms <- P.parseModulesFromFiles id moduleFiles
+    ms <- timedIO "parseModulesFromFiles" $ P.parseModulesFromFiles id moduleFiles
     let filePathMap = M.fromList $ map (\(fp, P.Module _ _ mn _ _) -> (mn, Right fp)) ms
-    foreigns <- inferForeignModules filePathMap
+    foreigns <- timedIO "inferForeignModules" $ inferForeignModules filePathMap
     let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix
-    P.make makeActions (map snd ms)
+    timedIO "make" $ P.make makeActions (map snd ms)
   printWarningsAndErrors (P.optionsVerboseErrors pscmOpts) pscmJSONErrors makeWarnings makeErrors
-  exitSuccess
 
 warnFileTypeNotFound :: String -> IO ()
 warnFileTypeNotFound = hPutStrLn stderr . ("purs compile: No files found using pattern: " ++)

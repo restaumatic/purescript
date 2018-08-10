@@ -17,6 +17,7 @@ module Language.PureScript.Parser.Declarations
 
 import           Prelude hiding (lex)
 import           Protolude (ordNub)
+import Timing
 
 import           Control.Applicative
 import           Control.Arrow ((+++))
@@ -338,12 +339,15 @@ parseModulesFromFiles toFilePath input =
   inParallel :: [Either P.ParseError (k, a)] -> [Either P.ParseError (k, a)]
   inParallel = withStrategy (parList rseq)
 
+seqList :: [(a,b)] -> [(a,b)]
+seqList xs = foldr (\(a,b) acc -> a `seq` b `seq` acc) () xs `seq` xs
+
 -- | Parses a single module with FilePath for eventual parsing errors
 parseModuleFromFile
   :: (k -> FilePath)
   -> (k, Text)
   -> Either P.ParseError (k, Module)
-parseModuleFromFile toFilePath (k, content) = do
+parseModuleFromFile toFilePath (k, content) = do -- timed ("parseModuleFromFile " ++ toFilePath k) $ do
     let filename = toFilePath k
     ts <- lex filename content
     m <- runTokenParser filename parseModule ts
