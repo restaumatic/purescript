@@ -79,8 +79,13 @@ import Language.PureScript.Comments
 import Language.PureScript.Parser.State
 import Language.PureScript.PSString (PSString)
 
-import qualified Text.Parsec as P
-import qualified Text.Parsec.Token as PT
+import qualified Text.Megaparsec as P
+import qualified Text.Megaparsec.Char as P
+import qualified Text.Megaparsec.Char.Lexer as L
+
+type ParseError = P.ParseError Char ()
+
+stringLiteral' = char '"' >> manyTill L.charLiteral (char '"')
 
 data Token
   = LParen
@@ -162,7 +167,7 @@ instance Show PositionedToken where
 
 type Lexer u a = P.Parsec Text u a
 
-lex :: FilePath -> Text -> Either P.ParseError [PositionedToken]
+lex :: FilePath -> Text -> Either ParseError [PositionedToken]
 lex f s = updatePositions <$> P.parse parseTokens f s
 
 updatePositions :: [PositionedToken] -> [PositionedToken]
@@ -176,7 +181,7 @@ parseTokens = whitespace *> P.many parsePositionedToken <* P.skipMany parseComme
 
 -- | Lexes the given file, and on encountering a parse error, returns the
 -- progress made up to that point, instead of returning an error
-lexLenient :: FilePath -> Text -> Either P.ParseError [PositionedToken]
+lexLenient :: FilePath -> Text -> Either ParseError [PositionedToken]
 lexLenient f s = updatePositions <$> P.parse parseTokensLenient f s
 
 parseTokensLenient :: Lexer u [PositionedToken]
@@ -230,7 +235,7 @@ parseToken = P.choice
   , P.try $ P.char ';'    *> P.notFollowedBy symbolChar *> pure Semi
   , P.try $ P.char '@'    *> P.notFollowedBy symbolChar *> pure At
   , P.try $ P.char '_'    *> P.notFollowedBy identLetter *> pure Underscore
-  , HoleLit <$> P.try (P.char '?' *> (T.pack <$> P.many1 identLetter))
+  , HoleLit <$> P.try (P.char '?' *> (T.pack <$> P.some identLetter))
   , LName         <$> parseLName
   , parseUName >>= \uName ->
       guard (validModuleName uName) *> (Qualifier uName <$ P.char '.')
@@ -246,68 +251,45 @@ parseToken = P.choice
   parseLName = T.cons <$> identStart <*> (T.pack <$> P.many identLetter)
 
   parseUName :: Lexer u Text
-  parseUName = T.cons <$> P.upper <*> (T.pack <$> P.many identLetter)
+  parseUName = T.cons <$> P.upperChar <*> (T.pack <$> P.many identLetter)
 
   parseSymbol :: Lexer u Text
-  parseSymbol = T.pack <$> P.many1 symbolChar
+  parseSymbol = T.pack <$> P.some symbolChar
 
   identStart :: Lexer u Char
-  identStart = P.lower <|> P.oneOf "_"
+  identStart = P.lowerChar <|> P.oneOf "_"
 
   identLetter :: Lexer u Char
-  identLetter = P.alphaNum <|> P.oneOf "_'"
+  identLetter = P.alphaNumChar <|> P.oneOf "_'"
 
   symbolChar :: Lexer u Char
   symbolChar = P.satisfy isSymbolChar
 
   parseCharLiteral :: Lexer u Char
   parseCharLiteral = P.try $ do {
-    c <- PT.charLiteral tokenParser;
+    c <- L.charLiteral;
     if fromEnum c > 0xFFFF
       then P.unexpected "astral code point in character literal; characters must be valid UTF-16 code units"
       else return c
   }
 
   parseStringLiteral :: Lexer u PSString
-  parseStringLiteral = fromString <$> (blockString <|> PT.stringLiteral tokenParser)
+  parseStringLiteral = fromString <$> (blockString <|> stringLiteral')
     where
     delimiter   = P.try (P.string "\"\"\"")
     blockString = delimiter *> P.manyTill P.anyChar delimiter
 
   parseNumber :: Lexer u (Either Integer Double)
-  parseNumber = (consumeLeadingZero *> P.parserZero) <|>
-                  (Right <$> P.try (PT.float tokenParser) <|>
-                  Left <$> P.try (PT.natural tokenParser))
+  parseNumber = (consumeLeadingZero *> mzero) <|>
+                  (Right <$> P.try (L.float) <|>
+                  Left <$> P.try (L.decimal))
                 P.<?> "number"
     where
     -- lookAhead doesn't consume any input if its parser succeeds
     -- if notFollowedBy fails though, the consumed '0' will break the choice chain
     consumeLeadingZero = P.lookAhead (P.char '0' *>
-      (P.notFollowedBy P.digit P.<?> "no leading zero in number literal"))
+      (P.notFollowedBy P.digitChar P.<?> "no leading zero in number literal"))
 
--- |
--- We use Text.Parsec.Token to implement the string and number lexemes
---
-langDef :: PT.GenLanguageDef Text u Identity
-langDef = PT.LanguageDef
-  { PT.reservedNames   = []
-  , PT.reservedOpNames = []
-  , PT.commentStart    = ""
-  , PT.commentEnd      = ""
-  , PT.commentLine     = ""
-  , PT.nestedComments  = True
-  , PT.identStart      = P.parserFail "Identifiers not supported"
-  , PT.identLetter     = P.parserFail "Identifiers not supported"
-  , PT.opStart         = P.parserFail "Operators not supported"
-  , PT.opLetter        = P.parserFail "Operators not supported"
-  , PT.caseSensitive   = True
-  }
-
--- |
--- A token parser based on the language definition
---
-tokenParser :: PT.GenTokenParser Text u Identity
-tokenParser = PT.makeTokenParser langDef
 
 type TokenParser a = P.Parsec [PositionedToken] ParseState a
 
@@ -353,7 +335,7 @@ indent = token go P.<?> "indentation"
   go (Indent n) = Just n
   go _ = Nothing
 
-indentAt :: P.Column -> TokenParser ()
+indentAt :: Int -> TokenParser ()
 indentAt n = token go P.<?> "indentation at level " ++ show n
   where
   go (Indent n') | n == n' = Just ()

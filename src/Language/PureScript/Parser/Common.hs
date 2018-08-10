@@ -14,8 +14,9 @@ import           Language.PureScript.Comments
 import           Language.PureScript.Names
 import           Language.PureScript.Parser.Lexer
 import           Language.PureScript.Parser.State
+import           Language.PureScript.Errors
 import           Language.PureScript.PSString (PSString, mkString)
-import qualified Text.Parsec as P
+import qualified Text.Megaparsec as P
 
 -- | Parse a general proper name.
 properName :: TokenParser (ProperName a)
@@ -120,7 +121,7 @@ readComments :: P.Parsec [PositionedToken] u [Comment]
 readComments = P.lookAhead $ ptComments <$> P.anyToken
 
 -- | Run a parser
-runTokenParser :: FilePath -> TokenParser a -> [PositionedToken] -> Either P.ParseError a
+runTokenParser :: FilePath -> TokenParser a -> [PositionedToken] -> Either ParseError a
 runTokenParser filePath p = P.runParser p (ParseState 0) filePath
 
 -- | Convert from Parsec sourcepos

@@ -36,10 +36,12 @@ import Language.PureScript.Environment
 import qualified Language.PureScript.Bundle as Bundle
 import qualified Language.PureScript.Constants as C
 
-import qualified Text.Parsec as P
+import qualified Text.Megaparsec as P
 
 -- | A map of locally-bound names in scope.
 type Context = [(Ident, Type)]
+
+type ParseError = P.ParseError Char ()
 
 -- | Holds the data necessary to do type directed search for typed holes
 data TypeSearch
@@ -67,7 +69,7 @@ onTypeSearchTypesM _ (TSBefore env) = pure (TSBefore env)
 data SimpleErrorMessage
   = ModuleNotFound ModuleName
   | ErrorParsingFFIModule FilePath (Maybe Bundle.ErrorMessage)
-  | ErrorParsingModule P.ParseError
+  | ErrorParsingModule ParseError
   | MissingFFIModule ModuleName
   | UnnecessaryFFIModule ModuleName FilePath
   | MissingFFIImplementations ModuleName [Ident]

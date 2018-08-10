@@ -30,7 +30,7 @@ import qualified Data.Text as T
 import Text.Blaze.Html5 as H hiding (map)
 import qualified Text.Blaze.Html5.Attributes as A
 import qualified Cheapskate
-import Text.Parsec (eof)
+import Text.Megaparsec (eof)
 
 import qualified Language.PureScript as P
 

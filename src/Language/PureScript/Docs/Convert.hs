@@ -25,7 +25,7 @@ import qualified Language.PureScript as P
 
 import Web.Bower.PackageMeta (PackageName)
 
-import Text.Parsec (eof)
+import Text.Megaparsec (eof)
 
 -- |
 -- Like convertModuleInPackage, but with the modules tagged by their

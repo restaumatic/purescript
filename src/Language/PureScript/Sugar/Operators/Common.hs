@@ -12,9 +12,9 @@ import Data.Maybe (mapMaybe, fromJust)
 import qualified Data.List.NonEmpty as NEL
 import qualified Data.Map as M
 
-import qualified Text.Parsec as P
-import qualified Text.Parsec.Pos as P
-import qualified Text.Parsec.Expr as P
+import qualified Text.Megaparsec as P
+import qualified Text.Megaparsec.Pos as P
+import qualified Text.Megaparsec.Expr as P
 
 import Language.PureScript.AST
 import Language.PureScript.Crash

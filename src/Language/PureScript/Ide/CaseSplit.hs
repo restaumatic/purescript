@@ -32,7 +32,7 @@ import           Language.PureScript.Ide.Error
 import           Language.PureScript.Ide.State
 import           Language.PureScript.Ide.Types
 
-import           Text.Parsec                   as Parsec
+import           Text.Megaparsec                   as Parsec
 import qualified Text.PrettyPrint.Boxes        as Box
 
 type Constructor = (P.ProperName 'P.ConstructorName, [P.Type])

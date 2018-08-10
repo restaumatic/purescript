@@ -46,7 +46,7 @@ import           Language.PureScript.Ide.Prim
 import           Language.PureScript.Ide.Types
 import           Language.PureScript.Ide.Util
 import           System.IO.UTF8                     (writeUTF8FileT)
-import qualified Text.Parsec as Parsec
+import qualified Text.Megaparsec as Parsec
 
 data Import = Import P.ModuleName P.ImportDeclarationType (Maybe P.ModuleName)
               deriving (Eq, Show)

@@ -14,7 +14,7 @@ import           Data.Bifunctor (first)
 import           Data.Char (isSpace)
 import           Data.List (intercalate)
 import qualified Data.Text as T
-import           Text.Parsec hiding ((<|>))
+import           Text.Megaparsec hiding ((<|>))
 import qualified Language.PureScript as P
 import qualified Language.PureScript.Interactive.Directive as D
 import           Language.PureScript.Interactive.Types

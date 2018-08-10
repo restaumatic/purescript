@@ -62,6 +62,7 @@ dependencies:
   - mtl >=2.1.0 && <2.3.0
   - parallel >=3.2 && <3.3
   - parsec >=3.1.10
+  - megaparsec >= 6
   - pattern-arrows >=0.0.2 && <0.1
   - process >=1.2.0 && <1.7
   - protolude >=0.1.6

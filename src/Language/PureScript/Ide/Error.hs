@@ -23,16 +23,17 @@ import qualified Data.HashMap.Lazy as HM
 import qualified Data.Text as T
 import qualified Language.PureScript as P
 import           Language.PureScript.Errors.JSON
+import           Language.PureScript.Errors
 import           Language.PureScript.Ide.Types   (ModuleIdent, Completion(..))
 import           Protolude
-import qualified Text.Parsec.Error               as Parsec
+import qualified Text.Megaparsec.Error               as Parsec
 
 data IdeError
     = GeneralError Text
     | NotFound Text
     | ModuleNotFound ModuleIdent
     | ModuleFileNotFound ModuleIdent
-    | ParseError Parsec.ParseError Text
+    | ParseError ParseError Text
     | RebuildError P.MultipleErrors
     deriving (Show)
 

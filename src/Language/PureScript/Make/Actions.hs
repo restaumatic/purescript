@@ -52,7 +52,7 @@ import           SourceMap
 import           SourceMap.Types
 import           System.Directory (doesFileExist, getModificationTime, createDirectoryIfMissing, getCurrentDirectory)
 import           System.FilePath ((</>), takeDirectory, makeRelative, splitPath, normalise)
-import qualified Text.Parsec as Parsec
+import qualified Text.Megaparsec as Parsec
 
 -- | Determines when to rebuild a module
 data RebuildPolicy

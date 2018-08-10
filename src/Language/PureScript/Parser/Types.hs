@@ -21,8 +21,8 @@ import Language.PureScript.Parser.Lexer
 import Language.PureScript.Types
 import Language.PureScript.Label (Label(..))
 
-import qualified Text.Parsec as P
-import qualified Text.Parsec.Expr as P
+import qualified Text.Megaparsec as P
+import qualified Text.Megaparsec.Expr as P
 
 parseFunction :: TokenParser Type
 parseFunction = parens rarrow *> return tyFunction

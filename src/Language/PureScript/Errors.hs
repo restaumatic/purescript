@@ -39,12 +39,14 @@ import           Language.PureScript.Traversals
 import           Language.PureScript.Types
 import qualified Language.PureScript.Publish.BoxesHelpers as BoxHelpers
 import qualified System.Console.ANSI as ANSI
-import qualified Text.Parsec as P
-import qualified Text.Parsec.Error as PE
-import           Text.Parsec.Error (Message(..))
+import qualified Text.Megaparsec as P
+import qualified Text.Megaparsec.Error as PE
+import           Text.Megaparsec.Error (Message(..))
 import qualified Text.PrettyPrint.Boxes as Box
 
 newtype ErrorSuggestion = ErrorSuggestion Text
+
+type ParseError = P.ParseError Char ()
 
 -- | Get the source span for an error
 errorSpan :: ErrorMessage -> Maybe (NEL.NonEmpty SourceSpan)
@@ -1332,13 +1334,13 @@ prettyPrintMultipleErrorsWith ppeOptions _ intro (MultipleErrors es) =
                     ]
 
 -- | Pretty print a Parsec ParseError as a Box
-prettyPrintParseError :: P.ParseError -> Box.Box
+prettyPrintParseError :: ParseError -> Box.Box
 prettyPrintParseError = prettyPrintParseErrorMessages "or" "unknown parse error" "expecting" "unexpected" "end of input" . PE.errorMessages
 
 -- | Pretty print 'ParseError' detail messages.
 --
--- Adapted from 'Text.Parsec.Error.showErrorMessages'.
--- See <https://github.com/aslatter/parsec/blob/v3.1.9/Text/Parsec/Error.hs#L173>.
+-- Adapted from 'Text.Megaparsec.Error.showErrorMessages'.
+-- See <https://github.com/aslatter/parsec/blob/v3.1.9/Text.Megaparsec/Error.hs#L173>.
 prettyPrintParseErrorMessages :: String -> String -> String -> String -> String -> [Message] -> Box.Box
 prettyPrintParseErrorMessages msgOr msgUnknown msgExpecting msgUnExpected msgEndOfInput msgs
   | null msgs = Box.text msgUnknown

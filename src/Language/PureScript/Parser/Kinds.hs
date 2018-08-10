@@ -9,8 +9,8 @@ import Language.PureScript.Kinds
 import Language.PureScript.Parser.Common
 import Language.PureScript.Parser.Lexer
 
-import qualified Text.Parsec as P
-import qualified Text.Parsec.Expr as P
+import qualified Text.Megaparsec as P
+import qualified Text.Megaparsec.Expr as P
 
 parseStar :: TokenParser Kind
 parseStar = symbol' "*" *>

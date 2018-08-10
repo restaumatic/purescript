@@ -40,8 +40,8 @@ import           Language.PureScript.Parser.Lexer
 import           Language.PureScript.Parser.Types
 import           Language.PureScript.PSString (PSString, mkString)
 import           Language.PureScript.Types
-import qualified Text.Parsec as P
-import qualified Text.Parsec.Expr as P
+import qualified Text.Megaparsec as P
+import qualified Text.Megaparsec.Expr as P
 
 kindedIdent :: TokenParser (Text, Maybe Kind)
 kindedIdent = (, Nothing) <$> identifier
@@ -331,12 +331,12 @@ parseModulesFromFiles
 parseModulesFromFiles toFilePath input =
   flip parU wrapError . inParallel . flip fmap input $ parseModuleFromFile toFilePath
   where
-  wrapError :: Either P.ParseError a -> m a
+  wrapError :: Either ParseError a -> m a
   wrapError = either (throwError . MultipleErrors . pure . toPositionedError) return
   -- It is enough to force each parse result to WHNF, since success or failure can't be
   -- determined until the end of the file, so this effectively distributes parsing of each file
   -- to a different spark.
-  inParallel :: [Either P.ParseError (k, a)] -> [Either P.ParseError (k, a)]
+  inParallel :: [Either ParseError (k, a)] -> [Either ParseError (k, a)]
   inParallel = withStrategy (parList rseq)
 
 seqList :: [(a,b)] -> [(a,b)]
@@ -354,7 +354,7 @@ parseModuleFromFile toFilePath (k, content) = do -- timed ("parseModuleFromFile 
     pure (k, m)
 
 -- | Converts a 'ParseError' into a 'PositionedError'
-toPositionedError :: P.ParseError -> ErrorMessage
+toPositionedError :: ParseError -> ErrorMessage
 toPositionedError perr = ErrorMessage [ positionedError (SourceSpan name start end) ] (ErrorParsingModule perr)
   where
   name   = (P.sourceName  . P.errorPos) perr
