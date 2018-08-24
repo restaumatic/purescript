@@ -7,6 +7,7 @@ module Language.PureScript.Parser.Lexer
   , Token()
   , TokenParser()
   , lex
+  , lexLazy
   , lexLenient
   , anyToken
   , token
@@ -69,19 +70,21 @@ import Prelude.Compat hiding (lex)
 
 import Control.Applicative ((<|>))
 import Control.Monad (void, guard)
-import Control.Monad.Identity (Identity)
+import Control.Monad.Identity (Identity, runIdentity)
 import Data.Char (isSpace, isAscii, isSymbol, isAlphaNum)
 import qualified Data.Char as Char
 import Data.Monoid ((<>))
 import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.List (unfoldr)
 
 import Language.PureScript.Comments
 import Language.PureScript.Parser.State
 import Language.PureScript.PSString (PSString)
 
 import qualified Text.Parsec as P
+import qualified Text.Parsec.Pos as P
 import qualified Text.Parsec.Token as PT
 
 data Token
@@ -183,6 +186,15 @@ lexLenient f s = updatePositions <$> P.parse parseTokensLenient f s
 
 parseTokensLenient :: Lexer u [PositionedToken]
 parseTokensLenient = whitespace *> P.many parsePositionedToken <* P.skipMany parseComment
+
+lexLazy :: FilePath -> Text -> [PositionedToken]
+lexLazy f s = updatePositions $ unfoldr (parsePrefix parsePositionedToken f) (P.initialPos f, s)
+
+parsePrefix :: Lexer () a -> FilePath -> (P.SourcePos, Text) -> Maybe (a, (P.SourcePos, Text))
+parsePrefix p f (pos, s) =
+  case runIdentity (P.runPT (do P.setPosition pos; x <- p; (,) x <$> ((,) <$> P.getPosition <*> P.getInput)) () f s) of
+    Left _ -> Nothing
+    Right x -> Just x
 
 whitespace :: Lexer u ()
 whitespace = P.skipMany (P.satisfy isSpace)
