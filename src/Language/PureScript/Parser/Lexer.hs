@@ -203,34 +203,52 @@ parsePositionedToken = P.try $ do
   whitespace
   return $ PositionedToken pos pos' Nothing tok comments
 
+operatorCharToken :: Lexer u Token
+operatorCharToken = do
+  c <- P.anyChar
+  case c of
+    '(' -> pure LParen
+    ')' -> pure RParen
+    '{' -> pure LBrace
+    '}' -> pure RBrace
+    '[' -> pure LSquare
+    ']' -> pure RSquare
+    '`' -> pure Tick
+    ',' -> pure Comma
+
+    '<' -> do
+      c' <- P.anyChar
+      case c' of
+        '-' -> P.notFollowedBy symbolChar *> pure LArrow
+        '=' -> P.notFollowedBy symbolChar *> pure LFatArrow
+        _ -> fail ""
+    '-' -> P.char '>' *> P.notFollowedBy symbolChar *> pure RArrow
+    '=' -> P.choice
+      [ P.char '>' *> P.notFollowedBy symbolChar *> pure RFatArrow
+      , P.notFollowedBy symbolChar *> pure Equals
+      ]
+    ':' -> P.choice
+      [ P.char ':' *> P.notFollowedBy symbolChar *> pure DoubleColon
+      , P.notFollowedBy symbolChar *> pure Colon
+      ]
+    '←' -> P.notFollowedBy symbolChar *> pure LArrow
+    '⇐' -> P.notFollowedBy symbolChar *> pure LFatArrow
+    '→' -> P.notFollowedBy symbolChar *> pure RArrow
+    '⇒' -> P.notFollowedBy symbolChar *> pure RFatArrow
+    '∷' -> P.notFollowedBy symbolChar *> pure DoubleColon
+    '|' -> P.notFollowedBy symbolChar *> pure Pipe
+    '.' -> P.notFollowedBy symbolChar *> pure Dot
+    ';' -> P.notFollowedBy symbolChar *> pure Semi
+    '@' -> P.notFollowedBy symbolChar *> pure At
+    '_' -> P.notFollowedBy identLetter *> pure Underscore
+
+    '?' -> HoleLit . T.pack <$> P.many1 identLetter
+
+    _ -> fail ""
+
 parseToken :: Lexer u Token
 parseToken = P.choice
-  [ P.try $ P.string "<-" *> P.notFollowedBy symbolChar *> pure LArrow
-  , P.try $ P.string "←"  *> P.notFollowedBy symbolChar *> pure LArrow
-  , P.try $ P.string "<=" *> P.notFollowedBy symbolChar *> pure LFatArrow
-  , P.try $ P.string "⇐"  *> P.notFollowedBy symbolChar *> pure LFatArrow
-  , P.try $ P.string "->" *> P.notFollowedBy symbolChar *> pure RArrow
-  , P.try $ P.string "→"  *> P.notFollowedBy symbolChar *> pure RArrow
-  , P.try $ P.string "=>" *> P.notFollowedBy symbolChar *> pure RFatArrow
-  , P.try $ P.string "⇒"  *> P.notFollowedBy symbolChar *> pure RFatArrow
-  , P.try $ P.string "::" *> P.notFollowedBy symbolChar *> pure DoubleColon
-  , P.try $ P.string "∷"  *> P.notFollowedBy symbolChar *> pure DoubleColon
-  , P.try $ P.char '('    *> pure LParen
-  , P.try $ P.char ')'    *> pure RParen
-  , P.try $ P.char '{'    *> pure LBrace
-  , P.try $ P.char '}'    *> pure RBrace
-  , P.try $ P.char '['    *> pure LSquare
-  , P.try $ P.char ']'    *> pure RSquare
-  , P.try $ P.char '`'    *> pure Tick
-  , P.try $ P.char ','    *> pure Comma
-  , P.try $ P.char '='    *> P.notFollowedBy symbolChar *> pure Equals
-  , P.try $ P.char ':'    *> P.notFollowedBy symbolChar *> pure Colon
-  , P.try $ P.char '|'    *> P.notFollowedBy symbolChar *> pure Pipe
-  , P.try $ P.char '.'    *> P.notFollowedBy symbolChar *> pure Dot
-  , P.try $ P.char ';'    *> P.notFollowedBy symbolChar *> pure Semi
-  , P.try $ P.char '@'    *> P.notFollowedBy symbolChar *> pure At
-  , P.try $ P.char '_'    *> P.notFollowedBy identLetter *> pure Underscore
-  , HoleLit <$> P.try (P.char '?' *> (T.pack <$> P.many1 identLetter))
+  [ P.try operatorCharToken
   , LName         <$> parseLName
   , parseUName >>= \uName ->
       guard (validModuleName uName) *> (Qualifier uName <$ P.char '.')
@@ -253,12 +271,6 @@ parseToken = P.choice
 
   identStart :: Lexer u Char
   identStart = P.lower <|> P.oneOf "_"
-
-  identLetter :: Lexer u Char
-  identLetter = P.alphaNum <|> P.oneOf "_'"
-
-  symbolChar :: Lexer u Char
-  symbolChar = P.satisfy isSymbolChar
 
   parseCharLiteral :: Lexer u Char
   parseCharLiteral = P.try $ do {
@@ -284,6 +296,12 @@ parseToken = P.choice
     -- if notFollowedBy fails though, the consumed '0' will break the choice chain
     consumeLeadingZero = P.lookAhead (P.char '0' *>
       (P.notFollowedBy P.digit P.<?> "no leading zero in number literal"))
+
+identLetter :: Lexer u Char
+identLetter = P.alphaNum <|> P.oneOf "_'"
+
+symbolChar :: Lexer u Char
+symbolChar = P.satisfy isSymbolChar
 
 -- |
 -- We use Text.Parsec.Token to implement the string and number lexemes
