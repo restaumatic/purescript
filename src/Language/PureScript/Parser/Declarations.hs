@@ -349,8 +349,7 @@ parseModuleFromFile
   -> Either P.ParseError (k, Module)
 parseModuleFromFile toFilePath (k, content) = do -- timed ("parseModuleFromFile " ++ toFilePath k) $ do
     let filename = toFilePath k
-    --ts <- lex filename content
-    let ts = lexLazy filename content
+    ts <- lexLazy filename content
     m <- runTokenParser filename parseModule ts
     pure (k, m)
 

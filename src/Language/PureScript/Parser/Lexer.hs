@@ -187,8 +187,14 @@ lexLenient f s = updatePositions <$> P.parse parseTokensLenient f s
 parseTokensLenient :: Lexer u [PositionedToken]
 parseTokensLenient = whitespace *> P.many parsePositionedToken <* P.skipMany parseComment
 
-lexLazy :: FilePath -> Text -> [PositionedToken]
-lexLazy f s = updatePositions $ unfoldr (parsePrefix parsePositionedToken f) (P.initialPos f, s)
+lexLazy :: FilePath -> Text -> Either P.ParseError [PositionedToken]
+lexLazy f s = updatePositions <$> P.parse parser f s
+  where
+  parser = do
+    whitespace
+    pos <- P.getPosition
+    input <- P.getInput
+    pure $ unfoldr (parsePrefix parsePositionedToken f) (pos, input)
 
 parsePrefix :: Lexer () a -> FilePath -> (P.SourcePos, Text) -> Maybe (a, (P.SourcePos, Text))
 parsePrefix p f (pos, s) =
