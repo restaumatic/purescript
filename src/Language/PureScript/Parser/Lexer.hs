@@ -191,10 +191,10 @@ parseComment :: Lexer u Comment
 parseComment = (BlockComment <$> blockComment <|> LineComment <$> lineComment) <* whitespace
   where
   blockComment :: Lexer u Text
-  blockComment = P.try $ P.string "{-" *> (T.pack <$> P.manyTill P.anyChar (P.try (P.string "-}")))
+  blockComment = P.try $ P.string "{-" *> (manyTillText "-}")
 
   lineComment :: Lexer u Text
-  lineComment = P.try $ P.string "--" *> (T.pack <$> P.manyTill P.anyChar (P.try (void (P.char '\n') <|> P.eof)))
+  lineComment = P.try $ P.string "--" *> (manyTillText "\n")
 
 parsePositionedToken :: Lexer u PositionedToken
 parsePositionedToken = P.try $ do
@@ -263,15 +263,12 @@ parseToken = P.choice
 
   where
   parseLName :: Lexer u Text
-  -- parseLName = T.cons <$> identStart <*> (T.pack <$> P.many identLetter)
   parseLName = takeWhileInitialText isIdentStart isIdentLetter
 
   parseUName :: Lexer u Text
-  --parseUName = T.cons <$> P.upper <*> (T.pack <$> P.many identLetter)
   parseUName = takeWhileInitialText Char.isUpper isIdentLetter
 
   parseSymbol :: Lexer u Text
-  --parseSymbol = T.pack <$> P.many1 symbolChar
   parseSymbol = takeWhileInitialText isSymbolChar isSymbolChar
 
   identStart :: Lexer u Char
@@ -321,6 +318,17 @@ takeWhileInitialText initialPred pred = P.mkPT $
         in pure $ P.Consumed $ pure $ P.Ok x (P.State rest (P.incSourceColumn pos (T.length x)) u) (P.unknownError state)
       _ ->
         pure $ P.Empty $ pure $ P.sysUnExpectError "no characters match the predicate" pos
+
+manyTillText :: Text -> Lexer u Text
+manyTillText needle = P.mkPT $
+  \state@(P.State input pos u) ->
+    let (x, rest) = T.breakOn needle input
+    in pure $ P.Consumed $ pure $ P.Ok x
+        (P.State
+          (T.drop (T.length needle) rest)
+          (P.incSourceColumn pos (T.length x + T.length needle))
+          u)
+        (P.unknownError state)
 
 -- |
 -- We use Text.Parsec.Token to implement the string and number lexemes
