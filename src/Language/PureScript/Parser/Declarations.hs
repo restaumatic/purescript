@@ -17,7 +17,6 @@ module Language.PureScript.Parser.Declarations
 
 import           Prelude hiding (lex)
 import           Protolude (ordNub)
-import Timing
 
 import           Control.Applicative
 import           Control.Arrow ((+++))
@@ -314,9 +313,9 @@ parseModule = do
     -- parseModuleHeader function. This should allow us to speed up rebuilds
     -- by only parsing as far as the module header. See PR #2054.
     imports <- P.many (same *> parseImportDeclaration)
-    decls   <- join <$> P.many (same *> parseDeclaration)
+    decls   <- pure [] --join <$> P.many (same *> parseDeclaration)
     return (imports <> decls)
-  _ <- P.eof
+--  _ <- P.eof
   end <- P.getPosition
   let ss = SourceSpan (P.sourceName start) (toSourcePos start) (toSourcePos end)
   return $ Module ss comments name decls exports
@@ -338,9 +337,6 @@ parseModulesFromFiles toFilePath input =
   -- to a different spark.
   inParallel :: [Either P.ParseError (k, a)] -> [Either P.ParseError (k, a)]
   inParallel = withStrategy (parList rseq)
-
-seqList :: [(a,b)] -> [(a,b)]
-seqList xs = foldr (\(a,b) acc -> a `seq` b `seq` acc) () xs `seq` xs
 
 -- | Parses a single module with FilePath for eventual parsing errors
 parseModuleFromFile
