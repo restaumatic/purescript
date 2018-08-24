@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -O3 #-}
 -- |
 -- The first step in the parsing process - turns source code into a list of lexemes
 --
@@ -70,6 +71,7 @@ import Control.Applicative ((<|>))
 import Control.Monad (void, guard)
 import Control.Monad.Identity (Identity)
 import Data.Char (isSpace, isAscii, isSymbol, isAlphaNum)
+import qualified Data.Char as Char
 import Data.Monoid ((<>))
 import Data.String (fromString)
 import Data.Text (Text)
@@ -242,7 +244,7 @@ operatorCharToken = do
     '@' -> P.notFollowedBy symbolChar *> pure At
     '_' -> P.notFollowedBy identLetter *> pure Underscore
 
-    '?' -> HoleLit . T.pack <$> P.many1 identLetter
+    '?' -> HoleLit <$> takeWhileInitialText isIdentLetter isIdentLetter
 
     _ -> fail ""
 
@@ -261,13 +263,16 @@ parseToken = P.choice
 
   where
   parseLName :: Lexer u Text
-  parseLName = T.cons <$> identStart <*> (T.pack <$> P.many identLetter)
+  -- parseLName = T.cons <$> identStart <*> (T.pack <$> P.many identLetter)
+  parseLName = takeWhileInitialText isIdentStart isIdentLetter
 
   parseUName :: Lexer u Text
-  parseUName = T.cons <$> P.upper <*> (T.pack <$> P.many identLetter)
+  --parseUName = T.cons <$> P.upper <*> (T.pack <$> P.many identLetter)
+  parseUName = takeWhileInitialText Char.isUpper isIdentLetter
 
   parseSymbol :: Lexer u Text
-  parseSymbol = T.pack <$> P.many1 symbolChar
+  --parseSymbol = T.pack <$> P.many1 symbolChar
+  parseSymbol = takeWhileInitialText isSymbolChar isSymbolChar
 
   identStart :: Lexer u Char
   identStart = P.lower <|> P.oneOf "_"
@@ -300,8 +305,22 @@ parseToken = P.choice
 identLetter :: Lexer u Char
 identLetter = P.alphaNum <|> P.oneOf "_'"
 
+isIdentLetter c = Char.isAlphaNum c || c == '_' || c == '\''
+
+isIdentStart c = Char.isLower c || c == '_'
+
 symbolChar :: Lexer u Char
 symbolChar = P.satisfy isSymbolChar
+
+takeWhileInitialText :: (Char -> Bool) -> (Char -> Bool) -> Lexer u Text
+takeWhileInitialText initialPred pred = P.mkPT $
+  \state@(P.State input pos u) ->
+    case T.uncons input of
+      Just (c, input') | initialPred c ->
+        let (x, rest) = T.span pred input
+        in pure $ P.Consumed $ pure $ P.Ok x (P.State rest (P.incSourceColumn pos (T.length x)) u) (P.unknownError state)
+      _ ->
+        pure $ P.Empty $ pure $ P.sysUnExpectError "no characters match the predicate" pos
 
 -- |
 -- We use Text.Parsec.Token to implement the string and number lexemes
