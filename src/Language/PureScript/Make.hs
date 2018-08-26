@@ -3,6 +3,7 @@ module Language.PureScript.Make
   -- * Make API
   rebuildModule
   , make
+  , makeLazy
   , inferForeignModules
   , module Monad
   , module Actions
@@ -40,6 +41,7 @@ import           Language.PureScript.Make.BuildPlan
 import qualified Language.PureScript.Make.BuildPlan as BuildPlan
 import           Language.PureScript.Make.Actions as Actions
 import           Language.PureScript.Make.Monad as Monad
+import           Language.PureScript.Parser.Declarations (LazyModule(..), forceLazyModule, toPositionedError) -- TODO: this needs to be in a different place
 import qualified Language.PureScript.CoreFn as CF
 import           System.Directory (doesFileExist)
 import           System.FilePath (replaceExtension)
@@ -86,17 +88,33 @@ make :: forall m. (Monad m, MonadBaseControl IO m, MonadError MultipleErrors m, 
      => MakeActions m
      -> [Module]
      -> m [ExternsFile]
-make ma@MakeActions{..} ms = do
+make ma = makeLazy ma . map toLazyModule
+  where
+    toLazyModule (Module ss c mn decls exports) =
+      -- FIXME: this is a hack
+      LazyModule
+        { lmComments = c
+        , lmName = mn
+        , lmImports = decls
+        , lmExports = exports
+        , lmRest = pure ([], ss)
+        }
+
+makeLazy :: forall m. (Monad m, MonadBaseControl IO m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
+     => MakeActions m
+     -> [LazyModule]
+     -> m [ExternsFile]
+makeLazy ma@MakeActions{..} ms = do
   checkModuleNames
 
   (sorted, graph) <- sortModules ms
 
-  buildPlan <- BuildPlan.construct ma (sorted, graph)
+  buildPlan <- BuildPlan.construct ma (fmap lmName sorted, graph)
 
-  let toBeRebuilt = filter (BuildPlan.needsRebuild buildPlan . getModuleName) sorted
+  let toBeRebuilt = filter (BuildPlan.needsRebuild buildPlan . lmName) sorted
   for_ toBeRebuilt $ \m -> fork $ do
-    let deps = fromMaybe (internalError "make: module not found in dependency graph.") (lookup (getModuleName m) graph)
-    buildModule buildPlan (importPrim m) (deps `inOrderOf` map getModuleName sorted)
+    let deps = fromMaybe (internalError "make: module not found in dependency graph.") (lookup (lmName m) graph)
+    buildModule buildPlan m (deps `inOrderOf` map lmName sorted)
 
   -- Wait for all threads to complete, and collect errors.
   errors <- BuildPlan.collectErrors buildPlan
@@ -111,7 +129,7 @@ make ma@MakeActions{..} ms = do
   -- so they can be folded into an Environment. This result is used in the tests
   -- and in PSCI.
   let lookupResult mn = fromMaybe (internalError "make: module not found in results") (M.lookup mn results)
-  return (map (lookupResult . getModuleName) sorted)
+  return (map (lookupResult . lmName) sorted)
 
   where
   checkModuleNames :: m ()
@@ -120,18 +138,20 @@ make ma@MakeActions{..} ms = do
   checkNoPrim :: m ()
   checkNoPrim =
     for_ ms $ \m ->
-      let mn = getModuleName m
+      let mn = lmName m
       in when (isBuiltinModuleName mn) $
            throwError
-             . errorMessage' (getModuleSourceSpan m)
+             . errorMessage
+             -- TODO: . errorMessage' (getModuleSourceSpan m)
              $ CannotDefinePrimModules mn
 
   checkModuleNamesAreUnique :: m ()
   checkModuleNamesAreUnique =
-    for_ (findDuplicates getModuleName ms) $ \mss ->
+    for_ (findDuplicates lmName ms) $ \mss ->
       throwError . flip foldMap mss $ \ms' ->
-        let mn = getModuleName (NEL.head ms')
-        in errorMessage'' (fmap getModuleSourceSpan ms') $ DuplicateModule mn
+        let mn = lmName (NEL.head ms')
+        -- in errorMessage'' (fmap getModuleSourceSpan ms') $ DuplicateModule mn
+        in errorMessage $ DuplicateModule mn
 
   -- Find all groups of duplicate values in a list based on a projection.
   findDuplicates :: Ord b => (a -> b) -> [a] -> Maybe [NEL.NonEmpty a]
@@ -144,8 +164,8 @@ make ma@MakeActions{..} ms = do
   inOrderOf :: (Ord a) => [a] -> [a] -> [a]
   inOrderOf xs ys = let s = S.fromList xs in filter (`S.member` s) ys
 
-  buildModule :: BuildPlan -> Module -> [ModuleName] -> m ()
-  buildModule buildPlan m@(Module _ _ moduleName _ _) deps = flip catchError (complete Nothing . Just) $ do
+  buildModule :: BuildPlan -> LazyModule -> [ModuleName] -> m ()
+  buildModule buildPlan lm deps = flip catchError (complete Nothing . Just) $ do
     -- We need to wait for dependencies to be built, before checking if the current
     -- module should be rebuilt, so the first thing to do is to wait on the
     -- MVars for the module's dependencies.
@@ -153,12 +173,14 @@ make ma@MakeActions{..} ms = do
 
     case mexterns of
       Just (_, externs) -> do
-        (exts, warnings) <- listen $ rebuildModule ma externs m
+        m <- either (throwError . MultipleErrors . pure . toPositionedError) pure $
+          forceLazyModule lm
+        (exts, warnings) <- listen $ rebuildModule ma externs $ importPrim m
         complete (Just (warnings, exts)) Nothing
       Nothing -> complete Nothing Nothing
     where
     complete :: Maybe (MultipleErrors, ExternsFile) -> Maybe MultipleErrors -> m ()
-    complete = BuildPlan.markComplete buildPlan moduleName
+    complete = BuildPlan.markComplete buildPlan (lmName lm)
 
 -- | Infer the module name for a module by looking for the same filename with
 -- a .js extension.

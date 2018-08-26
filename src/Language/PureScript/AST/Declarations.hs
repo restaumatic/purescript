@@ -228,9 +228,19 @@ data ErrorMessage = ErrorMessage
 data Module = Module SourceSpan [Comment] ModuleName [Declaration] (Maybe [DeclarationRef])
   deriving (Show)
 
--- | Return a module's name.
-getModuleName :: Module -> ModuleName
-getModuleName (Module _ _ name _ _) = name
+class HasModuleHeader mod where
+  -- | Return a module's name.
+  getModuleName :: mod -> ModuleName
+
+  -- | Returns a module's import declarations.
+  getModuleImports :: mod -> [Declaration]
+
+instance HasModuleHeader Module where
+  getModuleName (Module _ _ name _ _) = name
+  getModuleImports = filter isImport . getModuleDeclarations
+    where
+      isImport ImportDeclaration{} = True
+      isImport _ = False
 
 -- | Return a module's source span.
 getModuleSourceSpan :: Module -> SourceSpan

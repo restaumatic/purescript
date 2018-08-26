@@ -105,20 +105,20 @@ getResult buildPlan moduleName =
 construct
   :: forall m. (Monad m, MonadBaseControl IO m)
   => MakeActions m
-  -> ([Module], [(ModuleName, [ModuleName])])
+  -> ([ModuleName], [(ModuleName, [ModuleName])])
   -> m BuildPlan
 construct MakeActions{..} (sorted, graph) = do
   prebuilt <- foldM findExistingExtern M.empty sorted
-  let toBeRebuilt = filter (not . flip M.member prebuilt . getModuleName) sorted
-  buildJobs <- foldM makeBuildJob M.empty (map getModuleName toBeRebuilt)
+  let toBeRebuilt = filter (not . flip M.member prebuilt) sorted
+  buildJobs <- foldM makeBuildJob M.empty toBeRebuilt
   pure $ BuildPlan prebuilt buildJobs
   where
     makeBuildJob prev moduleName = do
       buildJob <- BuildJob <$> C.newEmptyMVar <*> C.newEmptyMVar
       pure (M.insert moduleName buildJob prev)
 
-    findExistingExtern :: M.Map ModuleName Prebuilt -> Module -> m (M.Map ModuleName Prebuilt)
-    findExistingExtern prev (getModuleName -> moduleName) = do
+    findExistingExtern :: M.Map ModuleName Prebuilt -> ModuleName -> m (M.Map ModuleName Prebuilt)
+    findExistingExtern prev moduleName = do
       outputTimestamp <- getOutputTimestamp moduleName
       let deps = fromMaybe (internalError "make: module not found in dependency graph.") (lookup moduleName graph)
       case traverse (fmap pbModificationTime . flip M.lookup prev) deps of

@@ -14,6 +14,10 @@ module Language.PureScript.Parser.Declarations
   , parseImportDeclaration'
   , parseLocalDeclaration
   , toPositionedError
+
+  -- TODO: move this
+  , LazyModule(..)
+  , forceLazyModule
   ) where
 
 import           Prelude hiding (lex)
@@ -313,6 +317,10 @@ data LazyModule = LazyModule
   -- ^ The rest of the module.
   -- SourceSpan is also here because we don't know the end position until we parse everything.
   }
+
+instance HasModuleHeader LazyModule where
+  getModuleName = lmName
+  getModuleImports = lmImports
 
 -- |
 -- Finish parsing the module

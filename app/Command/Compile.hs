@@ -67,11 +67,11 @@ compile PSCMakeOptions{..} = do
     exitFailure
   moduleFiles <- timedIO "readInput" $ readInput input
   (makeErrors, makeWarnings) <- runMake pscmOpts $ do
-    ms <- timedIO "parseModulesFromFiles" $ P.parseModulesFromFiles id moduleFiles
-    let filePathMap = M.fromList $ map (\(fp, P.Module _ _ mn _ _) -> (mn, Right fp)) ms
+    ms <- timedIO "parseModulesFromFiles" $ P.parseModulesFromFilesLazy id moduleFiles
+    let filePathMap = M.fromList $ map (\(fp, m) -> (P.lmName m, Right fp)) ms
     foreigns <- timedIO "inferForeignModules" $ inferForeignModules filePathMap
     let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix
-    timedIO "make" $ P.make makeActions (map snd ms)
+    timedIO "make" $ P.makeLazy makeActions (map snd ms)
   printWarningsAndErrors (P.optionsVerboseErrors pscmOpts) pscmJSONErrors makeWarnings makeErrors
   exitSuccess
 
