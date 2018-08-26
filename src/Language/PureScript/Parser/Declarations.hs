@@ -2,9 +2,10 @@
 module Language.PureScript.Parser.Declarations
   ( parseDeclaration
   , parseDeclarationRef
-  , parseModule
+  , parseLazyModule
   , parseModuleDeclaration
   , parseModulesFromFiles
+  , parseModulesFromFilesLazy
   , parseModuleFromFile
   , parseValue
   , parseGuard
@@ -28,6 +29,7 @@ import           Data.Maybe (fromMaybe)
 import qualified Data.Set as S
 import           Data.Text (Text)
 import           Language.PureScript.AST
+import           Language.PureScript.Comments
 import           Language.PureScript.Environment
 import           Language.PureScript.Errors
 import           Language.PureScript.Kinds
@@ -301,23 +303,56 @@ parseModuleDeclaration = do
   reserved "where"
   pure (name, exports)
 
--- | Parse a module header and a collection of declarations
-parseModule :: TokenParser Module
-parseModule = do
+-- | A representation of Module where only the header (module name, exports and imports) is parsed.
+data LazyModule = LazyModule
+  { lmComments :: [Comment]
+  , lmName :: ModuleName
+  , lmExports :: Maybe [DeclarationRef]
+  , lmImports :: [Declaration]
+  , lmRest :: Either P.ParseError ([Declaration], SourceSpan)
+  -- ^ The rest of the module.
+  -- SourceSpan is also here because we don't know the end position until we parse everything.
+  }
+
+-- |
+-- Finish parsing the module
+-- This may reveal additional parse errors, so returns an Either.
+forceLazyModule :: LazyModule -> Either P.ParseError Module
+forceLazyModule lm = do
+  (decls, ss) <- lmRest lm
+  pure $ Module ss (lmComments lm) (lmName lm) (lmImports lm <> decls) (lmExports lm)
+
+-- | Parse a module header and return a thunk that will parse the declarations
+parseLazyModule :: TokenParser LazyModule
+parseLazyModule = do
   comments <- readComments
   start <- P.getPosition
   (name, exports) <- parseModuleDeclaration
-  decls <- mark $ do
-    -- TODO: extract a module header structure here, and provide a
-    -- parseModuleHeader function. This should allow us to speed up rebuilds
-    -- by only parsing as far as the module header. See PR #2054.
+  (imports, rest) <- mark $ do
     imports <- P.many (same *> parseImportDeclaration)
-    decls   <- join <$> P.many (same *> parseDeclaration)
-    return (imports <> decls)
-  _ <- P.eof
-  end <- P.getPosition
-  let ss = SourceSpan (P.sourceName start) (toSourcePos start) (toSourcePos end)
-  return $ Module ss comments name decls exports
+    rest   <- parseLater $ do
+      decls <- join <$> P.many (same *> parseDeclaration)
+      _ <- P.eof
+      end <- P.getPosition
+      let ss = SourceSpan (P.sourceName start) (toSourcePos start) (toSourcePos end)
+      pure (decls, ss)
+    pure (imports, rest)
+  pure $ LazyModule
+    { lmComments = comments
+    , lmName = name
+    , lmExports = exports
+    , lmImports = imports
+    , lmRest = rest
+    }
+
+-- | Return a thunk that represents parse of the rest of the input using the given parser.
+-- The success of the current parse won't depend on the parse of the rest.
+parseLater :: TokenParser a -> TokenParser (Either P.ParseError a)
+parseLater parser = do
+  input <- P.getInput
+  pos <- P.getPosition
+  state <- P.getState
+  pure $ P.runParser (P.setPosition pos *> parser) state (P.sourceName pos) input
 
 -- | Parse a collection of modules in parallel
 parseModulesFromFiles
@@ -326,8 +361,24 @@ parseModulesFromFiles
   => (k -> FilePath)
   -> [(k, Text)]
   -> m [(k, Module)]
-parseModulesFromFiles toFilePath input =
-  flip parU wrapError . inParallel . flip fmap input $ parseModuleFromFile toFilePath
+parseModulesFromFiles toFilePath = parseModulesFromFiles' (parseModuleFromFile toFilePath)
+
+parseModulesFromFilesLazy
+  :: forall m k
+   . MonadError MultipleErrors m
+  => (k -> FilePath)
+  -> [(k, Text)]
+  -> m [(k, LazyModule)]
+parseModulesFromFilesLazy toFilePath = parseModulesFromFiles' (parseModuleFromFileLazy toFilePath)
+
+parseModulesFromFiles'
+  :: forall m k mod
+   . MonadError MultipleErrors m
+  => ((k, Text) -> Either P.ParseError (k, mod))
+  -> [(k, Text)]
+  -> m [(k, mod)]
+parseModulesFromFiles' parseSingleModule input =
+  flip parU wrapError . inParallel . flip fmap input $ parseSingleModule
   where
   wrapError :: Either P.ParseError a -> m a
   wrapError = either (throwError . MultipleErrors . pure . toPositionedError) return
@@ -343,9 +394,17 @@ parseModuleFromFile
   -> (k, Text)
   -> Either P.ParseError (k, Module)
 parseModuleFromFile toFilePath (k, content) = do
+  (_, m) <- parseModuleFromFileLazy toFilePath (k, content)
+  (k,) <$> forceLazyModule m
+
+parseModuleFromFileLazy
+  :: (k -> FilePath)
+  -> (k, Text)
+  -> Either P.ParseError (k, LazyModule)
+parseModuleFromFileLazy toFilePath (k, content) = do
     let filename = toFilePath k
     ts <- lexLazy filename content
-    m <- runTokenParser filename parseModule ts
+    m <- runTokenParser filename parseLazyModule ts
     pure (k, m)
 
 -- | Converts a 'ParseError' into a 'PositionedError'
