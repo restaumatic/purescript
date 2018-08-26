@@ -190,6 +190,7 @@ lexLazy f s = updatePositions <$> P.parse parser f s
     whitespace
     pos <- P.getPosition
     input <- P.getInput
+    -- FIXME: errors in the lazily parsed section are ignored (treated as end of input)
     pure $ unfoldr (parsePrefix parsePositionedToken f) (pos, input)
 
 parsePrefix :: Lexer () a -> FilePath -> (P.SourcePos, Text) -> Maybe (a, (P.SourcePos, Text))
