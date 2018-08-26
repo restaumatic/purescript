@@ -68,7 +68,7 @@ compile PSCMakeOptions{..} = do
   moduleFiles <- timedIO "readInput" $ readInput input
   (makeErrors, makeWarnings) <- runMake pscmOpts $ do
     ms <- timedIO "parseModulesFromFiles" $ P.parseModulesFromFilesLazy id moduleFiles
-    let filePathMap = M.fromList $ map (\(fp, m) -> (P.lmName m, Right fp)) ms
+    let filePathMap = M.fromList $ map (\(fp, m) -> (P.getModuleName m, Right fp)) ms
     foreigns <- timedIO "inferForeignModules" $ inferForeignModules filePathMap
     let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix
     timedIO "make" $ P.makeLazy makeActions (map snd ms)

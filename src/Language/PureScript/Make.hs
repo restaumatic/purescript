@@ -109,12 +109,12 @@ makeLazy ma@MakeActions{..} ms = do
 
   (sorted, graph) <- sortModules ms
 
-  buildPlan <- BuildPlan.construct ma (fmap lmName sorted, graph)
+  buildPlan <- BuildPlan.construct ma (map getModuleName sorted, graph)
 
-  let toBeRebuilt = filter (BuildPlan.needsRebuild buildPlan . lmName) sorted
+  let toBeRebuilt = filter (BuildPlan.needsRebuild buildPlan . getModuleName) sorted
   for_ toBeRebuilt $ \m -> fork $ do
-    let deps = fromMaybe (internalError "make: module not found in dependency graph.") (lookup (lmName m) graph)
-    buildModule buildPlan m (deps `inOrderOf` map lmName sorted)
+    let deps = fromMaybe (internalError "make: module not found in dependency graph.") (lookup (getModuleName m) graph)
+    buildModule buildPlan m (deps `inOrderOf` map getModuleName sorted)
 
   -- Wait for all threads to complete, and collect errors.
   errors <- BuildPlan.collectErrors buildPlan
@@ -129,7 +129,7 @@ makeLazy ma@MakeActions{..} ms = do
   -- so they can be folded into an Environment. This result is used in the tests
   -- and in PSCI.
   let lookupResult mn = fromMaybe (internalError "make: module not found in results") (M.lookup mn results)
-  return (map (lookupResult . lmName) sorted)
+  return (map (lookupResult . getModuleName) sorted)
 
   where
   checkModuleNames :: m ()
@@ -138,7 +138,7 @@ makeLazy ma@MakeActions{..} ms = do
   checkNoPrim :: m ()
   checkNoPrim =
     for_ ms $ \m ->
-      let mn = lmName m
+      let mn = getModuleName m
       in when (isBuiltinModuleName mn) $
            throwError
              . errorMessage
@@ -147,9 +147,9 @@ makeLazy ma@MakeActions{..} ms = do
 
   checkModuleNamesAreUnique :: m ()
   checkModuleNamesAreUnique =
-    for_ (findDuplicates lmName ms) $ \mss ->
+    for_ (findDuplicates getModuleName ms) $ \mss ->
       throwError . flip foldMap mss $ \ms' ->
-        let mn = lmName (NEL.head ms')
+        let mn = getModuleName (NEL.head ms')
         -- in errorMessage'' (fmap getModuleSourceSpan ms') $ DuplicateModule mn
         in errorMessage $ DuplicateModule mn
 
@@ -180,7 +180,7 @@ makeLazy ma@MakeActions{..} ms = do
       Nothing -> complete Nothing Nothing
     where
     complete :: Maybe (MultipleErrors, ExternsFile) -> Maybe MultipleErrors -> m ()
-    complete = BuildPlan.markComplete buildPlan (lmName lm)
+    complete = BuildPlan.markComplete buildPlan (getModuleName lm)
 
 -- | Infer the module name for a module by looking for the same filename with
 -- a .js extension.
