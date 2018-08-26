@@ -21,6 +21,7 @@ import           Data.Traversable (for)
 import qualified Language.PureScript as P
 import           Language.PureScript.Errors.JSON
 import           Language.PureScript.Make
+import           Language.PureScript.Timing (timedIO)
 import qualified Options.Applicative as Opts
 import qualified System.Console.ANSI as ANSI
 import           System.Exit (exitSuccess, exitFailure)
@@ -58,19 +59,19 @@ printWarningsAndErrors verbose True warnings errors = do
 
 compile :: PSCMakeOptions -> IO ()
 compile PSCMakeOptions{..} = do
-  input <- globWarningOnMisses (unless pscmJSONErrors . warnFileTypeNotFound) pscmInput
+  input <- timedIO "glob" $ globWarningOnMisses (unless pscmJSONErrors . warnFileTypeNotFound) pscmInput
   when (null input && not pscmJSONErrors) $ do
     hPutStr stderr $ unlines [ "purs compile: No input files."
                              , "Usage: For basic information, try the `--help' option."
                              ]
     exitFailure
-  moduleFiles <- readInput input
+  moduleFiles <- timedIO "readInput" $ readInput input
   (makeErrors, makeWarnings) <- runMake pscmOpts $ do
-    ms <- P.parseModulesFromFiles id moduleFiles
+    ms <- timedIO "parseModulesFromFiles" $ P.parseModulesFromFiles id moduleFiles
     let filePathMap = M.fromList $ map (\(fp, P.Module _ _ mn _ _) -> (mn, Right fp)) ms
-    foreigns <- inferForeignModules filePathMap
+    foreigns <- timedIO "inferForeignModules" $ inferForeignModules filePathMap
     let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix
-    P.make makeActions (map snd ms)
+    timedIO "make" $ P.make makeActions (map snd ms)
   printWarningsAndErrors (P.optionsVerboseErrors pscmOpts) pscmJSONErrors makeWarnings makeErrors
   exitSuccess
 
