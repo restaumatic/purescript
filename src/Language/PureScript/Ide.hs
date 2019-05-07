@@ -13,6 +13,7 @@
 -----------------------------------------------------------------------------
 
 {-# LANGUAGE PackageImports #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Language.PureScript.Ide
        ( handleCommand
@@ -42,6 +43,7 @@ import           Language.PureScript.Ide.Usage (findUsages)
 import           System.Directory (getCurrentDirectory, getDirectoryContents, doesDirectoryExist, doesFileExist)
 import           System.FilePath ((</>), normalise)
 import           System.FilePath.Glob (glob)
+import qualified Language.PureScript.Make as Make
 
 -- | Accepts a Commmand and runs it against psc-ide's State. This is the main
 -- entry point for the server.
@@ -97,15 +99,37 @@ handleCommand c = case c of
       Left question ->
         pure (CompletionResult (map (completionFromMatch . simpleExport . map withEmptyAnn) question))
   Rebuild file actualFile targets ->
-    rebuildFileAsync file actualFile targets
+    make --rebuildFileAsync file actualFile targets
   RebuildSync file actualFile targets ->
-    rebuildFileSync file actualFile targets
+    make -- rebuildFileSync file actualFile targets
   Cwd ->
     TextResult . T.pack <$> liftIO getCurrentDirectory
   Reset ->
     resetIdeState $> TextResult "State has been reset."
   Quit ->
     liftIO exitSuccess
+  Make ->
+    make
+
+make :: (Ide m, MonadLogger m, MonadError IdeError m) => m Success
+make = do
+  fs <- getFileState
+  let outputDir = "output" -- TODO
+  let usePrefix = False -- TODO: What does it even mean?
+  let ms = map (first show) $ Map.toList $ map fst $ fsModules fs
+  $logDebug $ "Make, modules=" <> show ms
+  let filePathMap = Map.fromList $ map (\(fp, P.Module _ _ mn _ _) -> (mn, Right fp)) ms
+  foreigns <- Make.inferForeignModules filePathMap
+  let makeActions = Make.buildMakeActions outputDir filePathMap foreigns usePrefix
+  (result, warnings) <- logPerf (labelTimespec "Rebuilding Module") $
+    liftIO $
+    Make.runMake P.defaultOptions $
+    Make.make makeActions (map snd ms)
+
+  case result of
+    Left errors -> throwError (RebuildError errors)
+    Right newExterns -> do
+      pure (RebuildSuccess warnings)
 
 findCompletions
   :: Ide m

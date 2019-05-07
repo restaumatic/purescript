@@ -64,6 +64,7 @@ data Command
     | Cwd
     | Reset
     | Quit
+    | Make
 
 commandName :: Command -> Text
 commandName c = case c of
