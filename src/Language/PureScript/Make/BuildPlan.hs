@@ -47,7 +47,8 @@ data Prebuilt = Prebuilt
   }
 
 data BuildJob = BuildJob
-  { bjResult :: C.MVar (Maybe (MultipleErrors, ExternsFile))
+  { bjExistingExtern :: Maybe ExternsFile
+  , bjResult :: C.MVar (Maybe (MultipleErrors, ExternsFile))
   , bjErrors :: C.MVar (Maybe MultipleErrors)
   }
 
@@ -115,17 +116,22 @@ construct
   -> ([CST.PartialResult Module], [(ModuleName, [ModuleName])])
   -> m BuildPlan
 construct MakeActions{..} (sorted, graph) = do
-  prebuilt <- foldl' collectPrebuiltModules M.empty . catMaybes <$> A.forConcurrently sorted findExistingExtern
+  externs <- M.fromList . catMaybes <$> A.forConcurrently sorted readExternsFile
+  prebuilt <- foldl' collectPrebuiltModules M.empty . catMaybes <$> for sorted (findExistingExtern externs)
   let toBeRebuilt = filter (not . flip M.member prebuilt . getModuleName . CST.resPartial) sorted
   buildJobs <- foldM makeBuildJob M.empty (map (getModuleName . CST.resPartial) toBeRebuilt)
   pure $ BuildPlan prebuilt buildJobs
   where
-    makeBuildJob prev moduleName = do
-      buildJob <- BuildJob <$> C.newEmptyMVar <*> C.newEmptyMVar
+    makeBuildJob externsMap prev moduleName = do
+      let externsFile = M.lookup moduleName externsMap
+      buildJob <- BuildJob externsFile <$> C.newEmptyMVar <*> C.newEmptyMVar
       pure (M.insert moduleName buildJob prev)
 
-    findExistingExtern :: CST.PartialResult Module -> m (Maybe (ModuleName, Bool, Prebuilt))
-    findExistingExtern (getModuleName . CST.resPartial -> moduleName) = runMaybeT $ do
+    readExternsFile :: ModuleName -> m (Maybe (ModuleName, ExternsFile))
+    readExternsFile moduleName = fmap (moduleName,) . decodeExterns . snd <$> readExterns moduleName
+
+    findExistingExtern :: M.Map ModuleName ExternsFile -> CST.PartialResult Module -> m (Maybe (ModuleName, Bool, Prebuilt))
+    findExistingExtern externsMap (getModuleName . CST.resPartial -> moduleName) = runMaybeT $ do
       inputTimestamp <- lift $ getInputTimestamp moduleName
       (rebuildNever, existingTimestamp) <-
         case inputTimestamp of
@@ -136,7 +142,7 @@ construct MakeActions{..} (sorted, graph) = do
             guard (t1 < outputTimestamp)
             pure (False, outputTimestamp)
           _ -> mzero
-      externsFile <- MaybeT $ decodeExterns . snd <$> readExterns moduleName
+      externsFile <- MaybeT $ M.lookup moduleName externsMap
       pure (moduleName, rebuildNever, Prebuilt existingTimestamp externsFile)
 
     collectPrebuiltModules :: M.Map ModuleName Prebuilt -> (ModuleName, Bool, Prebuilt) -> M.Map ModuleName Prebuilt
