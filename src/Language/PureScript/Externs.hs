@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 -- |
 -- This module generates code for \"externs\" files, i.e. files containing only
@@ -58,17 +59,17 @@ instance Store DeclarationRef
 instance Store SourceSpan
 instance Store DataDeclType
 instance Store FunctionalDependency
+deriving instance Generic Comment
 instance Store Comment
 instance Store ConstraintData
 instance Store SkolemScope
 instance Store PSString
 instance Store Label
 instance Store SourcePos
-instance Store ExportSource
 
-instance Store ann => Store (Kind ann)
-instance Store ann => Store (Type ann)
-instance Store ann => Store (Constraint ann)
+instance Store Kind
+instance Store Type
+instance Store Constraint
 
 -- | The data which will be serialized to an externs file
 data ExternsFile = ExternsFile
