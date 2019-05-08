@@ -30,7 +30,9 @@ import           Language.PureScript.Errors
 import           Language.PureScript.Externs
 import           Language.PureScript.Make.Actions as Actions
 import           Language.PureScript.Names (ModuleName)
+import qualified Data.ByteString.Lazy as BL
 import qualified Paths_purescript as Paths
+import qualified Data.Store as Store
 
 -- | The BuildPlan tracks information about our build progress, and holds all
 -- prebuilt modules for incremental builds.
@@ -160,6 +162,6 @@ maximumMaybe xs = Just $ maximum xs
 
 decodeExterns :: Externs -> Maybe ExternsFile
 decodeExterns bs = do
-  externs <- decode bs
+  externs <- either (const Nothing) Just $ Store.decode (BL.toStrict bs)
   guard $ T.unpack (efVersion externs) == showVersion Paths.version
   return externs
