@@ -1,4 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 -- |
 -- This module generates code for \"externs\" files, i.e. files containing only
@@ -25,6 +28,10 @@ import qualified Data.Text as T
 import Data.Version (showVersion)
 import qualified Data.Map as M
 import qualified Data.Set as S
+import qualified Data.List.NonEmpty as NEL
+import qualified Data.Store as Store
+import           Data.Store (Store)
+import GHC.Generics (Generic)
 
 import Language.PureScript.AST
 import Language.PureScript.Crash
@@ -33,8 +40,35 @@ import Language.PureScript.Kinds
 import Language.PureScript.Names
 import Language.PureScript.TypeClassDictionaries
 import Language.PureScript.Types
+import Language.PureScript.Comments
+import Language.PureScript.PSString
+import Language.PureScript.Label
 
 import Paths_purescript as Paths
+
+instance Store (OpName a)
+instance Store a => Store (Qualified a)
+instance Store (ProperName a)
+instance Store Associativity
+instance Store Ident
+instance Store ModuleName
+instance Store TypeKind
+instance Store ImportDeclarationType
+instance Store DeclarationRef
+instance Store SourceSpan
+instance Store DataDeclType
+instance Store FunctionalDependency
+instance Store Comment
+instance Store ConstraintData
+instance Store SkolemScope
+instance Store PSString
+instance Store Label
+instance Store SourcePos
+instance Store ExportSource
+
+instance Store ann => Store (Kind ann)
+instance Store ann => Store (Type ann)
+instance Store ann => Store (Constraint ann)
 
 -- | The data which will be serialized to an externs file
 data ExternsFile = ExternsFile
@@ -54,7 +88,7 @@ data ExternsFile = ExternsFile
   -- ^ List of type and value declaration
   , efSourceSpan :: SourceSpan
   -- ^ Source span for error reporting
-  } deriving (Show)
+  } deriving (Show, Generic, Store)
 
 -- | A module import in an externs file
 data ExternsImport = ExternsImport
@@ -65,7 +99,7 @@ data ExternsImport = ExternsImport
   , eiImportType :: ImportDeclarationType
   -- | The imported-as name, for qualified imports
   , eiImportedAs :: Maybe ModuleName
-  } deriving (Show)
+  } deriving (Show, Generic, Store)
 
 -- | A fixity declaration in an externs file
 data ExternsFixity = ExternsFixity
@@ -78,7 +112,7 @@ data ExternsFixity = ExternsFixity
   , efOperator :: OpName 'ValueOpName
   -- | The value the operator is an alias for
   , efAlias :: Qualified (Either Ident (ProperName 'ConstructorName))
-  } deriving (Show)
+  } deriving (Show, Generic, Store)
 
 -- | A type fixity declaration in an externs file
 data ExternsTypeFixity = ExternsTypeFixity
@@ -91,7 +125,7 @@ data ExternsTypeFixity = ExternsTypeFixity
   , efTypeOperator :: OpName 'TypeOpName
   -- | The value the operator is an alias for
   , efTypeAlias :: Qualified (ProperName 'TypeName)
-  } deriving (Show)
+  } deriving (Show, Generic, Store)
 
 -- | A type or value declaration appearing in an externs file
 data ExternsDeclaration =
@@ -141,7 +175,7 @@ data ExternsDeclaration =
   | EDKind
       { edKindName                :: ProperName 'KindName
       }
-  deriving Show
+  deriving (Show, Generic, Store)
 
 -- | Convert an externs file back into a module
 applyExternsFileToEnvironment :: ExternsFile -> Environment -> Environment

@@ -414,7 +414,7 @@ data ImportDeclarationType
   -- An import with a list of references to hide: `import M hiding (foo)`
   --
   | Hiding [DeclarationRef]
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, NFData)
 
 isImplicit :: ImportDeclarationType -> Bool
 isImplicit Implicit = True

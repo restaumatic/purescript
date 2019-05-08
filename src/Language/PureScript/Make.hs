@@ -41,6 +41,8 @@ import qualified Language.PureScript.Make.BuildPlan as BuildPlan
 import           Language.PureScript.Make.Actions as Actions
 import           Language.PureScript.Make.Monad as Monad
 import qualified Language.PureScript.CoreFn as CF
+import qualified Data.Store as Store
+import qualified Data.ByteString.Lazy as BL
 import           System.Directory (doesFileExist)
 import           System.FilePath (replaceExtension)
 
@@ -75,7 +77,7 @@ rebuildModule MakeActions{..} externs m@(Module _ _ moduleName _ _) = do
       optimized = CF.optimizeCoreFn corefn
       [renamed] = renameInModules [optimized]
       exts = moduleToExternsFile mod' env'
-  evalSupplyT nextVar' . codegen renamed env' . encode $ exts
+  evalSupplyT nextVar' . codegen renamed env' . BL.fromStrict . Store.encode $ exts
   return exts
 
 -- | Compiles in "make" mode, compiling each module separately to a @.js@ file and an @externs.json@ file.
