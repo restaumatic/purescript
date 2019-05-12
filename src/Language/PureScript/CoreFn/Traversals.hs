@@ -5,7 +5,9 @@ module Language.PureScript.CoreFn.Traversals where
 
 import Prelude.Compat
 
+import Control.Monad ((>=>))
 import Control.Arrow (second, (***), (+++))
+import Lens.Micro.Platform (_Left, _Right, _1, _2)
 
 import Language.PureScript.AST.Literals
 import Language.PureScript.CoreFn.Binders
@@ -43,6 +45,42 @@ everywhereOnValues f g h = (f', g', h')
   handleLiteral i (ArrayLiteral ls) = ArrayLiteral (map i ls)
   handleLiteral i (ObjectLiteral ls) = ObjectLiteral (map (fmap i) ls)
   handleLiteral _ other = other
+
+everywhereOnValuesM :: forall m a. Monad m =>
+                       (Bind a -> m (Bind a)) ->
+                       (Expr a -> m (Expr a)) ->
+                       (Binder a -> m (Binder a)) ->
+                       (Bind a -> m (Bind a), Expr a -> m (Expr a), Binder a -> m (Binder a))
+everywhereOnValuesM f g h = (f', g', h')
+  where
+  f' (NonRec a name e) = (NonRec a name <$> g' e) >>= f
+  f' (Rec es) = (Rec <$> traverse (traverse g') es) >>= f
+
+  g' (Literal ann e) = (Literal ann <$> handleLiteral g' e) >>= g
+  g' (Accessor ann prop e) = (Accessor ann prop <$> g' e) >>= g
+  g' (ObjectUpdate ann obj vs) = (ObjectUpdate ann <$> g' obj <*> traverse (traverse g') vs) >>= g
+  g' (Abs ann name e) = (Abs ann name <$> g' e) >>= g
+  g' (App ann v1 v2) = (App ann <$> g' v1 <*> g' v2) >>= g
+  g' (Case ann vs alts) = (Case ann <$> traverse g' vs <*> traverse handleCaseAlternative alts) >>= g
+  g' (Let ann ds e) = (Let ann <$> traverse f' ds <*> g' e) >>= g
+  g' e = g e
+
+  h' (LiteralBinder a b) = (LiteralBinder a <$> handleLiteral h' b) >>= h
+  h' (NamedBinder a name b) = (NamedBinder a name <$> h' b) >>= h
+  h' (ConstructorBinder a q1 q2 bs) = (ConstructorBinder a q1 q2 <$> traverse h' bs) >>= h
+  h' b = h b
+
+  handleCaseAlternative ca = do
+    binders <- traverse h' (caseAlternativeBinders ca)
+    result <- (_Left (traverse (_1 g'  >=> _2 g')) >=> _Right g') (caseAlternativeResult ca)
+    pure $ ca { caseAlternativeBinders = binders
+              , caseAlternativeResult = result
+              }
+
+  handleLiteral :: forall a. (a -> m a) -> Literal a -> m (Literal a)
+  handleLiteral i (ArrayLiteral ls) = ArrayLiteral <$> traverse i ls
+  handleLiteral i (ObjectLiteral ls) = ObjectLiteral <$> traverse (traverse i) ls
+  handleLiteral _ other = pure other
 
 everythingOnValues :: (r -> r -> r) ->
                       (Bind a -> r) ->

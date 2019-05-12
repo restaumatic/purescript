@@ -28,7 +28,7 @@ import Data.Char (chr, digitToInt)
 import Data.Foldable (fold)
 import Data.Generics (GenericM, everything, everywhere, gmapMo, mkMp, mkQ, mkT)
 import Data.Graph
-import Data.List (stripPrefix)
+import Data.List (stripPrefix, isPrefixOf)
 import Data.Maybe (catMaybes, fromMaybe, mapMaybe)
 import Data.Version (showVersion)
 import qualified Data.Map as M
@@ -430,8 +430,8 @@ compile modules entryPoints = filteredModules
   -- | The set of vertices whose connected components we are interested in keeping.
   entryPointVertices :: [Vertex]
   entryPointVertices = catMaybes $ do
-    (_, k@(mid, _), _) <- verts
-    guard $ mid `elem` entryPoints
+    (_, k@(mid, ident), _) <- verts
+    guard $ mid `elem` entryPoints || "_static_" `isPrefixOf` ident
     return (vertexFor k)
 
   -- | The set of vertices reachable from an entry point
@@ -530,7 +530,23 @@ codeGen :: Maybe String -- ^ main module
         -> (Maybe SourceMapping, String)
 codeGen optionsMainModule optionsNamespace ms outFileOpt = (fmap sourceMapping outFileOpt, rendered)
   where
-  rendered = renderToString (JSAstProgram (prelude : concatMap fst modulesJS ++ maybe [] runMain optionsMainModule) JSNoAnnot)
+  rendered = renderToString (JSAstProgram (prelude : concatMap fst modulesJS ++ initStaticPtrs ++ maybe [] runMain optionsMainModule) JSNoAnnot)
+
+  initStaticPtrs =
+    [ JSAssignStatement
+        (JSMemberSquare
+          (JSMemberDot (moduleReference lf "StaticPtr") JSNoAnnot (JSIdentifier JSNoAnnot "staticPtrTable"))
+          JSNoAnnot
+          (str (mn <> "." <> ident))
+          JSNoAnnot)
+        (JSAssign sp)
+        (JSMemberDot (moduleReference sp mn) JSNoAnnot (JSIdentifier JSNoAnnot ident))
+        (JSSemi JSNoAnnot)
+    | Module (ModuleIdentifier mn _) _ elements <- ms
+    , ExportsList exports <- elements
+    , (_, ident, _, _) <- exports
+    , "_static_" `isPrefixOf` ident
+    ]
 
   sourceMapping :: String -> SourceMapping
   sourceMapping outFile = SourceMapping {

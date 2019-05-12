@@ -42,6 +42,7 @@ import qualified Language.PureScript.Make.BuildPlan as BuildPlan
 import           Language.PureScript.Make.Actions as Actions
 import           Language.PureScript.Make.Monad as Monad
 import qualified Language.PureScript.CoreFn as CF
+import qualified Language.PureScript.CoreFn.Transform.StaticPtr as CF
 import           System.Directory (doesFileExist)
 import           System.FilePath (replaceExtension)
 
@@ -75,7 +76,8 @@ rebuildModule MakeActions{..} externs m@(Module _ _ moduleName _ _) = do
   let mod' = Module ss coms moduleName regrouped exps
       corefn = CF.moduleToCoreFn env' mod'
       optimized = CF.optimizeCoreFn corefn
-      [renamed] = renameInModules [optimized]
+      transformed = CF.transformStaticPtrs optimized
+      [renamed] = renameInModules [transformed]
       exts = moduleToExternsFile mod' env'
   ffiCodegen renamed
   evalSupplyT nextVar' . codegen renamed env' . encode $ exts
