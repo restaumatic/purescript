@@ -532,20 +532,29 @@ codeGen optionsMainModule optionsNamespace ms outFileOpt = (fmap sourceMapping o
   where
   rendered = renderToString (JSAstProgram (prelude : concatMap fst modulesJS ++ initStaticPtrs ++ maybe [] runMain optionsMainModule) JSNoAnnot)
 
-  initStaticPtrs =
-    [ JSAssignStatement
-        (JSMemberSquare
-          (JSMemberDot (moduleReference lf "StaticPtr") JSNoAnnot (JSIdentifier JSNoAnnot "staticPtrTable"))
-          JSNoAnnot
-          (str (mn <> "." <> ident))
-          JSNoAnnot)
-        (JSAssign sp)
-        (JSMemberDot (moduleReference sp mn) JSNoAnnot (JSIdentifier JSNoAnnot ident))
-        (JSSemi JSNoAnnot)
-    | Module (ModuleIdentifier mn _) _ elements <- ms
+  initStaticPtrs
+    | hasDerefStaticPtr =
+      [ JSAssignStatement
+          (JSMemberSquare
+            (JSMemberDot (moduleReference lf "StaticPtr") JSNoAnnot (JSIdentifier JSNoAnnot "staticPtrTable"))
+            JSNoAnnot
+            (str (mn <> "." <> ident))
+            JSNoAnnot)
+          (JSAssign sp)
+          (JSMemberDot (moduleReference sp mn) JSNoAnnot (JSIdentifier JSNoAnnot ident))
+          (JSSemi JSNoAnnot)
+      | Module (ModuleIdentifier mn _) _ elements <- ms
+      , ExportsList exports <- elements
+      , (_, ident, _, _) <- exports
+      , "_static_" `isPrefixOf` ident
+      ]
+    | otherwise = []
+
+  hasDerefStaticPtr = not . null $
+    [ ()
+    | Module (ModuleIdentifier "StaticPtr" _) _ elements <- ms
     , ExportsList exports <- elements
-    , (_, ident, _, _) <- exports
-    , "_static_" `isPrefixOf` ident
+    , (_, "deref", _, _) <- exports
     ]
 
   sourceMapping :: String -> SourceMapping

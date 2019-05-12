@@ -1,0 +1,1 @@
+stack build && rm -rf output/{App,Widget,Client,Server} && stack exec -- purs compile 'tests/support/bower_components/*/src/**/*.purs' 'demo/*.purs' && stack exec -- purs bundle --main Server -m Server output/*/*.js | tee demo/server.js && node demo/server.js
