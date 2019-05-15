@@ -614,7 +614,7 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath) e = fl
       = let (sorted1, sorted2) = sortRows u1 u2
 
             sortRows :: Ord a => Type a -> Type a -> (Type a, Type a)
-            sortRows r1@RCons{} r2@RCons{} = sortRows' (rowToList r1) (rowToList r2)
+            sortRows r1@RowPrefix{} r2@RowPrefix{} = sortRows' (rowToList r1) (rowToList r2)
             sortRows t1 t2 = (t1, t2)
 
             -- Put the common labels last

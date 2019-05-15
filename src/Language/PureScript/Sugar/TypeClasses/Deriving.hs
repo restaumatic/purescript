@@ -675,7 +675,7 @@ objectType _ = Nothing
 
 decomposeRec :: SourceType -> Maybe [(Label, SourceType)]
 decomposeRec = fmap (sortBy (comparing fst)) . go
-  where go (RCons _ str typ typs) = fmap ((str, typ) :) (go typs)
+  where go (RowPrefix prefix typs) = fmap (map (_ ++)) (go typs)
         go (REmpty _) = Just []
         go _ = Nothing
 

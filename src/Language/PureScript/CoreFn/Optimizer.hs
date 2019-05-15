@@ -43,7 +43,7 @@ closedRecordFields (TypeApp _ (TypeConstructor _ C.Record) row) =
   where
     collect :: Type a -> Maybe [Label]
     collect (REmpty _) = Just []
-    collect (RCons _ l _ r) = collect r >>= return . (l :)
+    collect (RowPrefix p r) = (map fst (toList p) ++) <$> collect r
     collect _ = Nothing
 closedRecordFields _ = Nothing
 

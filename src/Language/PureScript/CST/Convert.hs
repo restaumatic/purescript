@@ -122,7 +122,7 @@ convertType fileName = go
         Nothing -> T.REmpty $ sourceAnnCommented fileName b b
       rowCons (Labeled a _ ty) c = do
         let ann = sourceAnnCommented fileName (lblTok a) (snd $ typeRange ty)
-        T.RCons ann (L.Label $ lblName a) (go ty) c
+        T.makeRCons ann (L.Label $ lblName a) (go ty) c
     case labels of
       Just (Separated h t) ->
         rowCons h $ foldr (rowCons . snd) rowTail t

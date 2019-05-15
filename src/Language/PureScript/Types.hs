@@ -16,7 +16,7 @@ import Protolude (ordNub)
 import Control.Applicative ((<|>))
 import Control.Arrow (first)
 import Control.DeepSeq (NFData)
-import Control.Monad ((<=<))
+import Control.Monad ((<=<), (>=>))
 import Data.Aeson ((.:), (.=))
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
@@ -25,6 +25,7 @@ import Data.List (sortBy)
 import Data.Ord (comparing)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
+import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import GHC.Generics (Generic)
 
@@ -75,7 +76,7 @@ data Type a
   -- | An empty row
   | REmpty a
   -- | A non-empty row
-  | RCons a Label (Type a) (Type a)
+  | RowPrefix (M.Map Label (a, Type a)) (Type a)
   -- | A type with a kind annotation
   | KindedType a (Type a) (Kind a)
   -- | Binary operator application. During the rebracketing phase of desugaring,
@@ -88,6 +89,12 @@ data Type a
   -- since it prevents certain traversals from matching.
   | ParensInType a (Type a)
   deriving (Show, Generic, Functor, Foldable, Traversable)
+
+makeRCons :: a -> Label -> Type a -> Type a -> Type a
+makeRCons ann label type_ (RowPrefix prefix rest)
+  = RowPrefix (M.insert label (ann, type_) prefix) rest
+makeRCons ann label type_ rest
+  = RowPrefix (M.singleton label (ann, type_)) rest
 
 instance NFData a => NFData (Type a)
 
@@ -125,7 +132,7 @@ srcREmpty :: SourceType
 srcREmpty = REmpty NullSourceAnn
 
 srcRCons :: Label -> SourceType -> SourceType -> SourceType
-srcRCons = RCons NullSourceAnn
+srcRCons = makeRCons NullSourceAnn
 
 srcKindedType :: SourceType -> SourceKind -> SourceType
 srcKindedType = KindedType NullSourceAnn
@@ -213,8 +220,8 @@ typeToJSON annToJSON ty =
       variant "Skolem" a (b, c, d)
     REmpty a ->
       nullary "REmpty" a
-    RCons a b c d ->
-      variant "RCons" a (b, go c, go d)
+    RowPrefix p r -> error "FIXME: convert to RCons"
+--      variant "RCons" a (b, go c, go d)
     KindedType a b c ->
       variant "KindedType" a (go b, kindToJSON annToJSON c)
     BinaryNoParensType a b c d ->
@@ -305,7 +312,7 @@ typeFromJSON defaultAnn annFromJSON = A.withObject "Type" $ \o -> do
       pure $ REmpty a
     "RCons" -> do
       (b, c, d) <- contents
-      RCons a b <$> go c <*> go d
+      makeRCons a b <$> go c <*> go d
     "KindedType" -> do
       (b, c) <- contents
       KindedType a <$> go b <*> kindFromJSON defaultAnn annFromJSON c
@@ -356,17 +363,16 @@ srcRowListItem = RowListItem NullSourceAnn
 -- | Convert a row to a list of pairs of labels and types
 rowToList :: Type a -> ([RowListItem a], Type a)
 rowToList = go where
-  go (RCons ann name ty row) =
-    first (RowListItem ann name ty :) (rowToList row)
+  go (RowPrefix prefix rest) = first (map (\(label, (ann, ty)) -> RowListItem ann label ty) (M.toList prefix) ++) (go rest)
   go r = ([], r)
 
 -- | Convert a row to a list of pairs of labels and types, sorted by the labels.
 rowToSortedList :: Type a -> ([RowListItem a], Type a)
-rowToSortedList = first (sortBy (comparing rowListLabel)) . rowToList
+rowToSortedList = rowToList
 
 -- | Convert a list of labels and types to a row
 rowFromList :: ([RowListItem a], Type a) -> Type a
-rowFromList (xs, r) = foldr (\(RowListItem ann name ty) -> RCons ann name ty) r xs
+rowFromList (xs, r) = foldr (\(RowListItem ann name ty) -> makeRCons ann name ty) r xs
 
 -- | Check whether a type is a monotype
 isMonoType :: Type a -> Bool
@@ -400,7 +406,7 @@ replaceAllTypeVars = go [] where
       keys = map fst m
       usedVars = concatMap (usedTypeVariables . snd) m
   go bs m (ConstrainedType ann c t) = ConstrainedType ann (mapConstraintArgs (map (go bs m)) c) (go bs m t)
-  go bs m (RCons ann name' t r) = RCons ann name' (go bs m t) (go bs m r)
+  go bs m (RowPrefix prefix r) = RowPrefix (fmap (fmap (go bs m)) prefix) (go bs m r)
   go bs m (KindedType ann t k) = KindedType ann (go bs m t) k
   go bs m (BinaryNoParensType ann t1 t2 t3) = BinaryNoParensType ann (go bs m t1) (go bs m t2) (go bs m t3)
   go bs m (ParensInType ann t) = ParensInType ann (go bs m t)
@@ -425,7 +431,7 @@ freeTypeVariables = ordNub . go [] where
   go bound (TypeApp _ t1 t2) = go bound t1 ++ go bound t2
   go bound (ForAll _ v _ t _) = go (v : bound) t
   go bound (ConstrainedType _ c t) = concatMap (go bound) (constraintArgs c) ++ go bound t
-  go bound (RCons _ _ t r) = go bound t ++ go bound r
+  go bound (RowPrefix prefix r) = foldMap (foldMap (go bound)) prefix ++ go bound r
   go bound (KindedType _ t _) = go bound t
   go bound (BinaryNoParensType _ t1 t2 t3) = go bound t1 ++ go bound t2 ++ go bound t3
   go bound (ParensInType _ t) = go bound t
@@ -461,7 +467,7 @@ everywhereOnTypes f = go where
   go (TypeApp ann t1 t2) = f (TypeApp ann (go t1) (go t2))
   go (ForAll ann arg mbK ty sco) = f (ForAll ann arg mbK (go ty) sco)
   go (ConstrainedType ann c ty) = f (ConstrainedType ann (mapConstraintArgs (map go) c) (go ty))
-  go (RCons ann name ty rest) = f (RCons ann name (go ty) (go rest))
+  go (RowPrefix prefix rest) = f (RowPrefix (fmap (fmap go) prefix) (go rest))
   go (KindedType ann ty k) = f (KindedType ann (go ty) k)
   go (BinaryNoParensType ann t1 t2 t3) = f (BinaryNoParensType ann (go t1) (go t2) (go t3))
   go (ParensInType ann t) = f (ParensInType ann (go t))
@@ -472,7 +478,7 @@ everywhereOnTypesTopDown f = go . f where
   go (TypeApp ann t1 t2) = TypeApp ann (go (f t1)) (go (f t2))
   go (ForAll ann arg mbK ty sco) = ForAll ann arg mbK (go (f ty)) sco
   go (ConstrainedType ann c ty) = ConstrainedType ann (mapConstraintArgs (map (go . f)) c) (go (f ty))
-  go (RCons ann name ty rest) = RCons ann name (go (f ty)) (go (f rest))
+  go (RowPrefix prefix rest) = RowPrefix (fmap (fmap (go . f)) prefix) (go (f rest))
   go (KindedType ann ty k) = KindedType ann (go (f ty)) k
   go (BinaryNoParensType ann t1 t2 t3) = BinaryNoParensType ann (go (f t1)) (go (f t2)) (go (f t3))
   go (ParensInType ann t) = ParensInType ann (go (f t))
@@ -483,7 +489,7 @@ everywhereOnTypesM f = go where
   go (TypeApp ann t1 t2) = (TypeApp ann <$> go t1 <*> go t2) >>= f
   go (ForAll ann arg mbK ty sco) = (ForAll ann arg mbK <$> go ty <*> pure sco) >>= f
   go (ConstrainedType ann c ty) = (ConstrainedType ann <$> overConstraintArgs (mapM go) c <*> go ty) >>= f
-  go (RCons ann name ty rest) = (RCons ann name <$> go ty <*> go rest) >>= f
+  go (RowPrefix prefix rest) = (RowPrefix <$> traverse (traverse go) prefix <*> go rest) >>= f
   go (KindedType ann ty k) = (KindedType ann <$> go ty <*> pure k) >>= f
   go (BinaryNoParensType ann t1 t2 t3) = (BinaryNoParensType ann <$> go t1 <*> go t2 <*> go t3) >>= f
   go (ParensInType ann t) = (ParensInType ann <$> go t) >>= f
@@ -494,7 +500,7 @@ everywhereOnTypesTopDownM f = go <=< f where
   go (TypeApp ann t1 t2) = TypeApp ann <$> (f t1 >>= go) <*> (f t2 >>= go)
   go (ForAll ann arg mbK ty sco) = ForAll ann arg mbK <$> (f ty >>= go) <*> pure sco
   go (ConstrainedType ann c ty) = ConstrainedType ann <$> overConstraintArgs (mapM (go <=< f)) c <*> (f ty >>= go)
-  go (RCons ann name ty rest) = RCons ann name <$> (f ty >>= go) <*> (f rest >>= go)
+  go (RowPrefix prefix rest) = RowPrefix <$> traverse (traverse (f >=> go)) prefix <*> (f rest >>= go)
   go (KindedType ann ty k) = KindedType ann <$> (f ty >>= go) <*> pure k
   go (BinaryNoParensType ann t1 t2 t3) = BinaryNoParensType ann <$> (f t1 >>= go) <*> (f t2 >>= go) <*> (f t3 >>= go)
   go (ParensInType ann t) = ParensInType ann <$> (f t >>= go)
@@ -505,7 +511,7 @@ everythingOnTypes (<+>) f = go where
   go t@(TypeApp _ t1 t2) = f t <+> go t1 <+> go t2
   go t@(ForAll _ _ _ ty _) = f t <+> go ty
   go t@(ConstrainedType _ c ty) = foldl (<+>) (f t) (map go (constraintArgs c)) <+> go ty
-  go t@(RCons _ _ ty rest) = f t <+> go ty <+> go rest
+  go t@(RowPrefix prefix rest) = foldl (<+>) (f t) (fmap (go . snd) prefix) <+> go rest
   go t@(KindedType _ ty _) = f t <+> go ty
   go t@(BinaryNoParensType _ t1 t2 t3) = f t <+> go t1 <+> go t2 <+> go t3
   go t@(ParensInType _ t1) = f t <+> go t1
@@ -517,7 +523,7 @@ everythingWithContextOnTypes s0 r0 (<+>) f = go' s0 where
   go s (TypeApp _ t1 t2) = go' s t1 <+> go' s t2
   go s (ForAll _ _ _ ty _) = go' s ty
   go s (ConstrainedType _ c ty) = foldl (<+>) r0 (map (go' s) (constraintArgs c)) <+> go' s ty
-  go s (RCons _ _ ty rest) = go' s ty <+> go' s rest
+-- FIXME!!!  go s (RowPrefix prefix rest) = go' s ty <+> go' s rest
   go s (KindedType _ ty _) = go' s ty
   go s (BinaryNoParensType _ t1 t2 t3) = go' s t1 <+> go' s t2 <+> go' s t3
   go s (ParensInType _ t1) = go' s t1
@@ -535,7 +541,7 @@ annForType k (ForAll a b c d e) = (\z -> ForAll z b c d e) <$> k a
 annForType k (ConstrainedType a b c) = (\z -> ConstrainedType z b c) <$> k a
 annForType k (Skolem a b c d) = (\z -> Skolem z b c d) <$> k a
 annForType k (REmpty a) = REmpty <$> k a
-annForType k (RCons a b c d) = (\z -> RCons z b c d) <$> k a
+-- annForType k (RowPrefix a b c d) = (\z -> RCons z b c d) <$> k a -- FIXME
 annForType k (KindedType a b c) = (\z -> KindedType z b c) <$> k a
 annForType k (BinaryNoParensType a b c d) = (\z -> BinaryNoParensType z b c d) <$> k a
 annForType k (ParensInType a b) = (\z -> ParensInType z b) <$> k a
@@ -564,7 +570,7 @@ eqType (ForAll _ a b c d) (ForAll _ a' b' c' d') = a == a' && eqMaybeKind b b' &
 eqType (ConstrainedType _ a b) (ConstrainedType _ a' b') = eqConstraint a a' && eqType b b'
 eqType (Skolem _ a b c) (Skolem _ a' b' c') = a == a' && b == b' && c == c'
 eqType (REmpty _) (REmpty _) = True
-eqType (RCons _ a b c) (RCons _ a' b' c') = a == a' && eqType b b' && eqType c c'
+eqType (RowPrefix a b) (RowPrefix a' b') = all (\((_, (_, t)), (_, (_, t'))) -> eqType t t') (zip (M.toList a) (M.toList a')) && eqType b b'
 eqType (KindedType _ a b) (KindedType _ a' b') = eqType a a' && eqKind b b'
 eqType (BinaryNoParensType _ a b c) (BinaryNoParensType _ a' b' c') = eqType a a' && eqType b b' && eqType c c'
 eqType (ParensInType _ a) (ParensInType _ a') = eqType a a'
@@ -614,9 +620,11 @@ compareType (REmpty _) (REmpty _) = EQ
 compareType (REmpty _) _ = LT
 compareType _ (REmpty _) = GT
 
+{- FIXME
 compareType (RCons _ a b c) (RCons _ a' b' c') = compare a a' <> compareType b b' <> compareType c c'
 compareType (RCons {}) _ = LT
 compareType _ (RCons {}) = GT
+-}
 
 compareType (KindedType _ a b) (KindedType _ a' b') = compareType a a' <> compareKind b b'
 compareType (KindedType {}) _ = LT

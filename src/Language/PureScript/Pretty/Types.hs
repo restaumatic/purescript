@@ -78,7 +78,7 @@ convertPrettyPrintType = go
   go d (KindedType _ ty k) = PPKindedType (go (d-1) ty) (k $> ())
   go d (BinaryNoParensType _ ty1 ty2 ty3) = PPBinaryNoParensType (go (d-1) ty1) (go (d-1) ty2) (go (d-1) ty3)
   go d (ParensInType _ ty) = PPParensInType (go (d-1) ty)
-  go d ty@RCons{} = uncurry PPRow (goRow d ty)
+  go d ty@RowPrefix{} = uncurry PPRow (goRow d ty)
   go d (ForAll _ v mbK ty _) = goForAll d [(v, fmap ($> ()) mbK)] ty
   go d (TypeApp _ a b) = goTypeApp d a b
 
@@ -96,7 +96,7 @@ convertPrettyPrintType = go
   goTypeApp d (TypeApp _ f a) b
     | eqType f tyFunction = PPFunction (go (d-1) a) (go (d-1) b)
     | otherwise = PPTypeApp (goTypeApp d f a) (go (d-1) b)
-  goTypeApp d o ty@RCons{}
+  goTypeApp d o ty@RowPrefix{}
     | eqType o tyRecord = uncurry PPRecord (goRow d ty)
   goTypeApp d a b = PPTypeApp (go (d-1) a) (go (d-1) b)
 
