@@ -44,6 +44,7 @@ import qualified Language.PureScript.Make.BuildPlan as BuildPlan
 import           Language.PureScript.Make.Actions as Actions
 import           Language.PureScript.Make.Monad as Monad
 import qualified Language.PureScript.CoreFn as CF
+import qualified Language.PureScript.CoreFn.Transform.AlternateEntryPoints as CF
 import           System.Directory (doesFileExist)
 import           System.FilePath (replaceExtension)
 
@@ -76,9 +77,10 @@ rebuildModule MakeActions{..} externs m@(Module _ _ moduleName _ _) = do
   regrouped <- createBindingGroups moduleName . collapseBindingGroups $ deguarded
   let mod' = Module ss coms moduleName regrouped exps
       corefn = CF.moduleToCoreFn env' mod'
-      optimized = CF.optimizeCoreFn corefn
+      optimized = CF.optimizeCoreFn . CF.useAlternateEntryPoints externs . CF.generateAlternateEntryPoints externs $ corefn
       [renamed] = renameInModules [optimized]
       exts = moduleToExternsFile mod' env'
+      exts' = addGeneratedExports optimized exts
   ffiCodegen renamed
 
   -- It may seem more obvious to write `docs <- Docs.convertModule m env' here,
@@ -94,8 +96,20 @@ rebuildModule MakeActions{..} externs m@(Module _ _ moduleName _ _) = do
                  ++ "; details:\n" ++ prettyPrintMultipleErrors defaultPPEOptions errs
                Right d -> d
 
-  evalSupplyT nextVar' . codegen renamed docs . encode $ exts
-  return exts
+  evalSupplyT nextVar' . codegen renamed docs . encode $ exts'
+  return exts'
+
+addGeneratedExports :: CF.Module CF.Ann -> ExternsFile -> ExternsFile
+addGeneratedExports m externs =
+  let
+    existing = S.fromList $ mapMaybe fromValueExport (efExports externs)
+    new = filter (`S.notMember` existing) (CF.moduleExports m)
+  in
+    externs { efExports = efExports externs <> map (ValueRef (CF.moduleSourceSpan m)) new }
+
+  where
+    fromValueExport (ValueRef _ ident) = Just ident
+    fromValueExport _ = Nothing
 
 -- | Compiles in "make" mode, compiling each module separately to a @.js@ file and an @externs.json@ file.
 --

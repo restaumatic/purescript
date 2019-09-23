@@ -106,7 +106,7 @@ moduleToJs (Module _ coms mn _ imps exps foreigns decls) foreign_ =
   -- to the alternative
   importToJs :: M.Map ModuleName (Ann, ModuleName) -> ModuleName -> m AST
   importToJs mnLookup mn' = do
-    let ((ss, _, _, _), mnSafe) = fromMaybe (internalError "Missing value in mnLookup") $ M.lookup mn' mnLookup
+    let ((ss, _, _, _), mnSafe) = fromMaybe (internalError ("importToJs: Missing value in mnLookup: " <> T.unpack (runModuleName mn') <> " while compiling " <> T.unpack (runModuleName mn))) $ M.lookup mn' mnLookup
     let moduleBody = AST.App Nothing (AST.Var Nothing "require")
           [AST.StringLiteral Nothing (fromString (".." </> T.unpack (runModuleName mn') </> "index.js"))]
     withPos ss $ AST.VariableIntroduction Nothing (moduleNameToJs mnSafe) (Just moduleBody)
@@ -126,7 +126,9 @@ moduleToJs (Module _ coms mn _ imps exps foreigns decls) foreign_ =
     goBinder b = b
     renameQual :: Qualified a -> Qualified a
     renameQual (Qualified (Just mn') a) =
-      let (_,mnSafe) = fromMaybe (internalError "Missing value in mnLookup") $ M.lookup mn' mnLookup
+      let (_,mnSafe) = fromMaybe
+                         (internalError ("renameModules: Missing value in mnLookup: " <> T.unpack (runModuleName mn') <> " while compiling " <> T.unpack (runModuleName mn))) $
+                         M.lookup mn' mnLookup
       in Qualified (Just mnSafe) a
     renameQual q = q
 
