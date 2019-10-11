@@ -90,17 +90,6 @@ unifyTypes t1 t2 = do
   withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes' (substituteType sub t1) (substituteType sub t2)
   where
 
-  unifyTypes' (TypeApp _ ((==tyWrap)->True) (TypeApp _ t3 t4))
-              (TypeApp _ ((==tyWrap)->True) (TypeApp _ t5 t6)) = do
-    t3 `unifyTypes` t5
-    t4 `unifyTypes` t6
-  unifyTypes' (TypeApp _ (TypeApp _ ((==tyWrap)->True) wrapper) t3) t4 = do
-    wrapper `unifyTypes` tyI
-    t3 `unifyTypes` t4
-  unifyTypes' t3 (TypeApp _ (TypeApp _ ((==tyWrap)->True) wrapper) t4) = do
-    wrapper `unifyTypes` tyI
-    t3 `unifyTypes` t4
-
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()
   unifyTypes' (TUnknown _ u) t = solveType u t
   unifyTypes' t (TUnknown _ u) = solveType u t
@@ -122,6 +111,18 @@ unifyTypes t1 t2 = do
   unifyTypes' ty1@(TypeConstructor _ c1) ty2@(TypeConstructor _ c2) =
     guardWith (errorMessage (TypesDoNotUnify ty1 ty2)) (c1 == c2)
   unifyTypes' (TypeLevelString _ s1) (TypeLevelString _ s2) | s1 == s2 = return ()
+
+  -- Wrap stuff
+  unifyTypes' (TypeApp _ ((==tyWrap)->True) (TypeApp _ t3 t4))
+              (TypeApp _ ((==tyWrap)->True) (TypeApp _ t5 t6)) = do
+    t3 `unifyTypes` t5
+    t4 `unifyTypes` t6
+  unifyTypes' (TypeApp _ (TypeApp _ ((==tyWrap)->True) wrapper) t3) t4 = do
+    wrapper `unifyTypes` tyI
+    t3 `unifyTypes` t4
+  unifyTypes' t3 (TypeApp _ (TypeApp _ ((==tyWrap)->True) wrapper) t4) = do
+    wrapper `unifyTypes` tyI
+    t3 `unifyTypes` t4
 
   unifyTypes' (TypeApp _ t3 t4) (TypeApp _ t5 t6) = do
     t3 `unifyTypes` t5
