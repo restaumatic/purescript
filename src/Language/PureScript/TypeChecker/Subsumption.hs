@@ -7,10 +7,12 @@ module Language.PureScript.TypeChecker.Subsumption
   ) where
 
 import Prelude.Compat
+import qualified Data.Text as Text
 
 import Control.Monad (when)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..))
+import GHC.Exts (fromString)
 
 import Data.Foldable (for_)
 import Data.List (uncons)
@@ -25,6 +27,8 @@ import Language.PureScript.TypeChecker.Monad
 import Language.PureScript.TypeChecker.Skolems
 import Language.PureScript.TypeChecker.Unify
 import Language.PureScript.Types
+import Language.PureScript.Pretty
+import Language.PureScript.Names (Ident(..), Qualified(..))
 
 -- | Subsumption can operate in two modes:
 --
@@ -122,6 +126,15 @@ subsumes' mode (TypeApp _ f1 r1) (TypeApp _ f2 r2) | eqType f1 tyRecord && eqTyp
     firstMissingProp t1 t2 = fst <$> uncons (minusBy' (comparing rowListLabel) t1 t2)
 subsumes' mode ty1 ty2@(TypeApp _ obj _) | obj == tyRecord =
   subsumes' mode ty2 ty1
+subsumes' mode ty1@(TypeApp _ (TypeApp _ ((==tyWrap)->True) _) _)
+               ty2@(TypeApp _ (TypeApp _ ((==tyWrap)->True) _) _) = do
+  unifyTypes ty1 ty2
+  -- Nothing was elaborated, return the default coercion
+  return (defaultCoercion mode)
+subsumes' SElaborate t1 (TypeApp _ (TypeApp _ ((==tyWrap)->True) wrapper@((==tyI)->False)) t2) = do
+  elaborate <- subsumes' SElaborate t1 t2
+  let pure' = App (Var nullSourceSpan (Qualified Nothing (Ident "pure"))) (Literal nullSourceSpan $ StringLiteral $ fromString $ Text.unpack $ Text.strip $ Text.pack $ prettyPrintType 0 wrapper)
+  return (App pure' . elaborate)
 subsumes' mode ty1 ty2 = do
   unifyTypes ty1 ty2
   -- Nothing was elaborated, return the default coercion
