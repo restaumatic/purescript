@@ -113,10 +113,10 @@ unifyTypes t1 t2 = do
   unifyTypes' (TypeLevelString _ s1) (TypeLevelString _ s2) | s1 == s2 = return ()
 
   -- Wrap stuff
-  unifyTypes' (TypeApp _ ((==tyWrap)->True) (TypeApp _ t3 t4))
-              (TypeApp _ ((==tyWrap)->True) (TypeApp _ t5 t6)) = do
-    t3 `unifyTypes` t5
-    t4 `unifyTypes` t6
+  unifyTypes' (TypeApp _ (TypeApp _ ((==tyWrap)->True) wrapper1) t3)
+              (TypeApp _ (TypeApp _ ((==tyWrap)->True) wrapper2) t4) = do
+    wrapper1 `unifyTypes` wrapper2
+    t3 `unifyTypes` t4
   unifyTypes' (TypeApp _ (TypeApp _ ((==tyWrap)->True) wrapper) t3) t4 = do
     wrapper `unifyTypes` tyI
     t3 `unifyTypes` t4
