@@ -828,8 +828,16 @@ checkFunctionApplication'
   -> m (SourceType, Expr)
 checkFunctionApplication' fn (TypeApp _ (TypeApp _ tyFunction' argTy) retTy) arg = do
   unifyTypes tyFunction' tyFunction
-  arg' <- tvToExpr <$> check arg argTy
-  return (retTy, App fn arg')
+  wrapper <- freshType
+  arg' <- tvToExpr <$> check arg
+    (TypeApp nullSourceAnn (TypeApp nullSourceAnn tyWrap wrapper) argTy)
+  subst <- gets checkSubstitution
+  let wrapper' = substituteType subst wrapper
+  let retTy' =
+        if wrapper' == tyI
+          then retTy
+          else TypeApp nullSourceAnn (TypeApp nullSourceAnn tyWrap wrapper') retTy
+  return (retTy', App fn arg')
 checkFunctionApplication' fn (ForAll _ ident _ ty _) arg = do
   replaced <- replaceVarWithUnknown ident ty
   checkFunctionApplication fn replaced arg
