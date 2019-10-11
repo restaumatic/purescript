@@ -315,6 +315,12 @@ kindRow = Row nullSourceAnn
 primTy :: Text -> SourceType
 primTy = TypeConstructor nullSourceAnn . primName
 
+tyWrap :: SourceType
+tyWrap = primTy "Wrap"
+
+tyI :: SourceType
+tyI = primTy "I"
+
 -- | Type constructor for functions
 tyFunction :: SourceType
 tyFunction = primTy "Function"
@@ -418,6 +424,8 @@ primTypes = M.fromList
   , (primName "Int",      (kindType, ExternData))
   , (primName "Boolean",  (kindType, ExternData))
   , (primName "Partial",  (kindConstraint, ExternData))
+  , (primName "Wrap",     ((kindType -:> kindType) -:> kindType -:> kindType, ExternData))
+  , (primName "I",        (kindType -:> kindType, ExternData))
   ]
 
 -- | This 'Map' contains all of the prim types from all Prim modules.
