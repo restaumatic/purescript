@@ -205,7 +205,7 @@ populateVolatileStateSTM ref = do
         & resolveInstances externs
         & resolveOperators
         & resolveReexports reexportRefs
-  setVolatileStateSTM ref (IdeVolatileState (AstData asts) (map reResolved results) rebuildCache)
+  setVolatileStateSTM ref (force (IdeVolatileState (AstData asts) (map reResolved results) rebuildCache))
   pure (force results)
 
 resolveLocations

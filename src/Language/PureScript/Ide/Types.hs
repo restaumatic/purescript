@@ -224,7 +224,7 @@ data IdeVolatileState = IdeVolatileState
   { vsAstData       :: !(AstData P.SourceSpan)
   , vsDeclarations  :: !(ModuleMap [IdeDeclarationAnn])
   , vsCachedRebuild :: !(Maybe (P.ModuleName, P.ExternsFile))
-  } deriving (Show)
+  } deriving (Show, Generic, NFData)
 
 newtype Match a = Match (P.ModuleName, a)
            deriving (Show, Eq, Functor)

@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 -- |
 -- This module generates code for \"externs\" files, i.e. files containing only
@@ -30,6 +31,8 @@ import Data.Version (showVersion)
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.List.NonEmpty as NEL
+import Control.DeepSeq (NFData)
+import GHC.Generics (Generic)
 
 import Language.PureScript.AST
 import Language.PureScript.Crash
@@ -59,7 +62,7 @@ data ExternsFile = ExternsFile
   -- ^ List of type and value declaration
   , efSourceSpan :: SourceSpan
   -- ^ Source span for error reporting
-  } deriving (Show)
+  } deriving (Show, Generic, NFData)
 
 -- | A module import in an externs file
 data ExternsImport = ExternsImport
@@ -70,7 +73,7 @@ data ExternsImport = ExternsImport
   , eiImportType :: ImportDeclarationType
   -- | The imported-as name, for qualified imports
   , eiImportedAs :: Maybe ModuleName
-  } deriving (Show)
+  } deriving (Show, Generic, NFData)
 
 -- | A fixity declaration in an externs file
 data ExternsFixity = ExternsFixity
@@ -83,7 +86,7 @@ data ExternsFixity = ExternsFixity
   , efOperator :: OpName 'ValueOpName
   -- | The value the operator is an alias for
   , efAlias :: Qualified (Either Ident (ProperName 'ConstructorName))
-  } deriving (Show)
+  } deriving (Show, Generic, NFData)
 
 -- | A type fixity declaration in an externs file
 data ExternsTypeFixity = ExternsTypeFixity
@@ -96,7 +99,7 @@ data ExternsTypeFixity = ExternsTypeFixity
   , efTypeOperator :: OpName 'TypeOpName
   -- | The value the operator is an alias for
   , efTypeAlias :: Qualified (ProperName 'TypeName)
-  } deriving (Show)
+  } deriving (Show, Generic, NFData)
 
 -- | A type or value declaration appearing in an externs file
 data ExternsDeclaration =
@@ -147,7 +150,7 @@ data ExternsDeclaration =
   | EDKind
       { edKindName                :: ProperName 'KindName
       }
-  deriving Show
+  deriving (Show, Generic, NFData)
 
 -- | Convert an externs file back into a module
 applyExternsFileToEnvironment :: ExternsFile -> Environment -> Environment
