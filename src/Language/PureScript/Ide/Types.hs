@@ -189,8 +189,8 @@ data IdeEnvironment =
 type Ide m = (MonadIO m, MonadReader IdeEnvironment m)
 
 data IdeState = IdeState
-  { ideFileState     :: IdeFileState
-  , ideVolatileState :: IdeVolatileState
+  { ideFileState     :: !IdeFileState
+  , ideVolatileState :: !IdeVolatileState
   } deriving (Show)
 
 emptyIdeState :: IdeState
@@ -209,8 +209,8 @@ emptyVolatileState = IdeVolatileState (AstData M.empty) M.empty Nothing
 -- that we can update single modules or ExternsFiles inside this state whenever
 -- the corresponding entity changes on the file system.
 data IdeFileState = IdeFileState
-  { fsExterns :: ModuleMap P.ExternsFile
-  , fsModules :: ModuleMap (P.Module, FilePath)
+  { fsExterns :: !(ModuleMap P.ExternsFile)
+  , fsModules :: !(ModuleMap (P.Module, FilePath))
   } deriving (Show)
 
 -- | @IdeVolatileState@ is derived from the @IdeFileState@ and needs to be

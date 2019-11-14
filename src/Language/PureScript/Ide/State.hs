@@ -76,7 +76,7 @@ insertModule module' = do
 -- | STM version of insertModule
 insertModuleSTM :: TVar IdeState -> (FilePath, P.Module) -> STM ()
 insertModuleSTM ref (fp, module') =
-  modifyTVar ref $ \x ->
+  modifyTVar' ref $ \x ->
     x { ideFileState = (ideFileState x) {
           fsModules = Map.insert
             (P.getModuleName module')
@@ -108,7 +108,7 @@ getVolatileStateSTM st = ideVolatileState <$> readTVar st
 -- | Sets the VolatileState inside Ide's state
 setVolatileStateSTM :: TVar IdeState -> IdeVolatileState -> STM ()
 setVolatileStateSTM ref vs = do
-  modifyTVar ref $ \x ->
+  modifyTVar' ref $ \x ->
     x {ideVolatileState = vs}
   pure ()
 
@@ -150,7 +150,7 @@ insertExterns ef = do
 -- | STM version of insertExterns
 insertExternsSTM :: TVar IdeState -> ExternsFile -> STM ()
 insertExternsSTM ref ef =
-  modifyTVar ref $ \x ->
+  modifyTVar' ref $ \x ->
     x { ideFileState = (ideFileState x) {
           fsExterns = Map.insert (efModuleName ef) ef (fsExterns (ideFileState x))}}
 
@@ -158,7 +158,7 @@ insertExternsSTM ref ef =
 cacheRebuild :: Ide m => ExternsFile -> m ()
 cacheRebuild ef = do
   st <- ideStateVar <$> ask
-  liftIO . atomically . modifyTVar st $ \x ->
+  liftIO . atomically . modifyTVar' st $ \x ->
     x { ideVolatileState = (ideVolatileState x) {
           vsCachedRebuild = Just (efModuleName ef, ef)}}
 
