@@ -221,9 +221,9 @@ data IdeFileState = IdeFileState
 -- with open imports which is used to provide completions for module private
 -- declarations
 data IdeVolatileState = IdeVolatileState
-  { vsAstData       :: AstData P.SourceSpan
-  , vsDeclarations  :: ModuleMap [IdeDeclarationAnn]
-  , vsCachedRebuild :: Maybe (P.ModuleName, P.ExternsFile)
+  { vsAstData       :: !(AstData P.SourceSpan)
+  , vsDeclarations  :: !(ModuleMap [IdeDeclarationAnn])
+  , vsCachedRebuild :: !(Maybe (P.ModuleName, P.ExternsFile))
   } deriving (Show)
 
 newtype Match a = Match (P.ModuleName, a)
