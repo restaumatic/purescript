@@ -14,6 +14,7 @@ import qualified Control.Arrow as A
 
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
+import Data.String (fromString)
 import qualified Data.Text as T
 
 import Language.PureScript.AST (SourceSpan(..))
@@ -118,6 +119,17 @@ literals = mkPattern' match'
     [ return $ emit "\n"
     , mconcat <$> forM com comment
     , prettyPrintJS' js
+    ]
+  match (Import _ ident filename) = return $ emit $ "import * as " <> ident <> " from " <> prettyPrintStringJS (fromString $ T.unpack filename)
+  match (Export _ exps) = mconcat <$> sequence
+    [ return $ emit "export { "
+    , return $ emit $ intercalate ", " exps
+    , return $ emit " }"
+    ]
+  match (Reexport _ exps filename) = mconcat <$> sequence
+    [ return $ emit "export { "
+    , return $ emit $ intercalate ", " exps
+    , return $ emit $ " } from " <> prettyPrintStringJS (fromString $ T.unpack filename)
     ]
   match _ = mzero
 

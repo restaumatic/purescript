@@ -6,6 +6,7 @@ import Prelude.Compat
 import Control.Monad ((>=>))
 import Control.Monad.Identity (Identity(..), runIdentity)
 import Data.Text (Text)
+import Data.Bifunctor (second)
 
 import Language.PureScript.AST (SourceSpan(..))
 import Language.PureScript.Comments
@@ -92,7 +93,14 @@ data AST
   -- ^ instanceof check
   | Comment (Maybe SourceSpan) [Comment] AST
   -- ^ Commented JavaScript
+  | Import (Maybe SourceSpan) Text Text
+  -- ^ ES6 `import * as ... from ...` statement
+  | Export (Maybe SourceSpan) [Text]
+  -- ^ ES6 export statement
+  | Reexport (Maybe SourceSpan) [Text] Text
+  -- ^ ES6 `export ... from` statement
   deriving (Show, Eq)
+
 
 withSourceSpan :: SourceSpan -> AST -> AST
 withSourceSpan withSpan = go where
@@ -123,6 +131,9 @@ withSourceSpan withSpan = go where
   go (Throw _ js) = Throw ss js
   go (InstanceOf _ j1 j2) = InstanceOf ss j1 j2
   go (Comment _ com j) = Comment ss com j
+  go (Import _ x y) = Import ss x y
+  go (Export _ x) = Export ss x
+  go (Reexport _ x y) = Reexport ss x y
 
 getSourceSpan :: AST -> Maybe SourceSpan
 getSourceSpan = go where
@@ -150,6 +161,9 @@ getSourceSpan = go where
   go (Throw ss _) = ss
   go (InstanceOf ss _ _) = ss
   go (Comment ss _ _) = ss
+  go (Import ss _ _) = ss
+  go (Export ss _) = ss
+  go (Reexport ss _ _) = ss
 
 everywhere :: (AST -> AST) -> AST -> AST
 everywhere f = go where
