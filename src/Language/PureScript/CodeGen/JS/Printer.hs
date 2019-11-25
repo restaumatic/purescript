@@ -127,9 +127,7 @@ literals = mkPattern' match'
     , return $ emit " }"
     ]
   match (Reexport _ exps filename) = mconcat <$> sequence
-    [ return $ emit "export { "
-    , return $ emit $ intercalate ", " exps
-    , return $ emit $ " } from " <> prettyPrintStringJS (fromString $ T.unpack filename)
+    [ return $ emit $ "export * from " <> prettyPrintStringJS (fromString $ T.unpack filename)
     ]
   match _ = mzero
 
