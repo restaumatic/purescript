@@ -26,6 +26,7 @@ import Language.PureScript.Sugar.Operators as S
 import Language.PureScript.Sugar.TypeClasses as S
 import Language.PureScript.Sugar.TypeClasses.Deriving as S
 import Language.PureScript.Sugar.TypeDeclarations as S
+import Language.PureScript.Sugar.Accessor as S
 
 -- |
 -- The desugaring pipeline proceeds as follows:
@@ -61,6 +62,7 @@ desugar
 desugar env externs =
   map desugarSignedLiterals
     >>> traverse desugarObjectConstructors
+    >>> fmap (map desugarAccessorModule)
     >=> traverse desugarDoModule
     >=> traverse desugarAdoModule
     >=> map desugarLetPatternModule
