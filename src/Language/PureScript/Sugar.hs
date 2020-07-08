@@ -62,7 +62,7 @@ desugar
 desugar env externs =
   map desugarSignedLiterals
     >>> traverse desugarObjectConstructors
-    >>> fmap (map desugarAccessorModule)
+    >>> fmap (map (desugarAccessorModule externs))
     >=> traverse desugarDoModule
     >=> traverse desugarAdoModule
     >=> map desugarLetPatternModule
