@@ -66,6 +66,9 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
       in NonRec (ssA ss) (properToIdent ctor) $ Constructor (ss, com, Nothing, Nothing) tyName ctor fields
   declToCoreFn (A.DataBindingGroupDeclaration ds) =
     concatMap declToCoreFn ds
+  declToCoreFn (A.ValueDecl (ss, com) name _ _ [A.MkUnguarded e])
+    | Just replacement <- M.lookup (mn, name) declarationReplacements =
+      [NonRec (ssA ss) name replacement]
   declToCoreFn (A.ValueDecl (ss, com) name _ _ [A.MkUnguarded e]) =
     [NonRec (ssA ss) name (exprToCoreFn ss com Nothing e)]
   declToCoreFn (A.BindingGroupDeclaration ds) =
@@ -259,3 +262,11 @@ mkTypeClassConstructor (ss, com) supers members =
 -- | Converts a ProperName to an Ident.
 properToIdent :: ProperName a -> Ident
 properToIdent = Ident . runProperName
+
+declarationReplacements :: M.Map (ModuleName, Ident) (Expr Ann)
+declarationReplacements = M.fromList
+  [ ((C.DataSymbol, Ident "reflectSymbol"), Abs noAnn (Ident "s") $ Abs noAnn UnusedIdent $ Var noAnn (Qualified Nothing (Ident "s")))
+  , ((C.DataSymbol, Ident "reifySymbol"),   Abs noAnn (Ident "s") $ Abs noAnn UnusedIdent $ Var noAnn (Qualified Nothing (Ident "s")))
+  ]
+
+  where noAnn = ssAnn nullSourceSpan
