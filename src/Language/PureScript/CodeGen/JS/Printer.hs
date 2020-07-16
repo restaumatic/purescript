@@ -170,6 +170,12 @@ lam = mkPattern match
   match (Function ss name args ret) = Just ((name, args, ss), ret)
   match _ = Nothing
 
+arrowlam :: Pattern PrinterState AST (([Text], Maybe SourceSpan), AST)
+arrowlam = mkPattern match
+  where
+  match (ArrowFunction ss args ret) = Just ((args, ss), ret)
+  match _ = Nothing
+
 app :: (Emit gen) => Pattern PrinterState AST (gen, AST)
 app = mkPattern' match
   where
@@ -242,7 +248,10 @@ prettyPrintJS' = A.runKleisli $ runPattern matchValue
                       emit ("function "
                         <> fromMaybe "" name
                         <> "(" <> intercalate ", " args <> ") ")
-                        <> ret ]
+                        <> ret
+                    , Wrap arrowlam $ \(args, ss) ret -> addMapping' ss <>
+                      emit ("(" <> intercalate ", " args <> ") => (") <> ret <> emit ")"
+                    ]
                   , [ unary     Not                  "!"
                     , unary     BitwiseNot           "~"
                     , unary     Positive             "+"

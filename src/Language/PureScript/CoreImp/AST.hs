@@ -64,6 +64,8 @@ data AST
   -- ^ An object literal
   | Function (Maybe SourceSpan) (Maybe Text) [Text] AST
   -- ^ A function introduction (optional name, arguments, body)
+  | ArrowFunction (Maybe SourceSpan) [Text] AST
+  -- ^ An arrow function introduction (arguments, body)
   | App (Maybe SourceSpan) AST [AST]
   -- ^ Function application
   | Var (Maybe SourceSpan) Text
