@@ -237,7 +237,8 @@ externToCoreFn _ = Nothing
 -- CoreFn modules only export values, so all data constructors, class
 -- constructor, instances and values are flattened into one list.
 exportToCoreFn :: A.DeclarationRef -> [Ident]
-exportToCoreFn (A.TypeRef _ _ (Just dctors)) = fmap properToIdent dctors
+exportToCoreFn (A.TypeRef _ _ _) = []
+exportToCoreFn (A.TypeOpRef _ _) = []
 exportToCoreFn (A.ValueRef _ name) = [name]
 exportToCoreFn (A.TypeClassRef _ name) = [properToIdent name]
 exportToCoreFn (A.TypeInstanceRef _ name) = [name]

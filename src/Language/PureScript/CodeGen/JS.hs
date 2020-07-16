@@ -143,6 +143,7 @@ moduleToJs (Module _ coms mn _ imps exps foreigns decls) foreign_ =
   -- Generate code in the simplified JavaScript intermediate representation for a declaration
   --
   bindToJs :: Bind Ann -> m [AST]
+  bindToJs (NonRec _ _ (Constructor _ _ _ _)) = return []
   bindToJs (NonRec ann ident val) = return <$> nonRecToJS ann ident val
   bindToJs (Rec vals) = forM vals (uncurry . uncurry $ nonRecToJS)
 
@@ -192,10 +193,10 @@ moduleToJs (Module _ coms mn _ imps exps foreigns decls) foreign_ =
   valueToJs' :: Expr Ann -> m AST
   valueToJs' (Literal (pos, _, _, _) l) =
     rethrowWithPosition pos $ literalToValueJS pos l
-  valueToJs' (Var (_, _, _, Just (IsConstructor _ [])) name) =
-    return $ accessorString "value" $ qualifiedToJS id name
-  valueToJs' (Var (_, _, _, Just (IsConstructor _ _)) name) =
-    return $ accessorString "create" $ qualifiedToJS id name
+  valueToJs' (Var (pos, _, _, Just (IsConstructor _ [])) name) =
+    return $ AST.StringLiteral (Just pos) $ fromString $ T.unpack $ runIdent $ disqualify name
+  valueToJs' expr@(Var (_, _, _, Just (IsConstructor _ _)) _) =
+    appToJs expr []
   valueToJs' (Accessor _ prop val) =
     accessorString prop <$> valueToJs val
   valueToJs' (ObjectUpdate _ o ps) = do
@@ -221,13 +222,7 @@ moduleToJs (Module _ coms mn _ imps exps foreigns decls) foreign_ =
   valueToJs' e@App{} = do
     let (f, args) = unApp e []
     args' <- mapM valueToJs args
-    case f of
-      Var (_, _, _, Just IsNewtype) _ -> return (head args')
-      Var (_, _, _, Just (IsConstructor _ fields)) name | length args == length fields ->
-        return $ AST.Unary Nothing AST.New $ AST.App Nothing (qualifiedToJS id name) args'
-      Var (_, _, _, Just IsTypeClassConstructor) name ->
-        return $ AST.Unary Nothing AST.New $ AST.App Nothing (qualifiedToJS id name) args'
-      _ -> flip (foldl (\fn a -> AST.App Nothing fn [a])) args' <$> valueToJs f
+    appToJs f args'
     where
     unApp :: Expr Ann -> [Expr Ann] -> (Expr Ann, [Expr Ann])
     unApp (App _ val arg) args = unApp val (arg : args)
@@ -251,10 +246,8 @@ moduleToJs (Module _ coms mn _ imps exps foreigns decls) foreign_ =
                 AST.ObjectLiteral Nothing [("create",
                   AST.Function Nothing Nothing ["value"]
                     (AST.Block Nothing [AST.Return Nothing $ AST.Var Nothing "value"]))])
-  valueToJs' (Constructor _ _ ctor []) =
-    return $ iife (properToJs ctor) [ AST.Function Nothing (Just (properToJs ctor)) [] (AST.Block Nothing [])
-           , AST.Assignment Nothing (accessorString "value" (AST.Var Nothing (properToJs ctor)))
-                (AST.Unary Nothing AST.New $ AST.App Nothing (AST.Var Nothing (properToJs ctor)) []) ]
+  valueToJs' (Constructor _ _ _ []) =
+    internalError "valueToJs (Constructor _ _ _ []): shouldn't happen"
   valueToJs' (Constructor _ _ ctor fields) =
     let constructor =
           let body = [ AST.Assignment Nothing ((accessorString $ mkString $ identToJs f) (AST.Var Nothing "this")) (var f) | f <- fields ]
@@ -265,6 +258,22 @@ moduleToJs (Module _ coms mn _ imps exps foreigns decls) foreign_ =
     in return $ iife (properToJs ctor) [ constructor
                           , AST.Assignment Nothing (accessorString "create" (AST.Var Nothing (properToJs ctor))) createFn
                           ]
+
+  appToJs f args' =
+    case f of
+      Var (_, _, _, Just IsNewtype) _ -> return (head args')
+      Var (ss, _, _, Just (IsConstructor _ fields)) name -> do
+        let tag = AST.StringLiteral Nothing $ fromString $ T.unpack $ runIdent $ disqualify name
+        let extraArgs = do
+              n <- [1..]
+              let ident = T.pack $ "$" <> show n
+              pure (AST.Function Nothing Nothing [ident] . AST.Block Nothing . (:[]) . AST.Return Nothing, AST.Var Nothing ident)
+        let props = zipWith (\fieldName (transform, expr) -> (transform, (fromString $ T.unpack $ runIdent fieldName, expr)))
+              fields (map (id,) args' <> extraArgs)
+        return $ foldr ((.) . fst) id props $ AST.ObjectLiteral (Just ss) (("tag", tag) : map snd props)
+      Var (_, _, _, Just IsTypeClassConstructor) name ->
+        return $ AST.Unary Nothing AST.New $ AST.App Nothing (qualifiedToJS id name) args'
+      _ -> flip (foldl (\fn a -> AST.App Nothing fn [a])) args' <$> valueToJs f
 
   iife :: Text -> [AST] -> AST
   iife v exprs = AST.App Nothing (AST.Function Nothing Nothing [] (AST.Block Nothing $ exprs ++ [AST.Return Nothing $ AST.Var Nothing v])) []
@@ -375,8 +384,14 @@ moduleToJs (Module _ coms mn _ imps exps foreigns decls) foreign_ =
     js <- go (zip fields bs) done
     return $ case ctorType of
       ProductType -> js
+      SumType | [] <- fields ->
+        [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo (AST.Var Nothing varName) (AST.StringLiteral Nothing (fromString $ T.unpack $ runProperName $ disqualify ctor)))
+                  (AST.Block Nothing js)
+                  Nothing]
       SumType ->
-        [AST.IfElse Nothing (AST.InstanceOf Nothing (AST.Var Nothing varName) (qualifiedToJS (Ident . runProperName) ctor))
+        [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo
+                              (accessorString "tag" (AST.Var Nothing varName))
+                              (AST.StringLiteral Nothing (fromString $ T.unpack $ runProperName $ disqualify ctor)))
                   (AST.Block Nothing js)
                   Nothing]
     where
