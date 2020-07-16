@@ -267,7 +267,7 @@ moduleToJs (Module _ coms mn _ imps exps foreigns decls) foreign_ =
         let extraArgs = do
               n <- [1..]
               let ident = T.pack $ "$" <> show n
-              pure (AST.ArrowFunction Nothing [ident], AST.Var Nothing ident)
+              pure (AST.Function Nothing Nothing [ident] . AST.Block Nothing . (:[]) . AST.Return Nothing, AST.Var Nothing ident)
         let props = zipWith (\fieldName (transform, expr) -> (transform, (fromString $ T.unpack $ runIdent fieldName, expr)))
               fields (map (id,) args' <> extraArgs)
         return $ foldr ((.) . fst) id props $ AST.ObjectLiteral (Just ss) (("tag", tag) : map snd props)
