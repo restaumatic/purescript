@@ -12,6 +12,8 @@ module Language.PureScript.Make
 import           Prelude.Compat
 
 import           Control.Concurrent.Lifted as C
+import Control.Exception.Lifted (bracket_)
+import qualified System.Environment as Env
 import           Control.Monad hiding (sequence)
 import           Control.Monad.Error.Class (MonadError(..))
 import           Control.Monad.IO.Class
@@ -49,6 +51,7 @@ import           Language.PureScript.Make.Monad as Monad
 import qualified Language.PureScript.CoreFn as CF
 import           System.Directory (doesFileExist)
 import           System.FilePath (replaceExtension)
+import System.IO.Unsafe
 
 -- | Rebuild a single module.
 --
@@ -64,6 +67,12 @@ rebuildModule actions externs m = do
   env <- fmap fst . runWriterT $ foldM externsEnv primEnv externs
   rebuildModule' actions env externs m
 
+sem :: C.QSem
+sem = unsafePerformIO $ do
+  n <- read <$> Env.getEnv "PURS_JOBS"
+  C.newQSem n
+{-# NOINLINE sem #-}
+
 rebuildModule'
   :: forall m
    . (Monad m, MonadBaseControl IO m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
@@ -72,8 +81,9 @@ rebuildModule'
   -> [ExternsFile]
   -> Module
   -> m ExternsFile
-rebuildModule' MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) = do
-  progress $ CompilingModule moduleName
+rebuildModule' MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) = bracket_ (C.waitQSem sem) (C.signalQSem sem) $ do
+  liftBase $ putStrLn $ "Compile " <> show moduleName <> " start"
+--  progress $ CompilingModule moduleName
   let env = foldl' (flip applyExternsFileToEnvironment) initEnvironment externs
       withPrim = importPrim m
   lint withPrim
@@ -118,6 +128,7 @@ rebuildModule' MakeActions{..} exEnv externs m@(Module _ _ moduleName _ _) = do
                Right d -> d
 
   evalSupplyT nextVar' $ codegen renamed docs exts
+  liftBase $ putStrLn $ "Compile " <> show moduleName <> " end"
   return exts
 
 -- | Compiles in "make" mode, compiling each module separately to a @.js@ file and an @externs.cbor@ file.
