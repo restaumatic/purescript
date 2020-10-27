@@ -479,6 +479,9 @@ pattern DataSymbol = ModuleName "Data.Symbol"
 pattern IsSymbol :: Qualified (ProperName 'ClassName)
 pattern IsSymbol = Qualified (Just DataSymbol) (ProperName "IsSymbol")
 
+pattern IsSymbolIdent :: Qualified Ident
+pattern IsSymbolIdent = Qualified (Just DataSymbol) (Ident "IsSymbol")
+
 
 typ :: forall a. (IsString a) => a
 typ = "Type"
@@ -527,13 +530,22 @@ pattern SProxyType = Qualified (Just DataSymbol) (ProperName "SProxy")
 pattern SProxy :: Qualified (ProperName 'ConstructorName)
 pattern SProxy = Qualified (Just DataSymbol) (ProperName "SProxy")
 
+pattern SProxyIdent :: Qualified Ident
+pattern SProxyIdent = Qualified (Just DataSymbol) (Ident "SProxy")
+
 -- Data.Record
 
 pattern DataRecord :: ModuleName
 pattern DataRecord = ModuleName "Data.Record"
 
+pattern DataRecord_getField :: Qualified Ident
+pattern DataRecord_getField = Qualified (Just DataRecord) (Ident "getField")
+
+pattern DataRecord_hasFieldRecord :: Qualified Ident
+pattern DataRecord_hasFieldRecord = Qualified (Just DataRecord) (Ident "hasFieldRecord")
+
 getField :: Qualified Ident
-getField = Qualified (Just DataRecord) (Ident "getField")
+getField = DataRecord_getField
 
 prelude :: forall a. (IsString a) => a
 prelude = "Prelude"
