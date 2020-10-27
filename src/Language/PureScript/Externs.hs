@@ -14,6 +14,7 @@ module Language.PureScript.Externs
   , moduleToExternsFile
   , applyExternsFileToEnvironment
   , externsFileName
+  , currentVersion
   ) where
 
 import Prelude.Compat
