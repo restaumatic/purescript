@@ -161,11 +161,14 @@ data ExternsDeclaration =
 
 instance Serialise ExternsDeclaration
 
+currentVersion :: String
+currentVersion = showVersion Paths.version ++ "-restaumatic4"
+
 -- | Check whether the version in an externs file matches the currently running
 -- version.
 externsIsCurrentVersion :: ExternsFile -> Bool
 externsIsCurrentVersion ef =
-  T.unpack (efVersion ef) == showVersion Paths.version
+  T.unpack (efVersion ef) == currentVersion
 
 -- | Convert an externs file back into a module
 applyExternsFileToEnvironment :: ExternsFile -> Environment -> Environment
@@ -198,7 +201,7 @@ moduleToExternsFile :: Module -> Environment -> ExternsFile
 moduleToExternsFile (Module _ _ _ _ Nothing) _ = internalError "moduleToExternsFile: module exports were not elaborated"
 moduleToExternsFile (Module ss _ mn ds (Just exps)) env = ExternsFile{..}
   where
-  efVersion       = T.pack (showVersion Paths.version)
+  efVersion       = T.pack currentVersion
   efModuleName    = mn
   efExports       = exps
   efImports       = mapMaybe importDecl ds
