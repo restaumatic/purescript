@@ -27,6 +27,7 @@ import Language.PureScript.CoreImp.Optimizer.Blocks
 import Language.PureScript.CoreImp.Optimizer.Common
 import Language.PureScript.CoreImp.Optimizer.Inliner
 import Language.PureScript.CoreImp.Optimizer.MagicDo
+import Language.PureScript.CoreImp.Optimizer.MagicDoReader
 import Language.PureScript.CoreImp.Optimizer.TCO
 import Language.PureScript.CoreImp.Optimizer.Unused
 
@@ -40,6 +41,7 @@ optimize js = do
     untilFixedPoint (return . tidyUp) . tco . inlineST
       =<< untilFixedPoint (return . magicDoST)
       =<< untilFixedPoint (return . magicDoEff)
+      =<< untilFixedPoint (return . magicDoSpecularBuilder)
       =<< untilFixedPoint (return . magicDoEffect) js'
   where
     tidyUp :: AST -> AST
