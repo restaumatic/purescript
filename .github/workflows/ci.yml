@@ -57,7 +57,7 @@ jobs:
             os: ["ubuntu-latest"]
             image: haskell:9.2.5@sha256:2597b0e2458165a6635906204f7fac43c22e7d2a46aca1235a811194bb6cd419
           - os: ["macOS-11"]
-          - os: ["macos-13-arm64"]
+          - os: ["self-hosted", "macos", "ARM64"]
           - os: ["windows-2019"]
 
     runs-on: "${{ matrix.os }}"
