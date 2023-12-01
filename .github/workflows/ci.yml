@@ -2,9 +2,9 @@ name: "CI"
 
 on:
   push:
-    branches: ["master", "restaumatic"]
+    branches: ["master", "restaumatic", "restaumatic-arm64"]
   pull_request:
-    branches: ["master", "restaumatic"]
+    branches: ["master", "restaumatic", "restaumatic-arm64"]
     paths:
       - .github/workflows/**/*.yml
       - app/**/*
@@ -57,6 +57,7 @@ jobs:
             os: ["ubuntu-latest"]
             image: haskell:9.2.5@sha256:2597b0e2458165a6635906204f7fac43c22e7d2a46aca1235a811194bb6cd419
           - os: ["macOS-11"]
+          - os: ["macos-13-arm64"]
           - os: ["windows-2019"]
 
     runs-on: "${{ matrix.os }}"
