@@ -19,7 +19,6 @@ import Data.Aeson (FromJSON(..), FromJSONKey(..), Options(..), SumEncoding(..), 
 import Data.Aeson.TH (deriveJSON)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Int (Int64)
 
 import Language.PureScript.AST.SourcePos (SourcePos, pattern SourcePos)
 
@@ -87,7 +86,7 @@ data Ident
   -- |
   -- A generated name for an identifier
   --
-  | GenIdent (Maybe Text) Int64
+  | GenIdent (Maybe Text) Integer
   -- |
   -- A generated name used only for type-checking
   --

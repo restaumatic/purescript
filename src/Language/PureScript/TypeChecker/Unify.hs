@@ -93,10 +93,9 @@ solveType u t = rethrow (onErrorMessages withoutPosition) $ do
       }
 
 _instantiateKindMemo ::
-  (MonadState CheckState m, MonadError MultipleErrors m) =>
   (SourceType, SourceType) ->
   SourceType ->
-  m SourceType
+  TypeCheckM SourceType
 _instantiateKindMemo (t1, k1) k2 = do
   let key = (t1, k1, k2)
   cache <- gets instantiateKindCache
@@ -190,7 +189,7 @@ unifyTypes t1 t2 = do
 Common labels are identified and unified. Remaining labels and types are unified with a
 trailing row unification variable, if appropriate.
 -}
-unifyRows :: forall m. (MonadError MultipleErrors m, MonadState CheckState m) => SourceType -> SourceType -> m ()
+unifyRows :: SourceType -> SourceType -> TypeCheckM ()
 unifyRows r1 r2 = foldM_ (\_ (l, t1, t2) -> unifyTypesWithLabel l t1 t2) () matches *> uncurry unifyTails rest where
   unifyTypesWithLabel l t1 t2 = withErrorMessageHint (ErrorInRowLabel l) $ unifyTypes t1 t2
 
@@ -211,7 +210,7 @@ unifyRows r1 r2 = foldM_ (\_ (l, t1, t2) -> unifyTypesWithLabel l t1 t2) () matc
   unifyTails _ _ =
     throwError . errorMessage $ TypesDoNotUnify r1 r2
 
-elaborateKindMemo :: (MonadState CheckState m, MonadError MultipleErrors m) => SourceType -> m SourceType
+elaborateKindMemo :: SourceType -> TypeCheckM SourceType
 elaborateKindMemo t = do
   cache <- gets checkKindCache
   case M.lookup t cache of

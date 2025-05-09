@@ -908,7 +908,7 @@ check' val ty = do
   return $ TypedValue' True (elaborate val') ty
 
 
-deriveInstanceMemo :: (MonadState CheckState m, MonadError MultipleErrors m, MonadSupply m, MonadWriter MultipleErrors m) => SourceType -> Qualified (ProperName 'ClassName) -> InstanceDerivationStrategy -> m Expr
+deriveInstanceMemo :: SourceType -> Qualified (ProperName 'ClassName) -> InstanceDerivationStrategy -> TypeCheckM Expr
 deriveInstanceMemo t name strategy = do
   cache <- gets deriveInstancesCache
   let key = (t, name, strategy)
