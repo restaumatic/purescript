@@ -472,6 +472,7 @@ rowToList = go where
   go (RCons ann name ty row) =
     first (RowListItem ann name ty :) (rowToList row)
   go r = ([], r)
+{-# INLINE rowToList #-}
 
 -- | Convert a row to a list of pairs of labels and types, sorted by the labels.
 rowToSortedList :: Type a -> ([RowListItem a], Type a)
@@ -480,6 +481,7 @@ rowToSortedList = first (sortOn rowListLabel) . rowToList
 -- | Convert a list of labels and types to a row
 rowFromList :: ([RowListItem a], Type a) -> Type a
 rowFromList (xs, r) = foldr (\(RowListItem ann name ty) -> RCons ann name ty) r xs
+{-# INLINE rowFromList #-}
 
 -- | Align two rows of types, splitting them into three parts:
 --

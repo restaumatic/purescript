@@ -9,7 +9,6 @@ import Data.Monoid (Any(..))
 
 import           Control.Monad.Writer
 
-import           Data.Monoid (Any(..))
 
 import           Language.PureScript.AST
 import Language.PureScript.Constants.Libs qualified as C

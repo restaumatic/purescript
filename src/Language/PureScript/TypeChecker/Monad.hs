@@ -22,7 +22,7 @@ import Data.List.NonEmpty qualified as NEL
 
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (Environment(..), NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..))
-import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition)
+import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition, InstanceDerivationStrategy)
 import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName)
 import Language.PureScript.Pretty.Types (prettyPrintType)
 import Language.PureScript.Pretty.Values (prettyPrintValue)
@@ -47,11 +47,11 @@ instance Ord UnkLevel where
 
 -- | A substitution of unification variables for types.
 data Substitution = Substitution
-  { substType :: M.Map Int SourceType
+  { substType :: !(M.Map Int SourceType)
   -- ^ Type substitution
-  , substUnsolved :: M.Map Int (UnkLevel, SourceType)
+  , substUnsolved :: !(M.Map Int (UnkLevel, SourceType))
   -- ^ Unsolved unification variables with their level (scope ordering) and kind
-  , substNames :: M.Map Int Text
+  , substNames :: !(M.Map Int Text)
   -- ^ The original names of unknowns
   }
 
@@ -71,6 +71,12 @@ lookupUnkName u = gets $ M.lookup u . substNames . checkSubstitution
 -- | An empty substitution
 emptySubstitution :: Substitution
 emptySubstitution = Substitution M.empty M.empty M.empty
+
+type Kind = SourceType
+
+type KindInstantiationKey = (SourceType, SourceType, SourceType)
+
+type InstantiateKindCache = M.Map KindInstantiationKey SourceType
 
 -- | State required for type checking
 data CheckState = CheckState
@@ -96,7 +102,7 @@ data CheckState = CheckState
   -- Newtype constructors have to be in scope for some Coercible constraints to
   -- be solvable, so we need to know which constructors are imported and whether
   -- they are actually defined in or re-exported from the imported modules.
-  , checkSubstitution :: Substitution
+  , checkSubstitution :: {-# UNPACK #-} !Substitution
   -- ^ The current substitution
   , checkHints :: [ErrorMessageHint]
   -- ^ The current error message hint stack.
@@ -106,11 +112,14 @@ data CheckState = CheckState
   , checkConstructorImportsForCoercible :: S.Set (ModuleName, Qualified (ProperName 'ConstructorName))
   -- ^ Newtype constructors imports required to solve Coercible constraints.
   -- We have to keep track of them so that we don't emit unused import warnings.
+  , checkKindCache :: M.Map SourceType Kind
+  , instantiateKindCache :: InstantiateKindCache
+  , deriveInstancesCache :: M.Map (SourceType, Qualified (ProperName 'ClassName), InstanceDerivationStrategy) Expr 
   }
 
 -- | Create an empty @CheckState@
 emptyCheckState :: Environment -> CheckState
-emptyCheckState env = CheckState env 0 0 0 Nothing [] emptySubstitution [] mempty
+emptyCheckState env = CheckState env 0 0 0 Nothing [] emptySubstitution [] mempty M.empty M.empty M.empty
 
 -- | Unification variables
 type Unknown = Int

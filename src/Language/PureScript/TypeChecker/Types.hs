@@ -29,7 +29,7 @@ import Protolude (ordNub, fold, atMay)
 import Control.Arrow (first, second, (***))
 import Control.Monad (forM, forM_, guard, replicateM, unless, when, zipWithM, (<=<))
 import Control.Monad.Error.Class (MonadError(..))
-import Control.Monad.State.Class (MonadState(..), gets)
+import Control.Monad.State.Class (MonadState(..), gets, modify)
 import Control.Monad.Supply.Class (MonadSupply)
 import Control.Monad.Writer.Class (MonadWriter(..))
 
@@ -871,7 +871,7 @@ check' e@(Literal ss (ObjectLiteral ps)) t@(TypeApp _ obj row) | obj == tyRecord
   ps' <- checkProperties e ps row False
   return $ TypedValue' True (Literal ss (ObjectLiteral ps')) t
 check' (DerivedInstancePlaceholder name strategy) t = do
-  d <- deriveInstance t name strategy
+  d <- deriveInstanceMemo t name strategy
   d' <- tvToExpr <$> check' d t
   return $ TypedValue' True d' t
 check' e@(ObjectUpdate obj ps) t@(TypeApp _ o row) | o == tyRecord = do
@@ -911,6 +911,18 @@ check' val ty = do
   TypedValue' _ val' ty' <- infer val
   elaborate <- subsumes ty' ty
   return $ TypedValue' True (elaborate val') ty
+
+
+deriveInstanceMemo :: (MonadState CheckState m, MonadError MultipleErrors m, MonadSupply m, MonadWriter MultipleErrors m) => SourceType -> Qualified (ProperName 'ClassName) -> InstanceDerivationStrategy -> m Expr
+deriveInstanceMemo t name strategy = do
+  cache <- gets deriveInstancesCache
+  let key = (t, name, strategy)
+  case M.lookup key cache of
+    Just k -> pure k
+    Nothing -> do
+      k <- deriveInstance t name strategy
+      modify (\cs -> cs { deriveInstancesCache = M.insert key k (deriveInstancesCache cs) })
+      pure k
 
 -- |
 -- Check the type of a collection of named record fields

@@ -462,7 +462,7 @@ pattern TypeFixityDeclaration sa fixity name op = FixityDeclaration sa (Right (T
 data InstanceDerivationStrategy
   = KnownClassStrategy
   | NewtypeStrategy
-  deriving (Show, Generic, NFData)
+  deriving (Show, Generic, NFData, Eq, Ord)
 
 -- | The members of a type class instance declaration
 data TypeInstanceBody
