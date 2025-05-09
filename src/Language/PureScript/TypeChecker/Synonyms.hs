@@ -14,7 +14,7 @@ import Prelude
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State (MonadState)
 import Data.Maybe (fromMaybe)
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.Text (Text)
 import Language.PureScript.Environment (Environment(..), TypeKind)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), SourceSpan, errorMessage')
@@ -23,9 +23,9 @@ import Language.PureScript.TypeChecker.Monad (CheckState, getEnv)
 import Language.PureScript.Types (SourceType, Type(..), completeBinderList, everywhereOnTypesTopDownM, getAnnForType, replaceAllTypeVars)
 
 -- | Type synonym information (arguments with kinds, aliased type), indexed by name
-type SynonymMap = M.Map (Qualified (ProperName 'TypeName)) ([(Text, Maybe SourceType)], SourceType)
+type SynonymMap = M.HashMap (Qualified (ProperName 'TypeName)) ([(Text, Maybe SourceType)], SourceType)
 
-type KindMap = M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+type KindMap = M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
 
 replaceAllTypeSynonyms'
   :: SynonymMap

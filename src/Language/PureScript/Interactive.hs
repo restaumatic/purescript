@@ -15,6 +15,7 @@ import Protolude (ordNub)
 import Data.List (sort, find, foldl')
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Map qualified as M
+import Data.HashMap.Strict qualified as HM
 import Data.Set qualified as S
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -273,7 +274,7 @@ handleTypeOf print' val = do
   case e of
     Left errs -> printErrors errs
     Right (_, env') ->
-      case M.lookup (P.mkQualified (P.Ident "it") (P.ModuleName "$PSCI")) (P.names env') of
+      case HM.lookup (P.mkQualified (P.Ident "it") (P.ModuleName "$PSCI")) (P.names env') of
         Just (ty, _, _) -> print' . P.prettyPrintType maxBound $ ty
         Nothing -> print' "Could not find type"
 
@@ -291,7 +292,7 @@ handleKindOf print' typ = do
   case e of
     Left errs -> printErrors errs
     Right (_, env') ->
-      case M.lookup (P.Qualified (P.ByModuleName mName) $ P.ProperName "IT") (P.typeSynonyms env') of
+      case HM.lookup (P.Qualified (P.ByModuleName mName) $ P.ProperName "IT") (P.typeSynonyms env') of
         Just (_, typ') -> do
           let chk = (P.emptyCheckState env') { P.checkCurrentModule = Just mName }
               k   = check (snd <$> P.kindOf typ') chk

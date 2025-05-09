@@ -10,13 +10,15 @@ import Prelude hiding (fail)
 import Data.Functor (($>))
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Map qualified as Map
+import Data.HashMap.Strict qualified as Map
 import Language.PureScript.Docs.Types (Declaration(..), DeclarationInfo(..), Module(..), Type', convertFundepsToStrings)
 
 import Language.PureScript.Constants.Prim qualified as P
 import Language.PureScript.Crash qualified as P
 import Language.PureScript.Environment qualified as P
 import Language.PureScript.Names qualified as P
+import Data.Hashable (Hashable)
+import Data.Map qualified as M
 
 primModules :: [Module]
 primModules =
@@ -161,13 +163,28 @@ primTypeErrorDocsModule = Module
 
 unsafeLookup
   :: forall v (a :: P.ProperNameType)
-  . Map.Map (P.Qualified (P.ProperName a)) v
+  . Hashable (P.ProperName a)
+  => Map.HashMap (P.Qualified (P.ProperName a)) v
   -> String
   -> P.Qualified (P.ProperName a)
   -> v
 unsafeLookup m errorMsg name = go name
   where
   go = fromJust' . flip Map.lookup m
+
+  fromJust' (Just x) = x
+  fromJust' _ = P.internalError $ errorMsg ++ show (P.runProperName $ P.disqualify name)
+
+unsafeLookupC
+  :: forall v (a :: P.ProperNameType)
+  . Ord (P.ProperName a)
+  => M.Map (P.Qualified (P.ProperName a)) v
+  -> String
+  -> P.Qualified (P.ProperName a)
+  -> v
+unsafeLookupC m errorMsg name = go name
+  where
+  go = fromJust' . flip M.lookup m
 
   fromJust' (Just x) = x
   fromJust' _ = P.internalError $ errorMsg ++ show (P.runProperName $ P.disqualify name)
@@ -197,7 +214,7 @@ primType tn comments = Declaration
 -- | Lookup the TypeClassData of a Prim class. This function is specifically
 -- not exported because it is partial.
 lookupPrimClass :: P.Qualified (P.ProperName 'P.ClassName) -> P.TypeClassData
-lookupPrimClass = unsafeLookup
+lookupPrimClass = unsafeLookupC
   ( P.primClasses <>
     P.primCoerceClasses <>
     P.primRowClasses <>

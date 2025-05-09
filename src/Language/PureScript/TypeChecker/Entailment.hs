@@ -27,7 +27,7 @@ import Data.Function (on)
 import Data.Functor (($>), (<&>))
 import Data.List (delete, findIndices, minimumBy, nubBy, sortOn, tails)
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.Set qualified as S
 import Data.Traversable (for)
 import Data.Text (Text, stripPrefix, stripSuffix)
@@ -53,6 +53,9 @@ import Language.PureScript.Label (Label(..))
 import Language.PureScript.PSString (PSString, mkString, decodeString)
 import Language.PureScript.Constants.Libs qualified as C
 import Language.PureScript.Constants.Prim qualified as C
+import Data.Foldable qualified as Foldable
+import Data.Hashable (Hashable)
+import Data.Map qualified as Map
 
 -- | Describes what sort of dictionary to generate for type class instances
 data Evidence
@@ -94,21 +97,21 @@ namedInstanceIdentifier _ = Nothing
 type TypeClassDict = TypeClassDictionaryInScope Evidence
 
 -- | The 'InstanceContext' tracks those constraints which can be satisfied.
-type InstanceContext = M.Map QualifiedBy
-                         (M.Map (Qualified (ProperName 'ClassName))
-                           (M.Map (Qualified Ident) (NonEmpty NamedDict)))
+type InstanceContext = Map.Map QualifiedBy
+                         (Map.Map (Qualified (ProperName 'ClassName))
+                           (Map.Map (Qualified Ident) (NonEmpty NamedDict)))
 
 findDicts :: InstanceContext -> Qualified (ProperName 'ClassName) -> QualifiedBy -> [TypeClassDict]
-findDicts ctx cn = fmap (fmap NamedInstance) . foldMap NEL.toList . foldMap M.elems . (M.lookup cn <=< flip M.lookup ctx)
+findDicts ctx cn = fmap (fmap NamedInstance) . foldMap NEL.toList . foldMap Map.elems . (Map.lookup cn <=< flip Map.lookup ctx)
 
 -- | A type substitution which makes an instance head match a list of types.
 --
 -- Note: we store many types per type variable name. For any name, all types
 -- should unify if we are going to commit to an instance.
-type Matching a = M.Map Text a
+type Matching a = M.HashMap Text a
 
 combineContexts :: InstanceContext -> InstanceContext -> InstanceContext
-combineContexts = M.unionWith (M.unionWith (M.unionWith (<>)))
+combineContexts = Map.unionWith (Map.unionWith (Map.unionWith (<>)))
 
 -- | Replace type class dictionary placeholders with inferred type class dictionaries
 replaceTypeClassDictionaries
@@ -117,7 +120,7 @@ replaceTypeClassDictionaries
   => Bool
   -> Expr
   -> m (Expr, [(Ident, InstanceContext, SourceConstraint)])
-replaceTypeClassDictionaries shouldGeneralize expr = flip evalStateT M.empty $ do
+replaceTypeClassDictionaries shouldGeneralize expr = flip evalStateT Map.empty $ do
     -- Loop, deferring any unsolved constraints, until there are no more
     -- constraints which can be solved, then make a generalization pass.
     let loop e = do
@@ -258,7 +261,7 @@ entails SolverOptions{..} constraint context hints =
               , typeClassIsEmpty
               , typeClassCoveringSets
               , typeClassMembers 
-              } <- case M.lookup className' classesInScope of
+              } <- case Map.lookup className' classesInScope of
                 Nothing -> throwError . errorMessage $ UnknownClass className'
                 Just tcd -> pure tcd
 
@@ -345,7 +348,7 @@ entails SolverOptions{..} constraint context hints =
               -> Matching SourceType
               -> m (Matching SourceType)
             withFreshTypes TypeClassDictionaryInScope{..} initSubst = do
-                subst <- foldM withFreshType initSubst $ filter (flip M.notMember initSubst . fst) tcdForAll
+                subst <- foldM withFreshType initSubst $ filter (not . flip M.member initSubst . fst) tcdForAll
                 for_ (M.toList initSubst) $ unifySubstKind subst
                 pure subst
               where
@@ -439,7 +442,7 @@ entails SolverOptions{..} constraint context hints =
                 unknownsRequiringVtas = do
                   tyClassModuleName <- getQual className'
                   let
-                    tyClassMemberVta :: M.Map (Qualified Ident) [[Text]]
+                    tyClassMemberVta :: M.HashMap (Qualified Ident) [[Text]]
                     tyClassMemberVta = M.fromList $ mapMaybe qualifyAndFilter tyClassMembers
                       where
                         -- Only keep type class members that need VTAs to resolve their type class instances
@@ -742,8 +745,10 @@ matches deps TypeClassDictionaryInScope{..} tys =
        else -- Verify that any repeated type variables are unifiable
             let determinedSet = foldMap (S.fromList . fdDetermined) deps
                 solved = map snd . filter ((`S.notMember` determinedSet) . fst) $ zipWith (\(_, ts) i -> (i, ts)) matched [0..]
-            in verifySubstitution (M.unionsWith (++) solved)
+            in verifySubstitution (unionsWith (++) solved)
   where
+    unionsWith :: (Hashable b, Foldable f) => (a->a->a) -> f (M.HashMap b a) -> M.HashMap b a
+    unionsWith f ts = Foldable.foldl' (M.unionWith f) M.empty ts
     -- Find the closure of a set of functional dependencies.
     covers :: [(Matched (), subst)] -> Bool
     covers ms = finalSet == S.fromList [0..length ms - 1]
@@ -873,7 +878,7 @@ newDictionaries
   -> m [NamedDict]
 newDictionaries path name (Constraint _ className instanceKinds instanceTy _) = do
     tcs <- gets (typeClasses . checkEnv)
-    let TypeClassData{..} = fromMaybe (internalError "newDictionaries: type class lookup failed") $ M.lookup className tcs
+    let TypeClassData{..} = fromMaybe (internalError "newDictionaries: type class lookup failed") $ Map.lookup className tcs
     supDicts <- join <$> zipWithM (\(Constraint ann supName supKinds supArgs _) index ->
                                       let sub = zip (map fst typeClassArguments) instanceTy in
                                       newDictionaries ((supName, index) : path)
@@ -886,8 +891,8 @@ newDictionaries path name (Constraint _ className instanceKinds instanceTy _) = 
     return (TypeClassDictionaryInScope Nothing 0 name path className [] instanceKinds instanceTy Nothing Nothing : supDicts)
 
 mkContext :: [NamedDict] -> InstanceContext
-mkContext = foldr combineContexts M.empty . map fromDict where
-  fromDict d = M.singleton ByNullSourcePos (M.singleton (tcdClassName d) (M.singleton (tcdValue d) (pure d)))
+mkContext = foldr combineContexts Map.empty . map fromDict where
+  fromDict d = Map.singleton ByNullSourcePos (Map.singleton (tcdClassName d) (Map.singleton (tcdValue d) (pure d)))
 
 -- | Check all pairs of values in a list match a predicate
 pairwiseAll :: Monoid m => (a -> a -> m) -> [a] -> m

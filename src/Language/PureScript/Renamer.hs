@@ -11,7 +11,7 @@ import Control.Monad ((>=>))
 import Data.Functor ((<&>))
 import Data.List (find)
 import Data.Maybe (fromJust, fromMaybe)
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.Set qualified as S
 import Data.Text qualified as T
 
@@ -26,7 +26,7 @@ data RenameState = RenameState {
     -- |
     -- A map from names bound (in the input) to their names (in the output)
     --
-    rsBoundNames :: M.Map Ident Ident
+    rsBoundNames :: M.HashMap Ident Ident
     -- |
     -- The set of names which have been used and are in scope in the output
     --
@@ -101,7 +101,7 @@ lookupIdent name = do
 -- identifiers in the top-level scope, so that they can be renamed in the
 -- externs files as well.
 --
-renameInModule :: Module Ann -> (M.Map Ident Ident, Module Ann)
+renameInModule :: Module Ann -> (M.HashMap Ident Ident, Module Ann)
 renameInModule m@(Module _ _ _ _ _ exports _ foreigns decls) = (rsBoundNames, m { moduleExports, moduleDecls })
   where
   ((moduleDecls, moduleExports), RenameState{..}) = runRename foreigns $

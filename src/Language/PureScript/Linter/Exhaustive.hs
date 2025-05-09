@@ -18,7 +18,7 @@ import Control.Monad.Writer.Class (MonadWriter(..))
 
 import Data.List (foldl', sortOn)
 import Data.Maybe (fromMaybe)
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.Text qualified as T
 
 import Language.PureScript.AST.Binders (Binder(..))

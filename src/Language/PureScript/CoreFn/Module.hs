@@ -2,7 +2,7 @@ module Language.PureScript.CoreFn.Module where
 
 import Prelude
 
-import Data.Map.Strict (Map)
+import Data.HashMap.Strict (HashMap)
 
 import Language.PureScript.AST.SourcePos (SourceSpan)
 import Language.PureScript.Comments (Comment)
@@ -19,7 +19,7 @@ data Module a = Module
   , modulePath :: FilePath
   , moduleImports :: [(a, ModuleName)]
   , moduleExports :: [Ident]
-  , moduleReExports :: Map ModuleName [Ident]
+  , moduleReExports :: HashMap ModuleName [Ident]
   , moduleForeign :: [Ident]
   , moduleDecls :: [Bind a]
   } deriving (Functor, Show)

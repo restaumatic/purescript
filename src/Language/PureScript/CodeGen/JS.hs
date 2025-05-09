@@ -20,8 +20,8 @@ import Data.Bifunctor (first)
 import Data.List ((\\), intersect)
 import Data.List.NonEmpty qualified as NEL (nonEmpty)
 import Data.Foldable qualified as F
-import Data.Map qualified as M
-import Data.Set qualified as S
+import Data.HashMap.Strict qualified as M
+import Data.HashSet qualified as S
 import Data.Maybe (fromMaybe, mapMaybe, maybeToList)
 import Data.Monoid (Any(..))
 import Data.String (fromString)
@@ -47,6 +47,8 @@ import Language.PureScript.Traversals (sndM)
 import Language.PureScript.Constants.Prim qualified as C
 
 import System.FilePath.Posix ((</>))
+import Data.Map qualified as Map
+import Data.Set qualified as Set
 
 -- | Generate code in the simplified JavaScript intermediate representation for all declarations in a
 -- module.
@@ -75,7 +77,7 @@ moduleToJs (Module _ coms mn _ imps exps reExps foreigns decls) foreignInclude =
           $ (\\ (mn : C.primModules)) imps'
     let foreignExps = exps `intersect` foreigns
     let standardExps = exps \\ foreignExps
-    let reExps' = M.toList (M.withoutKeys reExps (S.fromList C.primModules))
+    let reExps' = Map.toList (Map.withoutKeys (Map.fromList $ M.toList reExps) (Set.fromList C.primModules))
     let jsExports
           =  (maybeToList . exportsToJs foreignInclude $ foreignExps)
           ++ (maybeToList . exportsToJs Nothing $ standardExps)
@@ -138,10 +140,10 @@ moduleToJs (Module _ coms mn _ imps exps reExps foreigns decls) foreignInclude =
 
   -- Creates alternative names for each module to ensure they don't collide
   -- with declaration names.
-  renameImports :: [Ident] -> [ModuleName] -> M.Map ModuleName Text
+  renameImports :: [Ident] -> [ModuleName] -> M.HashMap ModuleName Text
   renameImports = go M.empty
     where
-    go :: M.Map ModuleName Text -> [Ident] -> [ModuleName] -> M.Map ModuleName Text
+    go :: M.HashMap ModuleName Text -> [Ident] -> [ModuleName] -> M.HashMap ModuleName Text
     go acc used (mn' : mns') =
       let mnj = moduleNameToJs mn'
       in if mn' /= mn && Ident mnj `elem` used
@@ -159,7 +161,7 @@ moduleToJs (Module _ coms mn _ imps exps reExps foreigns decls) foreignInclude =
 
   -- Generates JavaScript code for a module import, binding the required module
   -- to the alternative
-  importToJs :: M.Map ModuleName Text -> ModuleName -> AST.Import
+  importToJs :: M.HashMap ModuleName Text -> ModuleName -> AST.Import
   importToJs mnLookup mn' =
     let mnSafe = fromMaybe (internalError "Missing value in mnLookup") $ M.lookup mn' mnLookup
     in AST.Import mnSafe (moduleImportPath mn')
@@ -180,7 +182,7 @@ moduleToJs (Module _ coms mn _ imps exps reExps foreigns decls) foreignInclude =
   -- Replaces the `ModuleAccessor`s in the AST with `Indexer`s, ensuring that
   -- the generated code refers to the collision-avoiding renamed module
   -- imports. Also returns set of used module names.
-  replaceModuleAccessors :: M.Map ModuleName Text -> AST -> (S.Set ModuleName, AST)
+  replaceModuleAccessors :: M.HashMap ModuleName Text -> AST -> (S.HashSet ModuleName, AST)
   replaceModuleAccessors mnLookup = everywhereTopDownM $ \case
     AST.ModuleAccessor _ mn' name ->
       let mnSafe = fromMaybe (internalError "Missing value in mnLookup") $ M.lookup mn' mnLookup

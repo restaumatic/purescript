@@ -27,7 +27,7 @@ import Data.Foldable (fold)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Version (showVersion)
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.List.NonEmpty qualified as NEL
 import GHC.Generics (Generic)
 
@@ -40,6 +40,7 @@ import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionary
 import Language.PureScript.Types (SourceConstraint, SourceType, srcInstanceType)
 
 import Paths_purescript as Paths
+import Data.Map qualified as Map
 
 -- | The data which will be serialized to an externs file
 data ExternsFile = ExternsFile
@@ -180,18 +181,18 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
   applyDecl env (EDTypeSynonym pn args ty) = env { typeSynonyms = M.insert (qual pn) (args, ty) (typeSynonyms env) }
   applyDecl env (EDDataConstructor pn dTy tNm ty nms) = env { dataConstructors = M.insert (qual pn) (dTy, tNm, ty, nms) (dataConstructors env) }
   applyDecl env (EDValue ident ty) = env { names = M.insert (Qualified (ByModuleName efModuleName) ident) (ty, External, Defined) (names env) }
-  applyDecl env (EDClass pn args members cs deps tcIsEmpty) = env { typeClasses = M.insert (qual pn) (makeTypeClassData args members cs deps tcIsEmpty) (typeClasses env) }
+  applyDecl env (EDClass pn args members cs deps tcIsEmpty) = env { typeClasses = Map.insert (qual pn) (makeTypeClassData args members cs deps tcIsEmpty) (typeClasses env) }
   applyDecl env (EDInstance className ident vars kinds tys cs ch idx ns ss) =
     env { typeClassDictionaries =
             updateMap
-              (updateMap (M.insertWith (<>) (qual ident) (pure dict)) className)
+              (updateMap (Map.insertWith (<>) (qual ident) (pure dict)) className)
               (ByModuleName efModuleName) (typeClassDictionaries env) }
     where
     dict :: NamedDict
     dict = TypeClassDictionaryInScope ch idx (qual ident) [] className vars kinds tys cs instTy
 
-    updateMap :: (Ord k, Monoid a) => (a -> a) -> k -> M.Map k a -> M.Map k a
-    updateMap f = M.alter (Just . f . fold)
+    updateMap :: (Ord k, Monoid a) => (a -> a) -> k -> Map.Map k a -> Map.Map k a
+    updateMap f = Map.alter (Just . f . fold)
 
     instTy :: Maybe SourceType
     instTy = case ns of
@@ -208,7 +209,7 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
 -- happens in the CoreFn, not the original module AST, so it needs to be
 -- applied to the exported names here also. (The appropriate map is returned by
 -- `L.P.Renamer.renameInModule`.)
-moduleToExternsFile :: Module -> Environment -> M.Map Ident Ident -> ExternsFile
+moduleToExternsFile :: Module -> Environment -> M.HashMap Ident Ident -> ExternsFile
 moduleToExternsFile (Module _ _ _ _ Nothing) _ _ = internalError "moduleToExternsFile: module exports were not elaborated"
 moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents = ExternsFile{..}
   where
@@ -253,7 +254,7 @@ moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents = ExternsF
     = [ EDValue (lookupRenamedIdent ident) ty ]
   toExternsDeclaration (TypeClassRef _ className)
     | let dictName = dictTypeName . coerceProperName $ className
-    , Just TypeClassData{..} <- Qualified (ByModuleName mn) className `M.lookup` typeClasses env
+    , Just TypeClassData{..} <- Qualified (ByModuleName mn) className `Map.lookup` typeClasses env
     , Just (kind, tk) <- Qualified (ByModuleName mn) (coerceProperName className) `M.lookup` types env
     , Just (dictKind, dictData@(DataType _ _ [(dctor, _)])) <- Qualified (ByModuleName mn) dictName `M.lookup` types env
     , Just (dty, _, ty, args) <- Qualified (ByModuleName mn) dctor `M.lookup` dataConstructors env
@@ -264,9 +265,9 @@ moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents = ExternsF
       ]
   toExternsDeclaration (TypeInstanceRef ss' ident ns)
     = [ EDInstance tcdClassName (lookupRenamedIdent ident) tcdForAll tcdInstanceKinds tcdInstanceTypes tcdDependencies tcdChain tcdIndex ns ss'
-      | m1 <- maybeToList (M.lookup (ByModuleName mn) (typeClassDictionaries env))
-      , m2 <- M.elems m1
-      , nel <- maybeToList (M.lookup (Qualified (ByModuleName mn) ident) m2)
+      | m1 <- maybeToList (Map.lookup (ByModuleName mn) (typeClassDictionaries env))
+      , m2 <- Map.elems m1
+      , nel <- maybeToList (Map.lookup (Qualified (ByModuleName mn) ident) m2)
       , TypeClassDictionaryInScope{..} <- NEL.toList nel
       ]
   toExternsDeclaration _ = []

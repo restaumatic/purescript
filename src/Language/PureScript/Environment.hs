@@ -12,7 +12,8 @@ import Data.Foldable (find, fold)
 import Data.Functor ((<&>))
 import Data.IntMap qualified as IM
 import Data.IntSet qualified as IS
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
+import Data.Map qualified as Map
 import Data.Set qualified as S
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Semigroup (First(..))
@@ -30,20 +31,20 @@ import Language.PureScript.Constants.Prim qualified as C
 
 -- | The @Environment@ defines all values and types which are currently in scope:
 data Environment = Environment
-  { names :: M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+  { names :: M.HashMap (Qualified Ident) (SourceType, NameKind, NameVisibility)
   -- ^ Values currently in scope
-  , types :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+  , types :: M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
   -- ^ Type names currently in scope
-  , dataConstructors :: M.Map (Qualified (ProperName 'ConstructorName)) (DataDeclType, ProperName 'TypeName, SourceType, [Ident])
+  , dataConstructors :: M.HashMap (Qualified (ProperName 'ConstructorName)) (DataDeclType, ProperName 'TypeName, SourceType, [Ident])
   -- ^ Data constructors currently in scope, along with their associated type
   -- constructor name, argument types and return type.
-  , typeSynonyms :: M.Map (Qualified (ProperName 'TypeName)) ([(Text, Maybe SourceType)], SourceType)
+  , typeSynonyms :: M.HashMap (Qualified (ProperName 'TypeName)) ([(Text, Maybe SourceType)], SourceType)
   -- ^ Type synonyms currently in scope
-  , typeClassDictionaries :: M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
+  , typeClassDictionaries :: Map.Map QualifiedBy (Map.Map (Qualified (ProperName 'ClassName)) (Map.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
   -- ^ Available type class dictionaries. When looking up 'Nothing' in the
   -- outer map, this returns the map of type class dictionaries in local
   -- scope (ie dictionaries brought in by a constrained type).
-  , typeClasses :: M.Map (Qualified (ProperName 'ClassName)) TypeClassData
+  , typeClasses :: Map.Map (Qualified (ProperName 'ClassName)) TypeClassData
   -- ^ Type classes
   } deriving (Show, Generic)
 
@@ -101,7 +102,7 @@ instance A.ToJSON FunctionalDependency where
 
 -- | The initial environment with no values and only the default javascript types defined
 initEnvironment :: Environment
-initEnvironment = Environment M.empty allPrimTypes M.empty M.empty M.empty allPrimClasses
+initEnvironment = Environment M.empty allPrimTypes M.empty M.empty Map.empty allPrimClasses
 
 -- | A constructor for TypeClassData that computes which type class arguments are fully determined
 -- and argument covering sets.
@@ -150,7 +151,7 @@ makeTypeClassData args m s deps = TypeClassData args m' s deps determinedArgs co
 -- A moving frontier of sets to consider, along with the fundeps that can be
 -- applied in each case. At each stage, all sets in the frontier will be the
 -- same size, decreasing by 1 each time.
-type Frontier = M.Map IS.IntSet (First (IM.IntMap (NEL.NonEmpty IS.IntSet)))
+type Frontier = M.HashMap IS.IntSet (First (IM.IntMap (NEL.NonEmpty IS.IntSet)))
 --                         ^                 ^          ^          ^
 --         when *these* parameters           |          |          |
 --         are still needed,                 |          |          |
@@ -377,7 +378,7 @@ primClass name mkKind =
 -- | The primitive types in the external environment with their
 -- associated kinds. There are also pseudo `Fail`, `Warn`, and `Partial` types
 -- that correspond to the classes with the same names.
-primTypes :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+primTypes :: M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
 primTypes =
   M.fromList
     [ (C.Type,                         (kindType, ExternData []))
@@ -396,7 +397,7 @@ primTypes =
     ]
 
 -- | This 'Map' contains all of the prim types from all Prim modules.
-allPrimTypes :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+allPrimTypes :: M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
 allPrimTypes = M.unions
   [ primTypes
   , primBooleanTypes
@@ -409,20 +410,20 @@ allPrimTypes = M.unions
   , primTypeErrorTypes
   ]
 
-primBooleanTypes :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+primBooleanTypes :: M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
 primBooleanTypes =
   M.fromList
     [ (C.True, (tyBoolean, ExternData []))
     , (C.False, (tyBoolean, ExternData []))
     ]
 
-primCoerceTypes :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+primCoerceTypes :: M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
 primCoerceTypes =
   M.fromList $ mconcat
     [ primClass C.Coercible (\kind -> tyForall "k" kindType $ tyVar "k" -:> tyVar "k" -:> kind)
     ]
 
-primOrderingTypes :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+primOrderingTypes :: M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
 primOrderingTypes =
   M.fromList
     [ (C.TypeOrdering, (kindType, ExternData []))
@@ -431,7 +432,7 @@ primOrderingTypes =
     , (C.GT, (kindOrdering, ExternData []))
     ]
 
-primRowTypes :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+primRowTypes :: M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
 primRowTypes =
   M.fromList $ mconcat
     [ primClass C.RowUnion (\kind -> tyForall "k" kindType $ kindRow (tyVar "k") -:> kindRow (tyVar "k") -:> kindRow (tyVar "k") -:> kind)
@@ -440,7 +441,7 @@ primRowTypes =
     , primClass C.RowCons  (\kind -> tyForall "k" kindType $ kindSymbol -:> tyVar "k" -:> kindRow (tyVar "k") -:> kindRow (tyVar "k") -:> kind)
     ]
 
-primRowListTypes :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+primRowListTypes :: M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
 primRowListTypes =
   M.fromList $
     [ (C.RowList, (kindType -:> kindType, ExternData [Phantom]))
@@ -450,7 +451,7 @@ primRowListTypes =
     [ primClass C.RowToList  (\kind -> tyForall "k" kindType $ kindRow (tyVar "k") -:> kindRowList (tyVar "k") -:> kind)
     ]
 
-primSymbolTypes :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+primSymbolTypes :: M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
 primSymbolTypes =
   M.fromList $ mconcat
     [ primClass C.SymbolAppend  (\kind -> kindSymbol -:> kindSymbol -:> kindSymbol -:> kind)
@@ -458,7 +459,7 @@ primSymbolTypes =
     , primClass C.SymbolCons    (\kind -> kindSymbol -:> kindSymbol -:> kindSymbol -:> kind)
     ]
 
-primIntTypes :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+primIntTypes :: M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
 primIntTypes =
   M.fromList $ mconcat
     [ primClass C.IntAdd      (\kind -> tyInt -:> tyInt -:> tyInt -:> kind)
@@ -467,7 +468,7 @@ primIntTypes =
     , primClass C.IntToString (\kind -> tyInt -:> kindSymbol -:> kind)
     ]
 
-primTypeErrorTypes :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+primTypeErrorTypes :: M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
 primTypeErrorTypes =
   M.fromList $
     [ (C.Doc, (kindType, ExternData []))
@@ -485,15 +486,15 @@ primTypeErrorTypes =
 
 -- | The primitive class map. This just contains the `Partial` class.
 -- `Partial` is used as a kind of magic constraint for partial functions.
-primClasses :: M.Map (Qualified (ProperName 'ClassName)) TypeClassData
+primClasses :: Map.Map (Qualified (ProperName 'ClassName)) TypeClassData
 primClasses =
-  M.fromList
+  Map.fromList
     [ (C.Partial, makeTypeClassData [] [] [] [] True)
     ]
 
 -- | This contains all of the type classes from all Prim modules.
-allPrimClasses :: M.Map (Qualified (ProperName 'ClassName)) TypeClassData
-allPrimClasses = M.unions
+allPrimClasses :: Map.Map (Qualified (ProperName 'ClassName)) TypeClassData
+allPrimClasses = Map.unions
   [ primClasses
   , primCoerceClasses
   , primRowClasses
@@ -503,9 +504,9 @@ allPrimClasses = M.unions
   , primTypeErrorClasses
   ]
 
-primCoerceClasses :: M.Map (Qualified (ProperName 'ClassName)) TypeClassData
+primCoerceClasses :: Map.Map (Qualified (ProperName 'ClassName)) TypeClassData
 primCoerceClasses =
-  M.fromList
+  Map.fromList
     -- class Coercible (a :: k) (b :: k)
     [ (C.Coercible, makeTypeClassData
         [ ("a", Just (tyVar "k"))
@@ -513,9 +514,9 @@ primCoerceClasses =
         ] [] [] [] True)
     ]
 
-primRowClasses :: M.Map (Qualified (ProperName 'ClassName)) TypeClassData
+primRowClasses :: Map.Map (Qualified (ProperName 'ClassName)) TypeClassData
 primRowClasses =
-  M.fromList
+  Map.fromList
     -- class Union (left :: Row k) (right :: Row k) (union :: Row k) | left right -> union, right union -> left, union left -> right
     [ (C.RowUnion, makeTypeClassData
         [ ("left", Just (kindRow (tyVar "k")))
@@ -553,9 +554,9 @@ primRowClasses =
         ] True)
     ]
 
-primRowListClasses :: M.Map (Qualified (ProperName 'ClassName)) TypeClassData
+primRowListClasses :: Map.Map (Qualified (ProperName 'ClassName)) TypeClassData
 primRowListClasses =
-  M.fromList
+  Map.fromList
     -- class RowToList (row :: Row k) (list :: RowList k) | row -> list
     [ (C.RowToList, makeTypeClassData
         [ ("row", Just (kindRow (tyVar "k")))
@@ -565,9 +566,9 @@ primRowListClasses =
         ] True)
     ]
 
-primSymbolClasses :: M.Map (Qualified (ProperName 'ClassName)) TypeClassData
+primSymbolClasses :: Map.Map (Qualified (ProperName 'ClassName)) TypeClassData
 primSymbolClasses =
-  M.fromList
+  Map.fromList
     -- class Append (left :: Symbol) (right :: Symbol) (appended :: Symbol) | left right -> appended, right appended -> left, appended left -> right
     [ (C.SymbolAppend, makeTypeClassData
         [ ("left", Just kindSymbol)
@@ -599,9 +600,9 @@ primSymbolClasses =
         ] True)
     ]
 
-primIntClasses :: M.Map (Qualified (ProperName 'ClassName)) TypeClassData
+primIntClasses :: Map.Map (Qualified (ProperName 'ClassName)) TypeClassData
 primIntClasses =
-  M.fromList
+  Map.fromList
     -- class Add (left :: Int) (right :: Int) (sum :: Int) | left right -> sum, left sum -> right, right sum -> left
     [ (C.IntAdd, makeTypeClassData
         [ ("left", Just tyInt)
@@ -640,9 +641,9 @@ primIntClasses =
         ] True)
     ]
 
-primTypeErrorClasses :: M.Map (Qualified (ProperName 'ClassName)) TypeClassData
+primTypeErrorClasses :: Map.Map (Qualified (ProperName 'ClassName)) TypeClassData
 primTypeErrorClasses =
-  M.fromList
+  Map.fromList
     -- class Fail (message :: Symbol)
     [ (C.Fail, makeTypeClassData
         [("message", Just kindDoc)] [] [] [] True)

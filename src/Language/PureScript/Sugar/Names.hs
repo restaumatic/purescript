@@ -20,7 +20,7 @@ import Control.Monad.Writer (MonadWriter(..))
 
 import Data.List.NonEmpty qualified as NEL
 import Data.Maybe (fromMaybe, mapMaybe)
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.Set qualified as S
 
 import Language.PureScript.AST
@@ -34,6 +34,8 @@ import Language.PureScript.Sugar.Names.Exports (findExportable, resolveExports)
 import Language.PureScript.Sugar.Names.Imports (resolveImports, resolveModuleImport)
 import Language.PureScript.Traversals (defS, sndM)
 import Language.PureScript.Types (Constraint(..), SourceConstraint, SourceType, Type(..), everywhereOnTypesM)
+import Data.Hashable (Hashable)
+import Data.Map qualified as Map
 
 -- |
 -- Replaces all local names with qualified names.
@@ -86,7 +88,7 @@ externsEnv env ExternsFile{..} = do
                   , exportSourceImportedFrom = Nothing
                   }
 
-  exportedTypes :: M.Map (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
+  exportedTypes :: M.HashMap (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
   exportedTypes = M.fromList $ mapMaybe toExportedType efExports
     where
     toExportedType (TypeRef _ tyCon dctors) = Just (tyCon, (fromMaybe (mapMaybe forTyCon efDeclarations) dctors, localExportSource))
@@ -96,21 +98,25 @@ externsEnv env ExternsFile{..} = do
       forTyCon _ = Nothing
     toExportedType _ = Nothing
 
-  exportedTypeOps :: M.Map (OpName 'TypeOpName) ExportSource
+  exportedTypeOps :: M.HashMap (OpName 'TypeOpName) ExportSource
   exportedTypeOps = exportedRefs getTypeOpRef
 
-  exportedTypeClasses :: M.Map (ProperName 'ClassName) ExportSource
-  exportedTypeClasses = exportedRefs getTypeClassRef
+  exportedTypeClasses :: Map.Map (ProperName 'ClassName) ExportSource
+  exportedTypeClasses = exportedRefsC getTypeClassRef
 
-  exportedValues :: M.Map Ident ExportSource
+  exportedValues :: M.HashMap Ident ExportSource
   exportedValues = exportedRefs getValueRef
 
-  exportedValueOps :: M.Map (OpName 'ValueOpName) ExportSource
+  exportedValueOps :: M.HashMap (OpName 'ValueOpName) ExportSource
   exportedValueOps = exportedRefs getValueOpRef
 
-  exportedRefs :: Ord a => (DeclarationRef -> Maybe a) -> M.Map a ExportSource
+  exportedRefs :: (Hashable a) => (DeclarationRef -> Maybe a) -> M.HashMap a ExportSource
   exportedRefs f =
     M.fromList $ (, localExportSource) <$> mapMaybe f efExports
+
+  exportedRefsC :: (Ord a) => (DeclarationRef -> Maybe a) -> Map.Map a ExportSource
+  exportedRefsC f =
+    Map.fromList $ (, localExportSource) <$> mapMaybe f efExports
 
 -- |
 -- Make all exports for a module explicit. This may still affect modules that
@@ -125,10 +131,10 @@ elaborateExports :: Exports -> Module -> Module
 elaborateExports exps (Module ss coms mn decls refs) =
   Module ss coms mn decls $ Just $ reorderExports decls refs
     $ elaboratedTypeRefs
-    ++ go (TypeOpRef ss) exportedTypeOps
-    ++ go (TypeClassRef ss) exportedTypeClasses
-    ++ go (ValueRef ss) exportedValues
-    ++ go (ValueOpRef ss) exportedValueOps
+    ++ go (TypeOpRef ss) (M.toList . exportedTypeOps)
+    ++ go (TypeClassRef ss) (Map.toList . exportedTypeClasses)
+    ++ go (ValueRef ss) (M.toList . exportedValues)
+    ++ go (ValueOpRef ss) (M.toList . exportedValueOps)
     ++ maybe [] (filter isModuleRef) refs
   where
 
@@ -138,9 +144,9 @@ elaborateExports exps (Module ss coms mn decls refs) =
       let ref = TypeRef ss tctor (Just dctors)
       in if mn == exportSourceDefinedIn src then ref else ReExportRef ss src ref
 
-  go :: (a -> DeclarationRef) -> (Exports -> M.Map a ExportSource) -> [DeclarationRef]
+  go :: (a -> DeclarationRef) -> (Exports -> [(a, ExportSource)]) -> [DeclarationRef]
   go toRef select =
-    flip map (M.toList (select exps)) $ \(export, src) ->
+    flip map (select exps) $ \(export, src) ->
       if mn == exportSourceDefinedIn src then toRef export else ReExportRef ss src (toRef export)
 
 -- |
@@ -184,9 +190,9 @@ renameInModule imports (Module modSS coms mn decls exps) =
       updateGuard
 
   updateDecl
-    :: M.Map Ident SourcePos
+    :: M.HashMap Ident SourcePos
     -> Declaration
-    -> m (M.Map Ident SourcePos, Declaration)
+    -> m (M.HashMap Ident SourcePos, Declaration)
   updateDecl bound (DataDeclaration sa dtype name args dctors) =
     fmap (bound,) $
       DataDeclaration sa dtype name
@@ -246,9 +252,9 @@ renameInModule imports (Module modSS coms mn decls exps) =
     return (b, d)
 
   updateValue
-    :: (SourceSpan, M.Map Ident SourcePos)
+    :: (SourceSpan, M.HashMap Ident SourcePos)
     -> Expr
-    -> m ((SourceSpan, M.Map Ident SourcePos), Expr)
+    -> m ((SourceSpan, M.HashMap Ident SourcePos), Expr)
   updateValue (_, bound) v@(PositionedValue pos' _ _) =
     return ((pos', bound), v)
   updateValue (pos, bound) (Abs (VarBinder ss arg) val') =
@@ -294,9 +300,9 @@ renameInModule imports (Module modSS coms mn decls exps) =
   updateValue s v = return (s, v)
 
   updateBinder
-    :: (SourceSpan, M.Map Ident SourcePos)
+    :: (SourceSpan, M.HashMap Ident SourcePos)
     -> Binder
-    -> m ((SourceSpan, M.Map Ident SourcePos), Binder)
+    -> m ((SourceSpan, M.HashMap Ident SourcePos), Binder)
   updateBinder (_, bound) v@(PositionedBinder pos _ _) =
     return ((pos, bound), v)
   updateBinder (_, bound) (ConstructorBinder ss name b) =
@@ -310,24 +316,24 @@ renameInModule imports (Module modSS coms mn decls exps) =
     return (s, v)
 
   updateCase
-    :: (SourceSpan, M.Map Ident SourcePos)
+    :: (SourceSpan, M.HashMap Ident SourcePos)
     -> CaseAlternative
-    -> m ((SourceSpan, M.Map Ident SourcePos), CaseAlternative)
+    -> m ((SourceSpan, M.HashMap Ident SourcePos), CaseAlternative)
   updateCase (pos, bound) c@(CaseAlternative bs _) =
     return ((pos, rUnionMap binderNamesWithSpans' bs `M.union` bound), c)
     where
     rUnionMap f = foldl' (flip (M.union . f)) M.empty
 
   updateGuard
-    :: (SourceSpan, M.Map Ident SourcePos)
+    :: (SourceSpan, M.HashMap Ident SourcePos)
     -> Guard
-    -> m ((SourceSpan, M.Map Ident SourcePos), Guard)
+    -> m ((SourceSpan, M.HashMap Ident SourcePos), Guard)
   updateGuard (pos, bound) g@(ConditionGuard _) =
     return ((pos, bound), g)
   updateGuard (pos, bound) g@(PatternGuard b _) =
     return ((pos, binderNamesWithSpans' b `M.union` bound), g)
 
-  binderNamesWithSpans' :: Binder -> M.Map Ident SourcePos
+  binderNamesWithSpans' :: Binder -> M.HashMap Ident SourcePos
   binderNamesWithSpans'
     = M.fromList
     . fmap (second spanStart . swap)
@@ -336,7 +342,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
   letBoundVariable :: Declaration -> Maybe (Ident, SourceSpan)
   letBoundVariable = fmap (valdeclIdent &&& (fst . valdeclSourceAnn)) . getValueDeclaration
 
-  declarationsToMap :: [Declaration] -> M.Map Ident SourcePos
+  declarationsToMap :: [Declaration] -> M.HashMap Ident SourcePos
   declarationsToMap = foldl goDTM M.empty
     where
       goDTM a (ValueDeclaration ValueDeclarationData {..}) =
@@ -391,7 +397,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
     :: Qualified (ProperName 'ClassName)
     -> SourceSpan
     -> m (Qualified (ProperName 'ClassName))
-  updateClassName = update (importedTypeClasses imports) TyClassName
+  updateClassName = updateC (importedTypeClasses imports) TyClassName
 
   updateValueName :: Qualified Ident -> SourceSpan -> m (Qualified Ident)
   updateValueName = update (importedValues imports) IdentName
@@ -404,16 +410,53 @@ renameInModule imports (Module modSS coms mn decls exps) =
 
   -- Update names so unqualified references become qualified, and locally
   -- qualified references are replaced with their canonical qualified names
-  -- (e.g. M.Map -> Data.Map.Map).
+  -- (e.g. M.HashMap -> Data.Map.Map).
   update
-    :: (Ord a)
-    => M.Map (Qualified a) [ImportRecord a]
+    :: (Hashable a)
+    => M.HashMap (Qualified a) [ImportRecord a]
     -> (a -> Name)
     -> Qualified a
     -> SourceSpan
     -> m (Qualified a)
   update imps toName qname@(Qualified mn' name) pos = warnAndRethrowWithPosition pos $
     case (M.lookup qname imps, mn') of
+
+      -- We found the name in our imports, so we return the name for it,
+      -- qualifying with the name of the module it was originally defined in
+      -- rather than the module we're importing from, to handle the case of
+      -- re-exports. If there are multiple options for the name to resolve to
+      -- in scope, we throw an error.
+      (Just options, _) -> do
+        (mnNew, mnOrig) <- checkImportConflicts pos mn toName options
+        modify $ \usedImports ->
+          M.insertWith (++) mnNew [fmap toName qname] usedImports
+        return $ Qualified (ByModuleName mnOrig) name
+
+      -- If the name wasn't found in our imports but was qualified then we need
+      -- to check whether it's a failed import from a "pseudo" module (created
+      -- by qualified importing). If that's not the case, then we just need to
+      -- check it refers to a symbol in another module.
+      (Nothing, ByModuleName mn'') ->
+        if mn'' `S.member` importedQualModules imports || mn'' `S.member` importedModules imports
+        then throwUnknown
+        else throwError . errorMessage . UnknownName . Qualified ByNullSourcePos $ ModName mn''
+
+      -- If neither of the above cases are true then it's an undefined or
+      -- unimported symbol.
+      _ -> throwUnknown
+
+    where
+    throwUnknown = throwError . errorMessage . UnknownName . fmap toName $ qname
+
+  updateC
+    :: (Ord a)
+    => Map.Map (Qualified a) [ImportRecord a]
+    -> (a -> Name)
+    -> Qualified a
+    -> SourceSpan
+    -> m (Qualified a)
+  updateC imps toName qname@(Qualified mn' name) pos = warnAndRethrowWithPosition pos $
+    case (Map.lookup qname imps, mn') of
 
       -- We found the name in our imports, so we return the name for it,
       -- qualifying with the name of the module it was originally defined in

@@ -17,7 +17,8 @@ import Data.Maybe (mapMaybe)
 import Data.Monoid (Sum(..))
 import Data.Traversable (forM)
 import Data.Text qualified as T
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
+import Data.Map qualified as Map
 
 import Language.PureScript.AST.Declarations (Declaration(..), DeclarationRef(..), ExportSource, ImportDeclarationType(..), Module(..), getTypeRef, isExplicit)
 import Language.PureScript.AST.SourcePos (SourceSpan)
@@ -33,7 +34,7 @@ import Language.PureScript.Constants.Prim qualified as C
 -- Map of module name to list of imported names from that module which have
 -- been used.
 --
-type UsedImports = M.Map ModuleName [Qualified Name]
+type UsedImports = M.HashMap ModuleName [Qualified Name]
 
 -- |
 -- Find and warn on:
@@ -66,7 +67,8 @@ lintImports (Module _ _ mn mdecls (Just mexports)) env usedImps = do
       usedImps' = foldr (elaborateUsed scope) usedImps exportedModules
       numOpenImports = getSum $ foldMap (Sum . countOpenImports) mdecls
       allowImplicit = numOpenImports == 1
-      imports = M.toAscList (findImports mdecls)
+      toAscList = Map.toAscList . Map.fromList . M.toList
+      imports = toAscList (findImports mdecls)
 
   for_ imports $ \(mni, decls) ->
     unless (isPrim mni) .
@@ -74,7 +76,7 @@ lintImports (Module _ _ mn mdecls (Just mexports)) env usedImps = do
         let names = ordNub $ M.findWithDefault [] mni usedImps'
         lintImportDecl env mni qualifierName names ss declType allowImplicit
 
-  for_ (M.toAscList (byQual imports)) $ \(mnq, entries) -> do
+  for_ (toAscList (byQual imports)) $ \(mnq, entries) -> do
     let mnis = ordNub $ map (\(_, _, mni) -> mni) entries
     unless (length mnis == 1) $ do
       let implicits = filter (\(_, declType, _) -> not $ isExplicit declType) entries
@@ -149,7 +151,7 @@ lintImports (Module _ _ mn mdecls (Just mexports)) env usedImps = do
   -- and module being imported
   byQual
     :: [(ModuleName, [(SourceSpan, ImportDeclarationType, Maybe ModuleName)])]
-    -> M.Map ModuleName [(SourceSpan, ImportDeclarationType, ModuleName)]
+    -> M.HashMap ModuleName [(SourceSpan, ImportDeclarationType, ModuleName)]
   byQual = foldr goImp M.empty
     where
     goImp (mni, xs) acc = foldr (goDecl mni) acc xs
@@ -172,22 +174,22 @@ lintImports (Module _ _ mn mdecls (Just mexports)) env usedImps = do
   elaborateUsed :: Imports -> ModuleName -> UsedImports -> UsedImports
   elaborateUsed scope mne used =
     foldr go used
-      $ extractByQual mne (importedTypeClasses scope) TyClassName
-      ++ extractByQual mne (importedTypeOps scope) TyOpName
-      ++ extractByQual mne (importedTypes scope) TyName
-      ++ extractByQual mne (importedDataConstructors scope) DctorName
-      ++ extractByQual mne (importedValues scope) IdentName
-      ++ extractByQual mne (importedValueOps scope) ValOpName
+      $ extractByQual mne (Map.toList $ importedTypeClasses scope) TyClassName
+      ++ extractByQual mne (M.toList $ importedTypeOps scope) TyOpName
+      ++ extractByQual mne (M.toList $ importedTypes scope) TyName
+      ++ extractByQual mne (M.toList $ importedDataConstructors scope) DctorName
+      ++ extractByQual mne (M.toList $ importedValues scope) IdentName
+      ++ extractByQual mne (M.toList $ importedValueOps scope) ValOpName
     where
     go :: (ModuleName, Qualified Name) -> UsedImports -> UsedImports
     go (q, name) = M.alter (Just . maybe [name] (name :)) q
 
   extractByQual
     :: ModuleName
-    -> M.Map (Qualified a) [ImportRecord a]
+    -> [(Qualified a, [ImportRecord a])]
     -> (a -> Name)
     -> [(ModuleName, Qualified Name)]
-  extractByQual k m toName = mapMaybe go (M.toList m)
+  extractByQual k m toName = mapMaybe go m
     where
     go (q@(Qualified mnq _), is)
       | isUnqualified q =
@@ -199,6 +201,7 @@ lintImports (Module _ _ mn mdecls (Just mexports)) env usedImps = do
             Qualified (ByModuleName mn') name -> Just (mn', Qualified mnq (toName name))
             _ -> internalError "unqualified name in extractByQual"
     go _ = Nothing
+
 
 
 -- Replace explicit type refs with data constructor lists from listing the
@@ -299,7 +302,7 @@ lintImportDecl env mni qualifierName names ss declType allowImplicit =
 
   dtys
     :: ModuleName
-    -> M.Map (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
+    -> M.HashMap (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
   dtys mn = foldMap (exportedTypes . envModuleExports) $ mn `M.lookup` env
 
   dctorsForType
@@ -330,7 +333,7 @@ findUsedRefs ss env mni qn names =
     types = mapMaybe (getTypeName <=< disqualifyFor qn) names
     dctors = mapMaybe (getDctorName <=< disqualifyFor qn) names
     typesWithDctors = reconstructTypeRefs dctors
-    typesWithoutDctors = filter (`M.notMember` typesWithDctors) types
+    typesWithoutDctors = filter (\item -> not $ M.member item typesWithDctors) types
     typesRefs
       = map (flip (TypeRef ss) (Just [])) typesWithoutDctors
       ++ map (\(ty, ds) -> TypeRef ss ty (Just ds)) (M.toList typesWithDctors)
@@ -340,7 +343,7 @@ findUsedRefs ss env mni qn names =
 
   reconstructTypeRefs
     :: [ProperName 'ConstructorName]
-    -> M.Map (ProperName 'TypeName) [ProperName 'ConstructorName]
+    -> M.HashMap (ProperName 'TypeName) [ProperName 'ConstructorName]
   reconstructTypeRefs = foldr accumDctors M.empty
     where
     accumDctors dctor =

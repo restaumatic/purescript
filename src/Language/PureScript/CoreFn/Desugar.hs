@@ -9,7 +9,8 @@ import Data.Function (on)
 import Data.Maybe (mapMaybe)
 import Data.Tuple (swap)
 import Data.List.NonEmpty qualified as NEL
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
+import Data.Map qualified as Map
 
 import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.AST.SourcePos (pattern NullSourceSpan, SourceSpan(..))
@@ -37,15 +38,15 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
   let imports = mapMaybe importToCoreFn decls ++ fmap (ssAnn modSS,) (findQualModules decls)
       imports' = dedupeImports imports
       exps' = ordNub $ concatMap exportToCoreFn exps
-      reExps = M.map ordNub $ M.unionsWith (++) (mapMaybe (fmap reExportsToCoreFn . toReExportRef) exps)
+      reExps = M.fromList $ Map.toList $ Map.map ordNub $ Map.unionsWith (++) (mapMaybe (fmap reExportsToCoreFn . toReExportRef) exps)
       externs = ordNub $ mapMaybe externToCoreFn decls
       decls' = concatMap declToCoreFn decls
   in Module modSS coms mn (spanName modSS) imports' exps' reExps externs decls'
   where
   -- Creates a map from a module name to the re-export references defined in
   -- that module.
-  reExportsToCoreFn :: (ModuleName, A.DeclarationRef) -> M.Map ModuleName [Ident]
-  reExportsToCoreFn (mn', ref') = M.singleton mn' (exportToCoreFn ref')
+  reExportsToCoreFn :: (ModuleName, A.DeclarationRef) -> Map.Map ModuleName [Ident]
+  reExportsToCoreFn (mn', ref') = Map.singleton mn' (exportToCoreFn ref')
 
   toReExportRef :: A.DeclarationRef -> Maybe (ModuleName, A.DeclarationRef)
   toReExportRef (A.ReExportRef _ src ref) =

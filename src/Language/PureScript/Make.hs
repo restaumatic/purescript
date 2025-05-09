@@ -72,6 +72,8 @@ import Language.PureScript.Make.Monad as Monad
 import Language.PureScript.CoreFn qualified as CF
 import System.Directory (doesFileExist)
 import System.FilePath (replaceExtension)
+import Data.Map qualified as Map
+import Data.HashMap.Strict qualified as HM
 
 -- | Rebuild a single module.
 --
@@ -112,11 +114,11 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
   lint withPrim
 
   ((Module ss coms _ elaborated exps, env'), nextVar) <- runSupplyT 0 $ do
-    (desugared, (exEnv', usedImports)) <- runStateT (desugar externs withPrim) (exEnv, mempty)
+    (desugared, (exEnv', usedImports)) <- runStateT (desugar externs withPrim) (exEnv, HM.empty)
     let modulesExports = (\(_, _, exports) -> exports) <$> exEnv'
     (checked, CheckState{..}) <- runStateT (typeCheckModule modulesExports desugared) $ emptyCheckState env
     let usedImports' = foldl' (flip $ \(fromModuleName, newtypeCtorName) ->
-          M.alter (Just . (fmap DctorName newtypeCtorName :) . fold) fromModuleName) usedImports checkConstructorImportsForCoercible
+          HM.alter (Just . (fmap DctorName newtypeCtorName :) . fold) fromModuleName) usedImports checkConstructorImportsForCoercible
     -- Imports cannot be linted before type checking because we need to
     -- known which newtype constructors are used to solve Coercible
     -- constraints in order to not report them as unused.
@@ -230,7 +232,7 @@ make' MakeOptions{..} ma@MakeActions{..} ms = do
         BuildJobSkipped ->
           Left mempty
     in
-      M.mapEither splitResults <$> BuildPlan.collectResults buildPlan
+      Map.mapEither splitResults <$> BuildPlan.collectResults buildPlan
 
   -- Write the updated build cache database to disk
   writeCacheDb $ Cache.removeModules (M.keysSet failures) newCacheDb
@@ -327,7 +329,7 @@ make' MakeOptions{..} ma@MakeActions{..} ms = do
               go :: Env -> ModuleName -> m Env
               go e dep = case lookup dep (zip deps externs) of
                 Just exts
-                  | not (M.member dep e) -> externsEnv e exts
+                  | not (HM.member dep e) -> externsEnv e exts
                 _ -> return e
             foldM go env deps
           env <- C.readMVar (bpEnv buildPlan)

@@ -5,7 +5,7 @@ import Prelude
 import Data.List (sort)
 import Control.Exception (evaluate)
 import Control.DeepSeq (force)
-import Data.Map qualified as Map
+import Data.HashMap.Strict qualified as Map
 import Data.Text qualified as Text
 import Language.PureScript qualified as P
 import Language.PureScript.Docs qualified as D

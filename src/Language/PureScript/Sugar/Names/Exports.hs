@@ -13,7 +13,7 @@ import Data.Function (on)
 import Data.Foldable (traverse_)
 import Data.List (intersect, groupBy, sortOn)
 import Data.Maybe (fromMaybe, mapMaybe)
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 
 import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
@@ -21,6 +21,8 @@ import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHi
 import Language.PureScript.Names (Ident, ModuleName, Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), disqualifyFor, isQualifiedWith, isUnqualified)
 import Language.PureScript.Sugar.Names.Env (Env, ExportMode(..), Exports(..), ImportRecord(..), Imports(..), checkImportConflicts, envModuleExports, exportType, exportTypeClass, exportTypeOp, exportValue, exportValueOp, nullExports)
 import Language.PureScript.Sugar.Names.Common (warnDuplicateRefs)
+import Data.Hashable (Hashable)
+import Data.Map qualified as Map
 
 -- |
 -- Finds all exportable members of a module, disregarding any explicit exports.
@@ -91,7 +93,7 @@ resolveExports env ss mn imps exps refs =
   elaborateModuleExports result (ModuleRef _ name) | name == mn = do
     let types' = exportedTypes result `M.union` exportedTypes exps
     let typeOps' = exportedTypeOps result `M.union` exportedTypeOps exps
-    let classes' = exportedTypeClasses result `M.union` exportedTypeClasses exps
+    let classes' = exportedTypeClasses result `Map.union` exportedTypeClasses exps
     let values' = exportedValues result `M.union` exportedValues exps
     let valueOps' = exportedValueOps result `M.union` exportedValueOps exps
     return result
@@ -105,12 +107,12 @@ resolveExports env ss mn imps exps refs =
     let isPseudo = isPseudoModule name
     when (not isPseudo && not (isImportedModule name))
       . throwError . errorMessage' ss' . UnknownExport $ ModName name
-    reTypes <- extract ss' isPseudo name TyName (importedTypes imps)
-    reTypeOps <- extract ss' isPseudo name TyOpName (importedTypeOps imps)
-    reDctors <- extract ss' isPseudo name DctorName (importedDataConstructors imps)
-    reClasses <- extract ss' isPseudo name TyClassName (importedTypeClasses imps)
-    reValues <- extract ss' isPseudo name IdentName (importedValues imps)
-    reValueOps <- extract ss' isPseudo name ValOpName (importedValueOps imps)
+    reTypes <- extract ss' isPseudo name TyName (M.toList $ importedTypes imps)
+    reTypeOps <- extract ss' isPseudo name TyOpName (M.toList $ importedTypeOps imps)
+    reDctors <- extract ss' isPseudo name DctorName (M.toList $ importedDataConstructors imps)
+    reClasses <- extract ss' isPseudo name TyClassName (Map.toList $ importedTypeClasses imps)
+    reValues <- extract ss' isPseudo name IdentName (M.toList $ importedValues imps)
+    reValueOps <- extract ss' isPseudo name ValOpName (M.toList $ importedValueOps imps)
     foldM (\exps' ((tctor, dctors), src) -> exportType ss' ReExport exps' tctor dctors src) result (resolveTypeExports reTypes reDctors)
       >>= flip (foldM (uncurry . exportTypeOp ss')) (map resolveTypeOp reTypeOps)
       >>= flip (foldM (uncurry . exportTypeClass ss' ReExport)) (map resolveClass reClasses)
@@ -125,9 +127,9 @@ resolveExports env ss mn imps exps refs =
     -> Bool
     -> ModuleName
     -> (a -> Name)
-    -> M.Map (Qualified a) [ImportRecord a]
+    -> [(Qualified a, [ImportRecord a])]
     -> m [Qualified a]
-  extract ss' useQual name toName = fmap (map (importName . head . snd)) . go . M.toList
+  extract ss' useQual name toName = fmap (map (importName . head . snd)) . go
     where
     go = filterM $ \(name', options) -> do
       let isMatch = if useQual then isQualifiedWith name name' else any (checkUnqual name') options
@@ -145,11 +147,11 @@ resolveExports env ss mn imps exps refs =
     -- function to either extract the keys or values. We test the keys to see if a
     -- value being re-exported belongs to a qualified module, and we test the
     -- values if that fails to see whether the value has been imported at all.
-    testQuals :: (forall a b. M.Map (Qualified a) b -> [Qualified a]) -> ModuleName -> Bool
+    testQuals :: (forall a b. M.HashMap (Qualified a) b -> [Qualified a]) -> ModuleName -> Bool
     testQuals f mn' = any (isQualifiedWith mn') (f (importedTypes imps))
                    || any (isQualifiedWith mn') (f (importedTypeOps imps))
                    || any (isQualifiedWith mn') (f (importedDataConstructors imps))
-                   || any (isQualifiedWith mn') (f (importedTypeClasses imps))
+                   || any (isQualifiedWith mn') (f (M.fromList $ Map.toList $ importedTypeClasses imps))
                    || any (isQualifiedWith mn') (f (importedValues imps))
                    || any (isQualifiedWith mn') (f (importedValueOps imps))
                    || any (isQualifiedWith mn') (f (importedKinds imps))
@@ -193,7 +195,7 @@ resolveExports env ss mn imps exps refs =
   resolveClass :: Qualified (ProperName 'ClassName) -> (ProperName 'ClassName, ExportSource)
   resolveClass className
     = fromMaybe (internalError "Missing value in resolveClass")
-    $ resolve exportedTypeClasses className
+    $ resolveC exportedTypeClasses className
 
   -- Looks up an imported value and re-qualifies it with the original module it
   -- came from.
@@ -210,8 +212,8 @@ resolveExports env ss mn imps exps refs =
     $ resolve exportedValueOps op
 
   resolve
-    :: Ord a
-    => (Exports -> M.Map a ExportSource)
+    :: (Hashable a)
+    => (Exports -> M.HashMap a ExportSource)
     -> Qualified a
     -> Maybe (a, ExportSource)
   resolve f (Qualified (ByModuleName mn'') a) = do
@@ -219,6 +221,17 @@ resolveExports env ss mn imps exps refs =
     src <- a `M.lookup` f exps'
     return (a, src { exportSourceImportedFrom = Just mn'' })
   resolve _ _ = internalError "Unqualified value in resolve"
+
+  resolveC
+    :: (Ord a)
+    => (Exports -> Map.Map a ExportSource)
+    -> Qualified a
+    -> Maybe (a, ExportSource)
+  resolveC f (Qualified (ByModuleName mn'') a) = do
+    exps' <- envModuleExports <$> mn'' `M.lookup` env
+    src <- a `Map.lookup` f exps'
+    return (a, src { exportSourceImportedFrom = Just mn'' })
+  resolveC _ _ = internalError "Unqualified value in resolve"
 
 -- |
 -- Filters the full list of exportable values, types, and classes for a module
@@ -234,7 +247,7 @@ filterModule
 filterModule mn exps refs = do
   types <- foldM filterTypes M.empty (combineTypeRefs refs)
   typeOps <- foldM (filterExport TyOpName getTypeOpRef exportedTypeOps) M.empty refs
-  classes <- foldM (filterExport TyClassName getTypeClassRef exportedTypeClasses) M.empty refs
+  classes <- foldM (filterExportC TyClassName getTypeClassRef exportedTypeClasses) Map.empty refs
   values <- foldM (filterExport IdentName getValueRef exportedValues) M.empty refs
   valueOps <- foldM (filterExport ValOpName getValueOpRef exportedValueOps) M.empty refs
   return Exports
@@ -260,9 +273,9 @@ filterModule mn exps refs = do
     . mapMaybe (\ref -> (declRefSourceSpan ref,) <$> getTypeRef ref)
 
   filterTypes
-    :: M.Map (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
+    :: M.HashMap (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
     -> DeclarationRef
-    -> m (M.Map (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource))
+    -> m (M.HashMap (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource))
   filterTypes result (TypeRef ss name expDcons) =
     case name `M.lookup` exportedTypes exps of
       Nothing -> throwError . errorMessage' ss . UnknownExport $ TyName name
@@ -285,13 +298,13 @@ filterModule mn exps refs = do
   filterTypes result _ = return result
 
   filterExport
-    :: Ord a
+    :: (Hashable a)
     => (a -> Name)
     -> (DeclarationRef -> Maybe a)
-    -> (Exports -> M.Map a ExportSource)
-    -> M.Map a ExportSource
+    -> (Exports -> M.HashMap a ExportSource)
+    -> M.HashMap a ExportSource
     -> DeclarationRef
-    -> m (M.Map a ExportSource)
+    -> m (M.HashMap a ExportSource)
   filterExport toName get fromExps result ref
     | Just name <- get ref =
         case name `M.lookup` fromExps exps of
@@ -302,3 +315,22 @@ filterModule mn exps refs = do
           _ ->
             throwError . errorMessage' (declRefSourceSpan ref) . UnknownExport $ toName name
   filterExport _ _ _ result _ = return result
+
+  filterExportC
+    :: (Ord a)
+    => (a -> Name)
+    -> (DeclarationRef -> Maybe a)
+    -> (Exports -> Map.Map a ExportSource)
+    -> Map.Map a ExportSource
+    -> DeclarationRef
+    -> m (Map.Map a ExportSource)
+  filterExportC toName get fromExps result ref
+    | Just name <- get ref =
+        case name `Map.lookup` fromExps exps of
+          -- TODO: I'm not sure if we actually need to check that these modules
+          -- are the same here -gb
+          Just source' | mn == exportSourceDefinedIn source' ->
+            return $ Map.insert name source' result
+          _ ->
+            throwError . errorMessage' (declRefSourceSpan ref) . UnknownExport $ toName name
+  filterExportC _ _ _ result _ = return result

@@ -31,13 +31,13 @@ module Language.PureScript.Interactive.Types
 import Prelude
 
 import Language.PureScript qualified as P
-import Data.Map qualified as M
 import Data.List (foldl')
 import Language.PureScript.Sugar.Names.Env (nullImports, primExports)
 import Control.Monad (foldM)
 import Control.Monad.Trans.Except (runExceptT)
 import Control.Monad.Trans.State (execStateT)
 import Control.Monad.Writer.Strict (runWriterT)
+import Data.HashMap.Strict qualified as HM
 
 
 -- | The PSCI configuration.
@@ -118,7 +118,7 @@ updateImportExports st@(PSCiState modules lets externs iprint _ _) =
   case createEnv (map snd externs) >>= flip desugarModule temporaryModule of
     Left _          -> st -- TODO: can this fail and what should we do?
     Right env  ->
-      case M.lookup temporaryName env of
+      case HM.lookup temporaryName env of
         Just (_, is, es)  -> PSCiState modules lets externs iprint is es
         _                 -> st -- impossible
   where

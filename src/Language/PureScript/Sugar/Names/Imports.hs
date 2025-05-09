@@ -12,7 +12,7 @@ import Control.Monad.Error.Class (MonadError(..))
 
 import Data.Foldable (for_, traverse_)
 import Data.Maybe (fromMaybe)
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.Set qualified as S
 
 import Language.PureScript.AST (Declaration(..), DeclarationRef(..), ErrorMessageHint(..), ExportSource(..), ImportDeclarationType(..), Module(..), SourceSpan, internalModuleSourceSpan)
@@ -20,6 +20,8 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage', rethrow)
 import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName)
 import Language.PureScript.Sugar.Names.Env (Env, Exports(..), ImportProvenance(..), ImportRecord(..), Imports(..), envModuleExports, nullImports)
+import Data.Hashable (Hashable)
+import Data.Map qualified as Map
 
 type ImportDef = (SourceSpan, ImportDeclarationType, Maybe ModuleName)
 
@@ -29,7 +31,7 @@ type ImportDef = (SourceSpan, ImportDeclarationType, Maybe ModuleName)
 --
 findImports
   :: [Declaration]
-  -> M.Map ModuleName [ImportDef]
+  -> M.HashMap ModuleName [ImportDef]
 findImports = foldr go M.empty
   where
   go (ImportDeclaration (pos, _) mn typ qual) =
@@ -120,7 +122,7 @@ resolveImport importModule exps imps impQual = resolveByType
     check (TypeOpRef ss name) =
       checkImportExists ss TyOpName (exportedTypeOps exps) name
     check (TypeClassRef ss name) =
-      checkImportExists ss TyClassName (exportedTypeClasses exps) name
+      checkImportExistsC ss TyClassName (exportedTypeClasses exps) name
     check (ModuleRef ss name) | isHiding =
       throwError . errorMessage' ss $ ImportHidingModule name
     check r = internalError $ "Invalid argument to checkRefs: " ++ show r
@@ -128,13 +130,27 @@ resolveImport importModule exps imps impQual = resolveByType
   -- Check that an explicitly imported item exists in the module it is being imported from
   checkImportExists
     :: Ord a
+    => Hashable a
     => SourceSpan
     -> (a -> Name)
-    -> M.Map a b
+    -> M.HashMap a b
     -> a
     -> m ()
   checkImportExists ss toName exports item
-    = when (item `M.notMember` exports)
+    = when (not $ M.member item exports)
+    . throwError . errorMessage' ss
+    $ UnknownImport importModule (toName item)
+
+  -- Check that an explicitly imported item exists in the module it is being imported from
+  checkImportExistsC
+    :: Ord a
+    => SourceSpan
+    -> (a -> Name)
+    -> Map.Map a b
+    -> a
+    -> m ()
+  checkImportExistsC ss toName exports item
+    = when (not $ Map.member item exports)
     . throwError . errorMessage' ss
     $ UnknownImport importModule (toName item)
 
@@ -173,7 +189,7 @@ resolveImport importModule exps imps impQual = resolveByType
       >>= flip (foldM (\m (name, _) -> importer m (TypeOpRef ss name))) (M.toList (exportedTypeOps exps))
       >>= flip (foldM (\m (name, _) -> importer m (ValueRef ss name))) (M.toList (exportedValues exps))
       >>= flip (foldM (\m (name, _) -> importer m (ValueOpRef ss name))) (M.toList (exportedValueOps exps))
-      >>= flip (foldM (\m (name, _) -> importer m (TypeClassRef ss name))) (M.toList (exportedTypeClasses exps))
+      >>= flip (foldM (\m (name, _) -> importer m (TypeClassRef ss name))) (Map.toList (exportedTypeClasses exps))
 
   importRef :: ImportProvenance -> Imports -> DeclarationRef -> m Imports
   importRef prov imp (ValueRef ss name) = do
@@ -185,7 +201,7 @@ resolveImport importModule exps imps impQual = resolveByType
   importRef prov imp (TypeRef ss name dctors) = do
     let types' = updateImports (importedTypes imp) (exportedTypes exps) snd name ss prov
     let (dctorNames, src) = allExportedDataConstructors name
-        dctorLookup :: M.Map (ProperName 'ConstructorName) ExportSource
+        dctorLookup :: M.HashMap (ProperName 'ConstructorName) ExportSource
         dctorLookup = M.fromList $ map (, src) dctorNames
     traverse_ (traverse_ $ checkDctorExists ss name dctorNames) dctors
     let dctors' = foldl (\m d -> updateImports m dctorLookup id d ss prov) (importedDataConstructors imp) (fromMaybe dctorNames dctors)
@@ -194,7 +210,7 @@ resolveImport importModule exps imps impQual = resolveByType
     let ops' = updateImports (importedTypeOps imp) (exportedTypeOps exps) id name ss prov
     return $ imp { importedTypeOps = ops' }
   importRef prov imp (TypeClassRef ss name) = do
-    let typeClasses' = updateImports (importedTypeClasses imp) (exportedTypeClasses exps) id name ss prov
+    let typeClasses' = updateImportsC (importedTypeClasses imp) (exportedTypeClasses exps) id name ss prov
     return $ imp { importedTypeClasses = typeClasses' }
   importRef _ _ TypeInstanceRef{} = internalError "TypeInstanceRef in importRef"
   importRef _ _ ModuleRef{} = internalError "ModuleRef in importRef"
@@ -210,20 +226,39 @@ resolveImport importModule exps imps impQual = resolveByType
 
   -- Add something to an import resolution list
   updateImports
-    :: Ord a
-    => M.Map (Qualified a) [ImportRecord a]
-    -> M.Map a b
+    :: (Hashable a)
+    => M.HashMap (Qualified a) [ImportRecord a]
+    -> M.HashMap a b
     -> (b -> ExportSource)
     -> a
     -> SourceSpan
     -> ImportProvenance
-    -> M.Map (Qualified a) [ImportRecord a]
+    -> M.HashMap (Qualified a) [ImportRecord a]
   updateImports imps' exps' expName name ss prov =
     let
       src = maybe (internalError "Invalid state in updateImports") expName (name `M.lookup` exps')
       rec = ImportRecord (Qualified (ByModuleName importModule) name) (exportSourceDefinedIn src) ss prov
     in
       M.alter
+        (\currNames -> Just $ rec : fromMaybe [] currNames)
+        (Qualified (byMaybeModuleName impQual) name)
+        imps'
+
+  updateImportsC
+    :: (Ord a)
+    => Map.Map (Qualified a) [ImportRecord a]
+    -> Map.Map a b
+    -> (b -> ExportSource)
+    -> a
+    -> SourceSpan
+    -> ImportProvenance
+    -> Map.Map (Qualified a) [ImportRecord a]
+  updateImportsC imps' exps' expName name ss prov =
+    let
+      src = maybe (internalError "Invalid state in updateImports") expName (name `Map.lookup` exps')
+      rec = ImportRecord (Qualified (ByModuleName importModule) name) (exportSourceDefinedIn src) ss prov
+    in
+      Map.alter
         (\currNames -> Just $ rec : fromMaybe [] currNames)
         (Qualified (byMaybeModuleName impQual) name)
         imps'

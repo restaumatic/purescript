@@ -23,7 +23,7 @@ import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.Either (partitionEithers)
 import Data.Text (Text)
 import Data.List.NonEmpty qualified as NEL
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.IntMap.Lazy qualified as IM
 import Data.Set qualified as S
 import Data.Text qualified as T
@@ -47,6 +47,7 @@ import Language.PureScript.TypeChecker.Types as T
 import Language.PureScript.TypeChecker.Unify (varIfUnknown)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
 import Language.PureScript.Types (Constraint(..), SourceConstraint, SourceType, Type(..), containsForAll, eqType, everythingOnTypes, overConstraintArgs, srcInstanceType, unapplyTypes)
+import Data.Map qualified as Map
 
 addDataType
   :: (MonadState CheckState m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
@@ -163,7 +164,7 @@ addTypeClass _ qualifiedClassName args implies dependencies ds kind = do
   unless (hasSig || not (containsForAll kind)) $ do
     tell . errorMessage $ MissingKindDeclaration ClassSig (disqualify qualName) kind
   putEnv $ env { types = M.insert qualName (kind, ExternData (nominalRolesForKind kind)) (types env)
-               , typeClasses = M.insert qualifiedClassName newClass (typeClasses env) }
+               , typeClasses = Map.insert qualifiedClassName newClass (typeClasses env) }
   where
     classMembers :: [(Ident, SourceType)]
     classMembers = map toPair ds
@@ -175,7 +176,7 @@ addTypeClass _ qualifiedClassName args implies dependencies ds kind = do
       let ctIsEmpty = null classMembers && all (typeClassIsEmpty . findSuperClass env) implies'
       pure $ makeTypeClassData args classMembers implies' dependencies ctIsEmpty
       where
-      findSuperClass env c = case M.lookup (constraintClass c) (typeClasses env) of
+      findSuperClass env c = case Map.lookup (constraintClass c) (typeClasses env) of
         Just tcd -> tcd
         Nothing -> internalError "Unknown super class in TypeClassDeclaration"
 
@@ -185,11 +186,11 @@ addTypeClass _ qualifiedClassName args implies dependencies ds kind = do
 addTypeClassDictionaries
   :: (MonadState CheckState m)
   => QualifiedBy
-  -> M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))
+  -> Map.Map (Qualified (ProperName 'ClassName)) (Map.Map (Qualified Ident) (NEL.NonEmpty NamedDict))
   -> m ()
 addTypeClassDictionaries mn entries =
   modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = insertState st } }
-  where insertState st = M.insertWith (M.unionWith (M.unionWith (<>))) mn entries (typeClassDictionaries . checkEnv $ st)
+  where insertState st = Map.insertWith (Map.unionWith (Map.unionWith (<>))) mn entries (typeClassDictionaries . checkEnv $ st)
 
 checkDuplicateTypeArguments
   :: (MonadState CheckState m, MonadError MultipleErrors m)
@@ -298,7 +299,7 @@ typeCheckAll moduleName = traverse go
       for_ (zip clss cls_ks) $ \((deps, (sa, pn, _, _, _)), (args', implies', tys', kind)) -> do
         let qualifiedClassName = Qualified (ByModuleName moduleName) pn
         guardWith (errorMessage (DuplicateTypeClass pn (fst sa))) $
-          not (M.member qualifiedClassName (typeClasses env))
+          not (Map.member qualifiedClassName (typeClasses env))
         addTypeClass moduleName qualifiedClassName (fmap Just <$> args') implies' deps tys' kind
     return d
     where
@@ -383,7 +384,7 @@ typeCheckAll moduleName = traverse go
       env <- getEnv
       let qualifiedClassName = Qualified (ByModuleName moduleName) pn
       guardWith (errorMessage (DuplicateTypeClass pn ss)) $
-        not (M.member qualifiedClassName (typeClasses env))
+        not (Map.member qualifiedClassName (typeClasses env))
       (args', implies', tys', kind) <- kindOfClass moduleName (sa, pn, args, implies, tys)
       addTypeClass moduleName qualifiedClassName (fmap Just <$> args') implies' deps tys' kind
       return d
@@ -394,8 +395,8 @@ typeCheckAll moduleName = traverse go
       let qualifiedDictName = Qualified (ByModuleName moduleName) dictName
       flip (traverse_ . traverse_) (typeClassDictionaries env) $ \dictionaries ->
         guardWith (errorMessage (DuplicateInstance dictName ss)) $
-          not (M.member qualifiedDictName dictionaries)
-      case M.lookup className (typeClasses env) of
+          not (Map.member qualifiedDictName dictionaries)
+      case Map.lookup className (typeClasses env) of
         Nothing -> internalError "typeCheckAll: Encountered unknown type class in instance declaration"
         Just typeClass -> do
           checkInstanceArity dictName className typeClass tys
@@ -411,7 +412,7 @@ typeCheckAll moduleName = traverse go
           let dict =
                 TypeClassDictionaryInScope chainId idx qualifiedDictName [] className vars kinds' tys'' (Just deps'') $
                   if isPlainIdent dictName then Nothing else Just $ srcInstanceType ss vars className tys''
-          addTypeClassDictionaries (ByModuleName moduleName) . M.singleton className $ M.singleton (tcdValue dict) (pure dict)
+          addTypeClassDictionaries (ByModuleName moduleName) . Map.singleton className $ Map.singleton (tcdValue dict) (pure dict)
           return d
 
   checkInstanceArity :: Ident -> Qualified (ProperName 'ClassName) -> TypeClassData -> [SourceType] -> m ()
@@ -457,7 +458,7 @@ typeCheckAll moduleName = traverse go
     typeModule (TypeApp _ t1 _) = typeModule t1
     typeModule (KindApp _ t1 _) = typeModule t1
     typeModule (KindedType _ t1 _) = typeModule t1
-    typeModule _ = internalError "Invalid type in instance in findNonOrphanModules"
+    typeModule st = internalError $ "Invalid type in instance in findNonOrphanModules: " <> show st
 
     modulesByTypeIndex :: IM.IntMap (Maybe ModuleName)
     modulesByTypeIndex = IM.fromList (zip [0 ..] (typeModule <$> tys'))
@@ -493,7 +494,7 @@ typeCheckAll moduleName = traverse go
     -> m ()
   checkOverlappingInstance ss ch dictName vars className typeClass tys' nonOrphanModules = do
     for_ nonOrphanModules $ \m -> do
-      dicts <- M.toList <$> lookupTypeClassDictionariesForClass (ByModuleName m) className
+      dicts <- Map.toList <$> lookupTypeClassDictionariesForClass (ByModuleName m) className
 
       for_ dicts $ \(Qualified mn' ident, dictNel) -> do
         for_ dictNel $ \dict -> do
@@ -581,7 +582,7 @@ checkNewtype name _ = throwError . errorMessage $ InvalidNewtype name
 typeCheckModule
   :: forall m
    . (MonadSupply m, MonadState CheckState m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
-  => M.Map ModuleName Exports
+  => M.HashMap ModuleName Exports
   -> Module
   -> m Module
 typeCheckModule _ (Module _ _ _ _ Nothing) =
@@ -608,7 +609,7 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
               , ModuleName
               , ImportDeclarationType
               , Maybe ModuleName
-              , M.Map (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
+              , M.HashMap (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
               )
   fromImportDecl (ImportDeclaration sa moduleName importDeclarationType asModuleName) =
     Right (sa, moduleName, importDeclarationType, asModuleName, foldMap exportedTypes $ M.lookup moduleName modulesExports)
@@ -619,7 +620,7 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
        , ModuleName
        , ImportDeclarationType
        , Maybe ModuleName
-       , M.Map (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
+       , M.HashMap (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
        )
     -> Declaration
   toImportDecl (sa, moduleName, importDeclarationType, asModuleName, _) =
@@ -630,7 +631,7 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
 
   getSuperClassExportCheck = do
     classesToSuperClasses <- gets
-      ( M.map
+      ( Map.map
         ( S.fromList
         . filter (\(Qualified mn' _) -> mn' == ByModuleName mn)
         . fmap constraintClass
@@ -648,11 +649,11 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
           -> S.Set (Qualified (ProperName 'ClassName))
       transitiveSuperClassesFor qname =
         untilSame
-          (\s -> s <> foldMap (\n -> fromMaybe S.empty (M.lookup n classesToSuperClasses)) s)
-          (fromMaybe S.empty (M.lookup qname classesToSuperClasses))
+          (\s -> s <> foldMap (\n -> fromMaybe S.empty (Map.lookup n classesToSuperClasses)) s)
+          (fromMaybe S.empty (Map.lookup qname classesToSuperClasses))
 
       superClassesFor qname =
-        fromMaybe S.empty (M.lookup qname classesToSuperClasses)
+        fromMaybe S.empty (Map.lookup qname classesToSuperClasses)
 
     pure $ checkSuperClassExport superClassesFor transitiveSuperClassesFor
   moduleClassExports :: S.Set (Qualified (ProperName 'ClassName))
@@ -771,7 +772,7 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
       ] $ \className -> do
         env <- getEnv
         let dicts = foldMap (foldMap NEL.toList) $
-              M.lookup (ByModuleName mn) (typeClassDictionaries env) >>= M.lookup className
+              Map.lookup (ByModuleName mn) (typeClassDictionaries env) >>= Map.lookup className
         when (any isDictOfTypeRef dicts) $
           tell . errorMessage' ss' $ HiddenConstructors dr className
     | otherwise = do

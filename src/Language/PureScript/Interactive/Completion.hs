@@ -13,7 +13,7 @@ import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.State.Class (MonadState(..))
 import Control.Monad.Trans.Reader (asks, runReaderT, ReaderT)
 import Data.List (nub, isPrefixOf, isInfixOf, isSuffixOf, sortBy, stripPrefix)
-import Data.Map (keys)
+import Data.HashMap.Strict (keys)
 import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
 import Language.PureScript qualified as P

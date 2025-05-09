@@ -11,7 +11,7 @@ import Prelude
 
 import Control.Arrow ((***))
 import Data.Either (isLeft)
-import Data.Map.Strict qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.Aeson (ToJSON(..), Value(..), object)
 import Data.Aeson qualified
 import Data.Aeson.Key qualified
@@ -136,7 +136,7 @@ moduleToJSON v m = object
     , "moduleName" .= moduleNameToJSON mn
     ]
 
-  reExportsToJSON :: M.Map ModuleName [Ident] -> Value
+  reExportsToJSON :: M.HashMap ModuleName [Ident] -> Value
   reExportsToJSON = toJSON . M.map (map runIdent)
 
 bindToJSON :: Bind Ann -> Value

@@ -29,6 +29,7 @@ import Language.PureScript.Errors (DataConstructorDeclaration(..), MultipleError
 import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..))
 import Language.PureScript.Roles (Role(..))
 import Language.PureScript.Types (Constraint(..), SourceType, Type(..), freeTypeVariables, unapplyTypes)
+import Data.HashMap.Strict qualified as HM
 
 -- |
 -- A map of a type's formal parameter names to their roles. This type's
@@ -59,7 +60,7 @@ typeKindRoles = \case
 
 getRoleEnv :: Environment -> RoleEnv
 getRoleEnv env =
-  M.mapMaybe (typeKindRoles . snd) (types env)
+  M.mapMaybe (typeKindRoles . snd) (M.fromList $ HM.toList $ types env)
 
 updateRoleEnv
   :: Qualified (ProperName 'TypeName)
@@ -82,7 +83,7 @@ lookupRoles
   -> Qualified (ProperName 'TypeName)
   -> [Role]
 lookupRoles env tyName =
-  fromMaybe [] $ M.lookup tyName (types env) >>= typeKindRoles . snd
+  fromMaybe [] $ HM.lookup tyName (types env) >>= typeKindRoles . snd
 
 -- |
 -- Compares the inferred roles to the explicitly declared roles and ensures

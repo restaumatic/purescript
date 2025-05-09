@@ -1,4 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 -- |
 -- Data types for names
@@ -20,6 +22,7 @@ import Data.Aeson.TH (deriveJSON)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Int (Int64)
+import Data.Hashable (Hashable (hash, hashWithSalt))
 
 import Language.PureScript.AST.SourcePos (SourcePos, pattern SourcePos)
 
@@ -32,7 +35,7 @@ data Name
   | DctorName (ProperName 'ConstructorName)
   | TyClassName (ProperName 'ClassName)
   | ModName ModuleName
-  deriving (Eq, Ord, Show, Generic)
+  deriving (Eq, Ord, Show, Generic, Hashable)
 
 instance NFData Name
 instance Serialise Name
@@ -71,7 +74,7 @@ getClassName _ = Nothing
 data InternalIdentData
   -- Used by CoreFn.Laziness
   = RuntimeLazyFactory | Lazy !Text
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Show, Eq, Ord, Generic, Hashable)
 
 instance NFData InternalIdentData
 instance Serialise InternalIdentData
@@ -96,7 +99,7 @@ data Ident
   -- A generated name used only for internal transformations
   --
   | InternalIdent !InternalIdentData
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Show, Eq, Ord, Generic, Hashable)
 
 instance NFData Ident
 instance Serialise Ident
@@ -133,6 +136,15 @@ newtype OpName (a :: OpNameType) = OpName { runOpName :: Text }
 instance NFData (OpName a)
 instance Serialise (OpName a)
 
+instance Hashable (OpName 'ValueOpName) where
+  hash (OpName name) = hashWithSalt (hash ValueOpName) name
+
+instance Hashable (OpName 'TypeOpName) where
+  hash (OpName name) = hashWithSalt (hash TypeOpName) name
+
+instance Hashable (OpName 'AnyOpName) where
+  hash (OpName name) = hashWithSalt (hash AnyOpName) name
+
 instance ToJSON (OpName a) where
   toJSON = toJSON . runOpName
 
@@ -146,6 +158,7 @@ showOp op = "(" <> runOpName op <> ")"
 -- The closed set of operator alias types.
 --
 data OpNameType = ValueOpName | TypeOpName | AnyOpName
+  deriving (Eq, Generic, Hashable)
 
 eraseOpName :: OpName a -> OpName 'AnyOpName
 eraseOpName = OpName . runOpName
@@ -162,6 +175,18 @@ newtype ProperName (a :: ProperNameType) = ProperName { runProperName :: Text }
 instance NFData (ProperName a)
 instance Serialise (ProperName a)
 
+instance Hashable (ProperName 'TypeName) where
+  hash (ProperName name) = hashWithSalt (hash TypeName) name
+
+instance Hashable (ProperName 'ConstructorName) where
+  hash (ProperName name) = hashWithSalt (hash ConstructorName) name
+  
+instance Hashable (ProperName 'ClassName) where
+  hash (ProperName name) = hashWithSalt (hash ClassName) name
+
+instance Hashable (ProperName 'Namespace) where
+  hash (ProperName name) = hashWithSalt (hash Namespace) name
+
 instance ToJSON (ProperName a) where
   toJSON = toJSON . runProperName
 
@@ -176,7 +201,7 @@ data ProperNameType
   | ConstructorName
   | ClassName
   | Namespace
-
+  deriving (Eq, Generic, Hashable)
 -- |
 -- Coerces a ProperName from one ProperNameType to another. This should be used
 -- with care, and is primarily used to convert ClassNames into TypeNames after
@@ -193,6 +218,8 @@ newtype ModuleName = ModuleName Text
   deriving newtype Serialise
 
 instance NFData ModuleName
+instance Hashable ModuleName where
+  hash (ModuleName n) = hashWithSalt (hash ("ModuleName" :: Text)) n
 
 runModuleName :: ModuleName -> Text
 runModuleName (ModuleName name) = name
@@ -206,7 +233,7 @@ isBuiltinModuleName (ModuleName mn) = mn == "Prim" || "Prim." `T.isPrefixOf` mn
 data QualifiedBy
   = BySourcePos SourcePos
   | ByModuleName ModuleName
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Show, Eq, Ord, Generic, Hashable)
 
 pattern ByNullSourcePos :: QualifiedBy
 pattern ByNullSourcePos = BySourcePos (SourcePos 0 0)
@@ -230,10 +257,11 @@ toMaybeModuleName (BySourcePos _) = Nothing
 -- A qualified name, i.e. a name with an optional module name
 --
 data Qualified a = Qualified QualifiedBy a
-  deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic)
+  deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic, Hashable)
 
 instance NFData a => NFData (Qualified a)
 instance Serialise a => Serialise (Qualified a)
+
 
 showQualified :: (a -> Text) -> Qualified a -> Text
 showQualified f (Qualified (BySourcePos  _) a) = f a

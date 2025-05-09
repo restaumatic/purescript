@@ -32,7 +32,7 @@ import Data.Maybe (fromMaybe, isJust)
 import Data.Monoid (Any(..))
 import Data.Text (Text)
 
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.Set qualified as S
 
 import Language.PureScript.Crash (internalError)
@@ -681,7 +681,7 @@ lookupNewtypeConstructorInScope
        , ModuleName
        , ImportDeclarationType
        , Maybe ModuleName
-       , M.Map (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
+       , M.HashMap (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
        )
      ]
   -> Qualified (ProperName 'TypeName)

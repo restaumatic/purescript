@@ -15,7 +15,7 @@ import Control.Monad.Writer.Class (MonadWriter(..), censor)
 
 import Data.Maybe (fromMaybe)
 import Data.IntMap.Lazy qualified as IM
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.Set qualified as S
 import Data.Text (Text, isPrefixOf, unpack)
 import Data.List.NonEmpty qualified as NEL
@@ -29,6 +29,7 @@ import Language.PureScript.Pretty.Values (prettyPrintValue)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
 import Language.PureScript.Types (Constraint(..), SourceType, Type(..), srcKindedType, srcTypeVar)
 import Text.PrettyPrint.Boxes (render)
+import Data.Map qualified as Map
 
 newtype UnkLevel = UnkLevel (NEL.NonEmpty Unknown)
   deriving (Eq, Show)
@@ -89,7 +90,7 @@ data CheckState = CheckState
         , ModuleName
         , ImportDeclarationType
         , Maybe ModuleName
-        , M.Map (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
+        , M.HashMap (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
         )
       ]
   -- ^ The current module imports and their exported types.
@@ -118,7 +119,7 @@ type Unknown = Int
 -- | Temporarily bind a collection of names to values
 bindNames
   :: MonadState CheckState m
-  => M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+  => M.HashMap (Qualified Ident) (SourceType, NameKind, NameVisibility)
   -> m a
   -> m a
 bindNames newNames action = do
@@ -131,7 +132,7 @@ bindNames newNames action = do
 -- | Temporarily bind a collection of names to types
 bindTypes
   :: MonadState CheckState m
-  => M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+  => M.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
   -> m a
   -> m a
 bindTypes newNames action = do
@@ -197,13 +198,13 @@ withTypeClassDictionaries entries action = do
   orig <- get
 
   let mentries =
-        M.fromListWith (M.unionWith (M.unionWith (<>)))
-          [ (qb, M.singleton className (M.singleton tcdValue (pure entry)))
+        Map.fromListWith (Map.unionWith (Map.unionWith (<>)))
+          [ (qb, Map.singleton className (Map.singleton tcdValue (pure entry)))
           | entry@TypeClassDictionaryInScope{ tcdValue = tcdValue@(Qualified qb _), tcdClassName = className }
               <- entries
           ]
 
-  modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = M.unionWith (M.unionWith (M.unionWith (<>))) (typeClassDictionaries . checkEnv $ st) mentries } }
+  modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = Map.unionWith (Map.unionWith (Map.unionWith (<>))) (typeClassDictionaries . checkEnv $ st) mentries } }
   a <- action
   modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = typeClassDictionaries . checkEnv $ orig } }
   return a
@@ -211,23 +212,23 @@ withTypeClassDictionaries entries action = do
 -- | Get the currently available map of type class dictionaries
 getTypeClassDictionaries
   :: (MonadState CheckState m)
-  => m (M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))))
+  => m (Map.Map QualifiedBy (Map.Map (Qualified (ProperName 'ClassName)) (Map.Map (Qualified Ident) (NEL.NonEmpty NamedDict))))
 getTypeClassDictionaries = gets $ typeClassDictionaries . checkEnv
 
 -- | Lookup type class dictionaries in a module.
 lookupTypeClassDictionaries
   :: (MonadState CheckState m)
   => QualifiedBy
-  -> m (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
-lookupTypeClassDictionaries mn = gets $ fromMaybe M.empty . M.lookup mn . typeClassDictionaries . checkEnv
+  -> m (Map.Map (Qualified (ProperName 'ClassName)) (Map.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
+lookupTypeClassDictionaries mn = gets $ fromMaybe Map.empty . Map.lookup mn . typeClassDictionaries . checkEnv
 
 -- | Lookup type class dictionaries in a module.
 lookupTypeClassDictionariesForClass
   :: (MonadState CheckState m)
   => QualifiedBy
   -> Qualified (ProperName 'ClassName)
-  -> m (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))
-lookupTypeClassDictionariesForClass mn cn = fromMaybe M.empty . M.lookup cn <$> lookupTypeClassDictionaries mn
+  -> m (Map.Map (Qualified Ident) (NEL.NonEmpty NamedDict))
+lookupTypeClassDictionariesForClass mn cn = fromMaybe Map.empty . Map.lookup cn <$> lookupTypeClassDictionaries mn
 
 -- | Temporarily bind a collection of names to local variables
 bindLocalVariables
@@ -442,9 +443,9 @@ debugTypeClassDictionaries :: Environment -> [String]
 debugTypeClassDictionaries = go . typeClassDictionaries
   where
   go tcds = do
-    (mbModuleName, classes) <- M.toList tcds
-    (className, instances) <- M.toList classes
-    (ident, dicts) <- M.toList instances
+    (mbModuleName, classes) <- Map.toList tcds
+    (className, instances) <- Map.toList classes
+    (ident, dicts) <- Map.toList instances
     let
       moduleName = maybe "" (\m -> "[" <> runModuleName m <> "] ") (toMaybeModuleName mbModuleName)
       className' = showQualified runProperName className
@@ -454,7 +455,7 @@ debugTypeClassDictionaries = go . typeClassDictionaries
     pure $ "dict " <> unpack moduleName <> unpack className' <> " " <> unpack ident' <> " (" <> show (length dicts) <> ")" <> " " <> kds <> " " <> tys
 
 debugTypeClasses :: Environment -> [String]
-debugTypeClasses = fmap go . M.toList . typeClasses
+debugTypeClasses = fmap go . Map.toList . typeClasses
   where
   go (className, tc) = do
     let

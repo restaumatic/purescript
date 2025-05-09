@@ -13,8 +13,8 @@ import Control.Applicative ((<|>))
 
 import Data.Aeson (FromJSON(..), Object, Value(..), withObject, withText, (.:))
 import Data.Aeson.Types (Parser, listParser)
-import Data.Map.Strict qualified as M
 import Data.Text (Text)
+import Data.HashMap.Strict qualified as M
 import Data.Text qualified as T
 import Data.Vector qualified as V
 import Data.Version (Version, parseVersion)
@@ -156,7 +156,7 @@ moduleFromJSON = withObject "Module" moduleFromObj
       mn  <- o .: "moduleName" >>= moduleNameFromJSON
       return (ann, mn))
 
-  reExportsFromJSON :: Value -> Parser (M.Map ModuleName [Ident])
+  reExportsFromJSON :: Value -> Parser (M.HashMap ModuleName [Ident])
   reExportsFromJSON = fmap (M.map (map Ident)) . parseJSON
 
 bindFromJSON :: FilePath -> Value -> Parser (Bind Ann)

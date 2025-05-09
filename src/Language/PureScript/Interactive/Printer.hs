@@ -3,12 +3,13 @@ module Language.PureScript.Interactive.Printer where
 import Prelude
 
 import Data.List (intersperse)
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
 import Data.Text (Text)
 import Language.PureScript qualified as P
 import Text.PrettyPrint.Boxes qualified as Box
+import Data.Map qualified as Map
 
 -- TODO (Christoph): Text version of boxes
 textT :: Text -> Box.Box
@@ -23,11 +24,14 @@ printModuleSignatures :: P.ModuleName -> P.Environment -> String
 printModuleSignatures moduleName P.Environment{..} =
     -- get relevant components of a module from environment
     let moduleNamesIdent = byModuleName names
-        moduleTypeClasses = byModuleName typeClasses
+        moduleTypeClasses = byModuleNameC typeClasses
         moduleTypes = byModuleName types
 
-        byModuleName :: M.Map (P.Qualified a) b -> [P.Qualified a]
+        byModuleName :: M.HashMap (P.Qualified a) b -> [P.Qualified a]
         byModuleName = filter ((== Just moduleName) . P.getQual) . M.keys
+
+        byModuleNameC :: Map.Map (P.Qualified a) b -> [P.Qualified a]
+        byModuleNameC = filter ((== Just moduleName) . P.getQual) . Map.keys
 
   in
     -- print each component
@@ -39,7 +43,7 @@ printModuleSignatures moduleName P.Environment{..} =
 
   where printModule's showF = Box.vsep 1 Box.left . showF
 
-        findNameType :: M.Map (P.Qualified P.Ident) (P.SourceType, P.NameKind, P.NameVisibility)
+        findNameType :: M.HashMap (P.Qualified P.Ident) (P.SourceType, P.NameKind, P.NameVisibility)
                      -> P.Qualified P.Ident
                      -> (P.Ident, Maybe (P.SourceType, P.NameKind, P.NameVisibility))
         findNameType envNames m = (P.disqualify m, M.lookup m envNames)
@@ -49,10 +53,10 @@ printModuleSignatures moduleName P.Environment{..} =
         showNameType _ = P.internalError "The impossible happened in printModuleSignatures."
 
         findTypeClass
-          :: M.Map (P.Qualified (P.ProperName 'P.ClassName)) P.TypeClassData
+          :: Map.Map (P.Qualified (P.ProperName 'P.ClassName)) P.TypeClassData
           -> P.Qualified (P.ProperName 'P.ClassName)
           -> (P.Qualified (P.ProperName 'P.ClassName), Maybe P.TypeClassData)
-        findTypeClass envTypeClasses name = (name, M.lookup name envTypeClasses)
+        findTypeClass envTypeClasses name = (name, Map.lookup name envTypeClasses)
 
         showTypeClass
           :: (P.Qualified (P.ProperName 'P.ClassName), Maybe P.TypeClassData)
@@ -81,21 +85,21 @@ printModuleSignatures moduleName P.Environment{..} =
 
 
         findType
-          :: M.Map (P.Qualified (P.ProperName 'P.TypeName)) (P.SourceType, P.TypeKind)
+          :: M.HashMap (P.Qualified (P.ProperName 'P.TypeName)) (P.SourceType, P.TypeKind)
           -> P.Qualified (P.ProperName 'P.TypeName)
           -> (P.Qualified (P.ProperName 'P.TypeName), Maybe (P.SourceType, P.TypeKind))
         findType envTypes name = (name, M.lookup name envTypes)
 
         showType
-          :: M.Map (P.Qualified (P.ProperName 'P.ClassName)) P.TypeClassData
-          -> M.Map (P.Qualified (P.ProperName 'P.ConstructorName)) (P.DataDeclType, P.ProperName 'P.TypeName, P.SourceType, [P.Ident])
-          -> M.Map (P.Qualified (P.ProperName 'P.TypeName)) ([(Text, Maybe P.SourceType)], P.SourceType)
+          :: Map.Map (P.Qualified (P.ProperName 'P.ClassName)) P.TypeClassData
+          -> M.HashMap (P.Qualified (P.ProperName 'P.ConstructorName)) (P.DataDeclType, P.ProperName 'P.TypeName, P.SourceType, [P.Ident])
+          -> M.HashMap (P.Qualified (P.ProperName 'P.TypeName)) ([(Text, Maybe P.SourceType)], P.SourceType)
           -> (P.Qualified (P.ProperName 'P.TypeName), Maybe (P.SourceType, P.TypeKind))
           -> Maybe Box.Box
         showType typeClassesEnv dataConstructorsEnv typeSynonymsEnv (n@(P.Qualified modul name), typ) =
           case (typ, M.lookup n typeSynonymsEnv) of
             (Just (_, P.TypeSynonym), Just (typevars, dtType)) ->
-                if M.member (fmap P.coerceProperName n) typeClassesEnv
+                if Map.member (fmap P.coerceProperName n) typeClassesEnv
                 then
                   Nothing
                 else

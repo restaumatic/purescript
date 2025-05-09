@@ -12,7 +12,7 @@ import Control.Monad.Writer.Class (MonadWriter(..))
 import Data.Align (align, unalign)
 import Data.Foldable (foldl1, foldr1)
 import Data.List (init, last, zipWith3, (!!))
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.These (These(..), mergeTheseWith, these)
 
 import Control.Monad.Supply.Class (MonadSupply)
@@ -32,6 +32,7 @@ import Language.PureScript.TypeChecker.Monad (CheckState, getEnv, getTypeClassDi
 import Language.PureScript.TypeChecker.Synonyms (replaceAllTypeSynonyms)
 import Language.PureScript.TypeClassDictionaries (TypeClassDictionaryInScope(..))
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, SourceType, Type(..), completeBinderList, eqType, everythingOnTypes, replaceAllTypeVars, srcTypeVar, usedTypeVariables)
+import Data.Map qualified as Map
 
 -- | Extract the name of the newtype appearing in the last type argument of
 -- a derived newtype instance.
@@ -63,7 +64,7 @@ deriveInstance instType className strategy = do
 
   TypeClassData{..} <-
     note (errorMessage . UnknownName $ fmap TyClassName className) $
-      className `M.lookup` typeClasses env
+      className `Map.lookup` typeClasses env
 
   case strategy of
     KnownClassStrategy -> let
@@ -152,10 +153,10 @@ deriveNewtypeInstance className tys (UnwrappedTypeConstructor mn tyConNm dkargs 
     verifySuperclasses :: m ()
     verifySuperclasses = do
       env <- getEnv
-      for_ (M.lookup className (typeClasses env)) $ \TypeClassData{ typeClassArguments = args, typeClassSuperclasses = superclasses } ->
+      for_ (Map.lookup className (typeClasses env)) $ \TypeClassData{ typeClassArguments = args, typeClassSuperclasses = superclasses } ->
         for_ superclasses $ \Constraint{..} -> do
           let constraintClass' = qualify (internalError "verifySuperclasses: unknown class module") constraintClass
-          for_ (M.lookup constraintClass (typeClasses env)) $ \TypeClassData{ typeClassDependencies = deps } ->
+          for_ (Map.lookup constraintClass (typeClasses env)) $ \TypeClassData{ typeClassDependencies = deps } ->
             -- We need to check whether the newtype is mentioned, because of classes like MonadWriter
             -- with its Monoid superclass constraint.
             when (not (null args) && any ((fst (last args) `elem`) . usedTypeVariables) constraintArgs) $ do
@@ -183,8 +184,8 @@ deriveNewtypeInstance className tys (UnwrappedTypeConstructor mn tyConNm dkargs 
           lookIn mn'
             = elem nt
             . (toList . extractNewtypeName mn' . tcdInstanceTypes
-                <=< foldMap toList . M.elems
-                <=< toList . (M.lookup su <=< M.lookup (ByModuleName mn')))
+                <=< foldMap toList . Map.elems
+                <=< toList . (Map.lookup su <=< Map.lookup (ByModuleName mn')))
             $ dicts
       in lookIn suModule || lookIn newtypeModule
 

@@ -29,7 +29,7 @@ import Data.Foldable (find)
 import Data.List (groupBy, sortOn, delete)
 import Data.Maybe (mapMaybe)
 import Safe (headMay)
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.Set qualified as S
 
 import Language.PureScript.Constants.Prim qualified as C
@@ -38,6 +38,8 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage')
 import Language.PureScript.Names (Ident, ModuleName, Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, getQual)
+import Data.Hashable (Hashable)
+import Data.Map qualified as Map
 
 -- |
 -- The details for an import: the name of the thing that is being imported
@@ -65,7 +67,8 @@ data ImportProvenance
   | Prim
   deriving (Eq, Ord, Show)
 
-type ImportMap a = M.Map (Qualified a) [ImportRecord a]
+type ImportMap a = M.HashMap (Qualified a) [ImportRecord a]
+type ImportMapC a = Map.Map (Qualified a) [ImportRecord a]
 
 -- |
 -- The imported declarations for a module, including the module's own members.
@@ -87,7 +90,7 @@ data Imports = Imports
   -- |
   -- Local names for classes within a module mapped to their qualified names
   --
-  , importedTypeClasses :: ImportMap (ProperName 'ClassName)
+  , importedTypeClasses :: ImportMapC (ProperName 'ClassName)
   -- |
   -- Local names for values within a module mapped to their qualified names
   --
@@ -113,7 +116,7 @@ data Imports = Imports
   } deriving (Show)
 
 nullImports :: Imports
-nullImports = Imports M.empty M.empty M.empty M.empty M.empty M.empty S.empty S.empty M.empty
+nullImports = Imports M.empty M.empty M.empty Map.empty M.empty M.empty S.empty S.empty M.empty
 
 -- |
 -- The exported declarations from a module.
@@ -123,39 +126,39 @@ data Exports = Exports
   -- |
   -- The exported types along with the module they originally came from.
   --
-    exportedTypes :: M.Map (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
+    exportedTypes :: M.HashMap (ProperName 'TypeName) ([ProperName 'ConstructorName], ExportSource)
   -- |
   -- The exported type operators along with the module they originally came
   -- from.
   --
-  , exportedTypeOps :: M.Map (OpName 'TypeOpName) ExportSource
+  , exportedTypeOps :: M.HashMap (OpName 'TypeOpName) ExportSource
   -- |
   -- The exported classes along with the module they originally came from.
   --
-  , exportedTypeClasses :: M.Map (ProperName 'ClassName) ExportSource
+  , exportedTypeClasses :: Map.Map (ProperName 'ClassName) ExportSource
   -- |
   -- The exported values along with the module they originally came from.
   --
-  , exportedValues :: M.Map Ident ExportSource
+  , exportedValues :: M.HashMap Ident ExportSource
   -- |
   -- The exported value operators along with the module they originally came
   -- from.
   --
-  , exportedValueOps :: M.Map (OpName 'ValueOpName) ExportSource
+  , exportedValueOps :: M.HashMap (OpName 'ValueOpName) ExportSource
   } deriving (Show)
 
 -- |
 -- An empty 'Exports' value.
 --
 nullExports :: Exports
-nullExports = Exports M.empty M.empty M.empty M.empty M.empty
+nullExports = Exports M.empty M.empty Map.empty M.empty M.empty
 
 -- |
 -- The imports and exports for a collection of modules. The 'SourceSpan' is used
 -- to store the source location of the module with a given name, used to provide
 -- useful information when there is a duplicate module definition.
 --
-type Env = M.Map ModuleName (SourceSpan, Imports, Exports)
+type Env = M.HashMap ModuleName (SourceSpan, Imports, Exports)
 
 -- |
 -- Extracts the 'Exports' from an 'Env' value.
@@ -220,13 +223,13 @@ primTypeErrorExports = mkPrimExports primTypeErrorTypes primTypeErrorClasses
 -- Create a set of exports for a Prim module.
 --
 mkPrimExports
-  :: M.Map (Qualified (ProperName 'TypeName)) a
-  -> M.Map (Qualified (ProperName 'ClassName)) b
+  :: M.HashMap (Qualified (ProperName 'TypeName)) a
+  -> Map.Map (Qualified (ProperName 'ClassName)) b
   -> Exports
 mkPrimExports ts cs =
   nullExports
     { exportedTypes = M.fromList $ mkTypeEntry `map` M.keys ts
-    , exportedTypeClasses = M.fromList $ mkClassEntry `map` M.keys cs
+    , exportedTypeClasses = Map.fromList $ mkClassEntry `map` Map.keys cs
     }
   where
   mkTypeEntry (Qualified (ByModuleName mn) name) = (name, ([], primExportSource mn))
@@ -309,16 +312,16 @@ exportType ss exportMode exps name dctors src = do
     Internal -> do
       when (name `M.member` exTypes) $
         throwDeclConflict (TyName name) (TyName name)
-      when (coerceProperName name `M.member` exClasses) $
+      when (coerceProperName name `Map.member` exClasses) $
         throwDeclConflict (TyName name) (TyClassName (coerceProperName name))
       forM_ dctors $ \dctor -> do
         when ((elem dctor . fst) `any` exTypes) $
           throwDeclConflict (DctorName dctor) (DctorName dctor)
-        when (coerceProperName dctor `M.member` exClasses) $
+        when (coerceProperName dctor `Map.member` exClasses) $
           throwDeclConflict (DctorName dctor) (TyClassName (coerceProperName dctor))
     ReExport -> do
       let mn = exportSourceDefinedIn src
-      forM_ (coerceProperName name `M.lookup` exClasses) $ \src' ->
+      forM_ (coerceProperName name `Map.lookup` exClasses) $ \src' ->
         let mn' = exportSourceDefinedIn src' in
         throwExportConflict' ss mn mn' (TyName name) (TyClassName (coerceProperName name))
       forM_ (name `M.lookup` exTypes) $ \(_, src') ->
@@ -368,7 +371,7 @@ exportTypeClass ss exportMode exps name src = do
       throwDeclConflict (TyClassName name) (TyName (coerceProperName name))
     when ((elem (coerceProperName name) . fst) `any` exTypes) $
       throwDeclConflict (TyClassName name) (DctorName (coerceProperName name))
-  classes <- addExport ss TyClassName name src (exportedTypeClasses exps)
+  classes <- addExportMap ss TyClassName name src (exportedTypeClasses exps)
   return $ exps { exportedTypeClasses = classes }
 
 -- |
@@ -405,13 +408,13 @@ exportValueOp ss exps op src = do
 -- case an error is returned.
 --
 addExport
-  :: (MonadError MultipleErrors m, Ord a)
+  :: (MonadError MultipleErrors m, Hashable a)
   => SourceSpan
   -> (a -> Name)
   -> a
   -> ExportSource
-  -> M.Map a ExportSource
-  -> m (M.Map a ExportSource)
+  -> M.HashMap a ExportSource
+  -> m (M.HashMap a ExportSource)
 addExport ss toName name src exports =
   case M.lookup name exports of
     Just src' ->
@@ -424,6 +427,27 @@ addExport ss toName name src exports =
           else throwExportConflict ss mn mn' (toName name)
     Nothing ->
       return $ M.insert name src exports
+
+addExportMap
+  :: (MonadError MultipleErrors m, Ord a)
+  => SourceSpan
+  -> (a -> Name)
+  -> a
+  -> ExportSource
+  -> Map.Map a ExportSource
+  -> m (Map.Map a ExportSource)
+addExportMap ss toName name src exports =
+  case Map.lookup name exports of
+    Just src' ->
+      let
+        mn = exportSourceDefinedIn src
+        mn' = exportSourceDefinedIn src'
+      in
+        if mn == mn'
+          then return exports
+          else throwExportConflict ss mn mn' (toName name)
+    Nothing ->
+      return $ Map.insert name src exports
 
 -- |
 -- Raises an error for when there is more than one definition for something.

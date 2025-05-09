@@ -6,7 +6,7 @@ import Prelude
 
 import Data.Aeson (Result(..), Value)
 import Data.Aeson.Types (parse)
-import Data.Map as M
+import Data.HashMap.Strict as M
 import Data.Version (Version(..))
 
 import Language.PureScript.AST.Literals (Literal(..))

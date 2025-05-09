@@ -41,7 +41,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Traversable (for)
 import Data.List.NonEmpty qualified as NEL
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as M
 import Data.Set qualified as S
 import Data.IntSet qualified as IS
 
@@ -62,6 +62,7 @@ import Language.PureScript.TypeChecker.Unify (freshTypeWithKind, replaceTypeWild
 import Language.PureScript.Types
 import Language.PureScript.Label (Label(..))
 import Language.PureScript.PSString (PSString)
+import Data.Map qualified as Map
 
 data BindingGroupType
   = RecursiveBindingGroup
@@ -78,7 +79,7 @@ tvToExpr (TypedValue' c e t) = TypedValue c e t
 -- | Lookup data about a type class in the @Environment@
 lookupTypeClass :: MonadState CheckState m => Qualified (ProperName 'ClassName) -> m TypeClassData
 lookupTypeClass name =
-  let findClass = fromMaybe (internalError "entails: type class not found in environment") . M.lookup name
+  let findClass = fromMaybe (internalError "entails: type class not found in environment") . Map.lookup name
    in gets (findClass . typeClasses . checkEnv)
 
 -- | Infer the types of multiple mutually-recursive values, and return elaborated values including
@@ -233,7 +234,7 @@ data SplitBindingGroup = SplitBindingGroup
   -- ^ The untyped expressions
   , _splitBindingGroupTyped :: [((SourceAnn, Ident), (Expr, [(Text, SourceType)], SourceType, Bool))]
   -- ^ The typed expressions, along with their type annotations
-  , _splitBindingGroupNames :: M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+  , _splitBindingGroupNames :: M.HashMap (Qualified Ident) (SourceType, NameKind, NameVisibility)
   -- ^ A map containing all expressions and their assigned types (which might be
   -- fresh unification variables). These will be added to the 'Environment' after
   -- the binding group is checked, so the value type of the 'Map' is chosen to be
@@ -286,7 +287,7 @@ checkTypedBindingGroupElement
   => ModuleName
   -> ((SourceAnn, Ident), (Expr, [(Text, SourceType)], SourceType, Bool))
   -- ^ The identifier we are trying to define, along with the expression and its type annotation
-  -> M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+  -> M.HashMap (Qualified Ident) (SourceType, NameKind, NameVisibility)
   -- ^ Names brought into scope in this binding group
   -> m ((SourceAnn, Ident), (Expr, SourceType))
 checkTypedBindingGroupElement mn (ident, (val, args, ty, checkType)) dict = do
@@ -305,7 +306,7 @@ typeForBindingGroupElement
   => ((SourceAnn, Ident), (Expr, SourceType))
   -- ^ The identifier we are trying to define, along with the expression and its assigned type
   -- (at this point, this should be a unification variable)
-  -> M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+  -> M.HashMap (Qualified Ident) (SourceType, NameKind, NameVisibility)
   -- ^ Names brought into scope in this binding group
   -> m ((SourceAnn, Ident), (Expr, SourceType))
 typeForBindingGroupElement (ident, (val, ty)) dict = do
@@ -618,7 +619,7 @@ inferBinder
    . (MonadState CheckState m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
   => SourceType
   -> Binder
-  -> m (M.Map Ident (SourceSpan, SourceType))
+  -> m (M.HashMap Ident (SourceSpan, SourceType))
 inferBinder _ NullBinder = return M.empty
 inferBinder val (LiteralBinder _ (StringLiteral _)) = unifyTypes val tyString >> return M.empty
 inferBinder val (LiteralBinder _ (CharLiteral _)) = unifyTypes val tyChar >> return M.empty
@@ -652,7 +653,7 @@ inferBinder val (LiteralBinder _ (ObjectLiteral props)) = do
   unifyTypes val (srcTypeApp tyRecord row)
   return m1
   where
-  inferRowProperties :: SourceType -> SourceType -> [(PSString, Binder)] -> m (M.Map Ident (SourceSpan, SourceType))
+  inferRowProperties :: SourceType -> SourceType -> [(PSString, Binder)] -> m (M.HashMap Ident (SourceSpan, SourceType))
   inferRowProperties nrow row [] = unifyTypes nrow row >> return M.empty
   inferRowProperties nrow row ((name, binder):binders) = do
     propTy <- freshTypeWithKind kindType

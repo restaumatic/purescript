@@ -41,8 +41,8 @@ import Data.Function (on)
 import Data.Functor (($>))
 import Data.IntSet qualified as IS
 import Data.List (nubBy, sortOn, (\\))
-import Data.Map qualified as M
 import Data.IntMap.Lazy qualified as IM
+import Data.HashMap.Strict qualified as M
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -270,7 +270,7 @@ inferAppKind ann (fn, fnKind) arg = case fnKind of
     cannotApplyTypeToType fn arg
   where
   requiresSynonymsToExpand = \case
-    TypeConstructor _ v -> M.notMember v . E.typeSynonyms <$> getEnv
+    TypeConstructor _ v -> not . M.member v . E.typeSynonyms <$> getEnv
     TypeApp _ l _ -> requiresSynonymsToExpand l
     KindApp _ l _ -> requiresSynonymsToExpand l
     _ -> pure True

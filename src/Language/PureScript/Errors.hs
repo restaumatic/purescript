@@ -28,7 +28,7 @@ import Data.List (transpose, nubBy, partition, dropWhileEnd, sortOn, uncons)
 import Data.List.NonEmpty qualified as NEL
 import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.Maybe (maybeToList, fromMaybe, isJust, mapMaybe)
-import Data.IntMap.Strict qualified as M
+import Data.IntMap.Lazy qualified as M
 import Data.Ord (Down(..))
 import Data.Set qualified as S
 import Data.Text qualified as T
