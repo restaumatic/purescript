@@ -23,7 +23,7 @@ import Data.Text qualified as T
 import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.AST.SourcePos (SourceSpan(..))
 import Language.PureScript.CoreFn (Ann, Bind(..), Binder(..), CaseAlternative(..), ConstructorType(..), Expr(..), Meta(..), Module(..))
-import Language.PureScript.Names (Ident, ModuleName(..), ProperName(..), Qualified(..), QualifiedBy(..), runIdent, runModuleName)
+import Language.PureScript.Names (Ident, ModuleName(..), ProperName(..), Qualified(..), QualifiedBy(..), runIdent, runModuleName, runProperName)
 import Language.PureScript.PSString (PSString)
 
 constructorTypeToJSON :: ConstructorType -> Value

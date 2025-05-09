@@ -40,7 +40,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (ErrorMessageHint(..), SimpleErrorMessage(..),
                                    MultipleErrors(..), rethrow, errorMessage,
                                    errorMessage', rethrowWithPosition, addHint)
-import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), Qualified(..), QualifiedBy(..), runIdent, runModuleName, showIdent, showQualified)
+import Language.PureScript.Names (Ident(..), ModuleName, Qualified(..), QualifiedBy(..), runIdent, runModuleName, showIdent, showQualified, runProperName)
 import Language.PureScript.Options (CodegenTarget(..), Options(..))
 import Language.PureScript.PSString (PSString, mkString)
 import Language.PureScript.Traversals (sndM)

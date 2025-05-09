@@ -123,7 +123,7 @@ renderConstraints constraints
                  (map renderConstraint constraints)
 
 notQualified :: Text -> P.Qualified (P.ProperName a)
-notQualified = P.Qualified P.ByNullSourcePos . P.ProperName
+notQualified = P.Qualified P.ByNullSourcePos . P.properNameFromString
 
 ident' :: Text -> RenderedCode
 ident' = ident . P.Qualified P.ByNullSourcePos . P.Ident

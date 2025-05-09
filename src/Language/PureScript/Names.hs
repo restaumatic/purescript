@@ -158,17 +158,28 @@ coerceOpName = OpName . runOpName
 -- |
 -- Proper names, i.e. capitalized names for e.g. module names, type//data constructors.
 --
-newtype ProperName (a :: ProperNameType) = ProperName { runProperName :: Text }
-  deriving (Show, Eq, Ord, Generic)
+newtype ProperName (a :: ProperNameType) = ProperName { unProperName :: InternedName }
+  deriving (Eq, Ord, Generic)
+  deriving newtype (NFData)
 
-instance NFData (ProperName a)
-instance Serialise (ProperName a)
+properNameFromString :: Text -> ProperName a
+properNameFromString = ProperName . intern
+
+runProperName :: ProperName a -> Text
+runProperName (ProperName n) = unintern n
+
+instance Show (ProperName a) where
+  show (ProperName i) = "<interned:" ++ show i ++ ">"
+
+instance Serialise (ProperName a) where
+  encode (ProperName n) = encode (unintern n)
+  decode = ProperName . intern <$> decode
 
 instance ToJSON (ProperName a) where
   toJSON = toJSON . runProperName
 
 instance FromJSON (ProperName a) where
-  parseJSON = fmap ProperName . parseJSON
+  parseJSON = fmap (ProperName . intern) . parseJSON
 
 -- |
 -- The closed set of proper name types.
@@ -185,7 +196,7 @@ data ProperNameType
 -- classes have been desugared.
 --
 coerceProperName :: ProperName a -> ProperName b
-coerceProperName = ProperName . runProperName
+coerceProperName = ProperName . unProperName
 
 -- |
 -- Module names

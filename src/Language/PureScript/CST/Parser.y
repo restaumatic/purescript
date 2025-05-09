@@ -180,11 +180,11 @@ moduleName :: { Name N.ModuleName }
   | QUAL_UPPER {% upperToModuleName $1 }
 
 qualProperName :: { QualifiedProperName }
-  : UPPER {% qualifiedProperName <\$> toQualifiedName N.ProperName $1 }
-  | QUAL_UPPER {% qualifiedProperName <\$> toQualifiedName N.ProperName $1 }
+  : UPPER {% qualifiedProperName <\$> toQualifiedName N.properNameFromString $1 }
+  | QUAL_UPPER {% qualifiedProperName <\$> toQualifiedName N.properNameFromString $1 }
 
 properName :: { ProperName }
-  : UPPER {% properName <\$> toName N.ProperName $1 }
+  : UPPER {% properName <\$> toName N.properNameFromString $1 }
 
 qualIdent :: { QualifiedName Ident }
   : LOWER {% toQualifiedName Ident $1 }

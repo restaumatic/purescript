@@ -45,7 +45,7 @@ import Data.Text qualified as T
 import Data.ByteString.Lazy qualified as BS
 import Data.Text.Encoding qualified as TE
 
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, OpName(..), OpNameType(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), moduleNameFromString, runIdent, runModuleName)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, OpName(..), OpNameType(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), moduleNameFromString, runIdent, runModuleName, runProperName, properNameFromString)
 import Language.PureScript.AST (Associativity(..))
 
 -- | Given a list of actions, attempt them all, returning the first success.
@@ -298,7 +298,7 @@ aliasName for name' =
       ValueLevel ->
         ident (Qualified ByNullSourcePos (Ident name))
       TypeLevel ->
-        typeCtor (Qualified ByNullSourcePos (ProperName name))
+        typeCtor (Qualified ByNullSourcePos (properNameFromString name))
 
 -- | Converts a FixityAlias into a different representation which is more
 -- useful to other functions in this module.

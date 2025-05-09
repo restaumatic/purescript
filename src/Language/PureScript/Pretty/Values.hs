@@ -18,7 +18,7 @@ import Data.Text qualified as T
 
 import Language.PureScript.AST (AssocList(..), Binder(..), CaseAlternative(..), Declaration(..), DoNotationElement(..), Expr(..), Guard(..), GuardedExpr(..), Literal(..), PathNode(..), PathTree(..), TypeDeclarationData(..), pattern ValueDecl, WhereProvenance(..))
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Names (OpName(..), ProperName(..), Qualified(..), disqualify, runModuleName, showIdent)
+import Language.PureScript.Names (OpName(..), Qualified(..), disqualify, runModuleName, showIdent, runProperName)
 import Language.PureScript.Pretty.Common (before, beforeWithSpace, parensT)
 import Language.PureScript.Pretty.Types (typeAsBox, typeAtomAsBox, prettyPrintObjectKey)
 import Language.PureScript.Types (Constraint(..))

@@ -28,7 +28,7 @@ interner :: MVar (M.Map Text InternedName, IM.IntMap Text, InternedName)
 interner = unsafePerformIO $ newMVar (M.empty, IM.empty, InternedName 0)
 
 intern :: Text -> InternedName
-intern s = unsafePerformIO $ do
+intern s = s `seq` unsafePerformIO $ do
   modifyMVar interner $ \(m, im, next) ->
     case M.lookup s m of
       Just i -> pure ((m, im, next), i)

@@ -8,7 +8,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Names (Ident(..), InternalIdentData(..), runModuleName, ProperName(..), unusedIdent, ModuleName)
+import Language.PureScript.Names (Ident(..), InternalIdentData(..), runModuleName, ProperName(..), unusedIdent, ModuleName, runProperName)
 
 moduleNameToJs :: ModuleName -> Text
 moduleNameToJs mn =

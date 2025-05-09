@@ -13,7 +13,7 @@ import Language.PureScript.Constants.Libs qualified as Libs
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), NameKind(..))
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), errorMessage')
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), freshIdent)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), freshIdent, runProperName)
 import Language.PureScript.PSString (mkString)
 import Language.PureScript.Types (SourceType, Type(..), WildcardData(..), replaceAllTypeVars, srcTypeApp, srcTypeConstructor, srcTypeLevelString)
 import Language.PureScript.TypeChecker (checkNewtype)

@@ -24,7 +24,7 @@ import Data.List.NonEmpty qualified as NEL
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (Environment(..), NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..))
 import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition)
-import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName)
+import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName, runProperName, properNameFromString)
 import Language.PureScript.Pretty.Types (prettyPrintType)
 import Language.PureScript.Pretty.Values (prettyPrintValue)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
@@ -175,9 +175,9 @@ withScopedTypeVars
 withScopedTypeVars mn ks ma = do
   orig <- get
   forM_ ks $ \(name, _) ->
-    when (Qualified (ByModuleName mn) (ProperName name) `M.member` types (checkEnv orig)) $
+    when (Qualified (ByModuleName mn) (properNameFromString name) `M.member` types (checkEnv orig)) $
       tell . errorMessage $ ShadowedTypeVar name
-  bindTypes (M.fromList (map (\(name, k) -> (Qualified (ByModuleName mn) (ProperName name), (k, ScopedTypeVar))) ks)) ma
+  bindTypes (M.fromList (map (\(name, k) -> (Qualified (ByModuleName mn) (properNameFromString name), (k, ScopedTypeVar))) ks)) ma
 
 withErrorMessageHint
   :: (MonadState CheckState m, MonadError MultipleErrors m)

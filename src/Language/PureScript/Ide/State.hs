@@ -338,9 +338,9 @@ resolveDocumentationForModule (P.Module _ moduleComments moduleName sdecls _) =
     convertDeclaration'
       (annotateValue . P.IdentName)
       (annotateValue . P.IdentName . P.Ident)
-      (annotateValue . P.DctorName . P.ProperName)
-      (annotateValue . P.TyName . P.ProperName)
-      (annotateValue . P.TyClassName . P.ProperName)
+      (annotateValue . P.DctorName . P.properNameFromString)
+      (annotateValue . P.TyName . P.properNameFromString)
+      (annotateValue . P.TyClassName . P.properNameFromString)
       (annotateValue . P.ModName . P.moduleNameFromString)
       d
     where

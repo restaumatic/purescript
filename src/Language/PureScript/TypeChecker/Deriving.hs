@@ -23,7 +23,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), FunctionalDependency(..), TypeClassData(..), TypeKind(..), kindType, (-:>))
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, errorMessage, internalCompilerError)
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify, properNameFromString)
 import Language.PureScript.PSString (PSString, mkString)
 import Language.PureScript.Sugar.TypeClasses (superClassDictionaryNames)
 import Language.PureScript.TypeChecker.Entailment (InstanceContext, findDicts)
@@ -279,10 +279,10 @@ deriveOrd utc = do
     orderingMod = ModuleName "Data.Ordering"
 
     orderingCtor :: Text -> Expr
-    orderingCtor = mkCtor orderingMod . ProperName
+    orderingCtor = mkCtor orderingMod . properNameFromString
 
     orderingBinder :: Text -> Binder
-    orderingBinder name = mkCtorBinder orderingMod (ProperName name) []
+    orderingBinder name = mkCtorBinder orderingMod (properNameFromString name) []
 
     ordCompare :: Expr -> Expr -> Expr
     ordCompare = App . App (mkRef Libs.I_compare)

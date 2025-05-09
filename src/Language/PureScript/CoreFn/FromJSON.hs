@@ -23,7 +23,7 @@ import Language.PureScript.AST.SourcePos (SourceSpan(..))
 import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.CoreFn.Ann (Ann)
 import Language.PureScript.CoreFn (Bind(..), Binder(..), CaseAlternative(..), ConstructorType(..), Expr(..), Guard, Meta(..), Module(..))
-import Language.PureScript.Names (Ident(..), ModuleName(..), ProperName(..), Qualified(..), QualifiedBy(..), unusedIdent, moduleNameFromString)
+import Language.PureScript.Names (Ident(..), ModuleName(..), properNameFromString, Qualified(..), QualifiedBy(..), unusedIdent, moduleNameFromString, ProperName)
 import Language.PureScript.PSString (PSString)
 
 import Text.ParserCombinators.ReadP (readP_to_S)
@@ -108,7 +108,7 @@ identFromJSON = withText "Ident" $ \case
         | otherwise -> pure $ Ident ident 
 
 properNameFromJSON :: Value -> Parser (ProperName a)
-properNameFromJSON = fmap ProperName . parseJSON
+properNameFromJSON = fmap properNameFromString . parseJSON
 
 qualifiedFromJSON :: (Text -> a) -> Value -> Parser (Qualified a)
 qualifiedFromJSON f = withObject "Qualified" qualifiedFromObj
@@ -307,8 +307,8 @@ binderFromJSON modulePath = withObject "Binder" binderFromObj
 
   constructorBinderFromObj o = do
     ann <- o .: "annotation" >>= annFromJSON modulePath
-    tyn <- o .: "typeName" >>= qualifiedFromJSON ProperName
-    con <- o .: "constructorName" >>= qualifiedFromJSON ProperName
+    tyn <- o .: "typeName" >>= qualifiedFromJSON properNameFromString
+    con <- o .: "constructorName" >>= qualifiedFromJSON properNameFromString
     bs  <- o .: "binders" >>= listParser (binderFromJSON modulePath)
     return $ ConstructorBinder ann tyn con bs
 

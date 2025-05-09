@@ -26,7 +26,7 @@ import Language.PureScript.CoreFn.Expr (Bind(..), CaseAlternative(..), Expr(..))
 import Language.PureScript.CoreFn.Meta (Meta(IsSyntheticApp))
 import Language.PureScript.CoreFn.Traversals (everywhereOnValues, traverseCoreFn)
 import Language.PureScript.Environment (dictTypeName)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), Qualified(..), QualifiedBy(..), freshIdent, runIdent, toMaybeModuleName)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Qualified(..), QualifiedBy(..), freshIdent, runIdent, toMaybeModuleName, properNameFromString)
 import Language.PureScript.PSString (decodeString)
 
 -- |
@@ -248,7 +248,7 @@ generateIdentFor d e = at d . non mempty . at e %%<~ \case
   nameHint = \case
     App _ v1 v2
       | Var _ n <- v1
-      , fmap (ProperName . runIdent) n == fmap dictTypeName C.IsSymbol
+      , fmap (properNameFromString . runIdent) n == fmap dictTypeName C.IsSymbol
       , Literal _ (ObjectLiteral [(_, Abs _ _ (Literal _ (StringLiteral str)))]) <- v2
       , Just decodedStr <- decodeString str
         -> decodedStr <> "IsSymbol"
