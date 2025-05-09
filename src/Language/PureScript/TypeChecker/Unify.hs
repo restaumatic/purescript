@@ -28,14 +28,14 @@ import Data.Text qualified as T
 
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment qualified as E
-import Language.PureScript.Errors (ErrorMessageHint (..), MultipleErrors, SimpleErrorMessage (..), SourceAnn, errorMessage, internalCompilerError, onErrorMessages, rethrow, warnWithPosition, withoutPosition)
+import Language.PureScript.Errors (ErrorMessageHint(..), SimpleErrorMessage(..), SourceAnn, errorMessage, internalCompilerError, onErrorMessages, rethrow, warnWithPosition, withoutPosition)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, unifyKinds')
-import Language.PureScript.TypeChecker.Monad (CheckState (..), Substitution (..), UnkLevel (..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint)
+import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
 import Language.PureScript.Types (Constraint (..), RowListItem (..), SourceType, Type (..), WildcardData (..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, mkForAll, rowFromList, srcTUnknown, pattern REmptyKinded)
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
-freshType :: (MonadState CheckState m) => m SourceType
+freshType :: TypeCheckM SourceType
 freshType = state $ \st -> do
   let
     t = checkNextType st
@@ -54,7 +54,7 @@ freshType = state $ \st -> do
   (srcTUnknown (t + 1), st')
 
 -- | Generate a fresh type variable with a known kind.
-freshTypeWithKind :: (MonadState CheckState m) => SourceType -> m SourceType
+freshTypeWithKind :: SourceType -> TypeCheckM SourceType
 freshTypeWithKind kind = state $ \st -> do
   let
     t = checkNextType st
@@ -67,7 +67,7 @@ freshTypeWithKind kind = state $ \st -> do
   (srcTUnknown t, st')
 
 -- | Update the substitution to solve a type constraint
-solveType :: (MonadError MultipleErrors m, MonadState CheckState m) => Int -> SourceType -> m ()
+solveType :: Int -> SourceType -> TypeCheckM ()
 solveType u t = rethrow (onErrorMessages withoutPosition) $ do
   occursCheck u t
   k1 <- elaborateKind t
@@ -119,7 +119,7 @@ substituteType sub = everywhereOnTypes go
   go other = other
 
 -- | Make sure that an unknown does not occur in a type
-occursCheck :: (MonadError MultipleErrors m) => Int -> SourceType -> m ()
+occursCheck :: Int -> SourceType -> TypeCheckM ()
 occursCheck _ TUnknown{} = return ()
 occursCheck u t = void $ everywhereOnTypesM go t
  where
@@ -135,7 +135,7 @@ unknownsInType t = everythingOnTypes (.) go t []
   go _ = id
 
 -- | Unify two types, updating the current substitution
-unifyTypes :: (MonadError MultipleErrors m, MonadState CheckState m) => SourceType -> SourceType -> m ()
+unifyTypes :: SourceType -> SourceType -> TypeCheckM ()
 unifyTypes t1 t2 = do
   sub <- gets checkSubstitution
   withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes' (substituteType sub t1) (substituteType sub t2)
@@ -191,15 +191,14 @@ Common labels are identified and unified. Remaining labels and types are unified
 trailing row unification variable, if appropriate.
 -}
 unifyRows :: forall m. (MonadError MultipleErrors m, MonadState CheckState m) => SourceType -> SourceType -> m ()
-unifyRows r1 r2 = foldM_ (\_ (l, t1, t2) -> unifyTypesWithLabel l t1 t2) () matches *> uncurry unifyTails rest
- where
+unifyRows r1 r2 = foldM_ (\_ (l, t1, t2) -> unifyTypesWithLabel l t1 t2) () matches *> uncurry unifyTails rest where
   unifyTypesWithLabel l t1 t2 = withErrorMessageHint (ErrorInRowLabel l) $ unifyTypes t1 t2
 
   (matches, rest) = alignRowsWith (,,) r1 r2
 
-  unifyTails :: ([RowListItem SourceAnn], SourceType) -> ([RowListItem SourceAnn], SourceType) -> m ()
-  unifyTails ([], TUnknown _ u) (sd, r) = solveType u (rowFromList (sd, r))
-  unifyTails (sd, r) ([], TUnknown _ u) = solveType u (rowFromList (sd, r))
+  unifyTails :: ([RowListItem SourceAnn], SourceType) -> ([RowListItem SourceAnn], SourceType) -> TypeCheckM ()
+  unifyTails ([], TUnknown _ u)    (sd, r)               = solveType u (rowFromList (sd, r))
+  unifyTails (sd, r)               ([], TUnknown _ u)    = solveType u (rowFromList (sd, r))
   unifyTails ([], REmptyKinded _ _) ([], REmptyKinded _ _) = return ()
   unifyTails ([], TypeVar _ v1) ([], TypeVar _ v2) | v1 == v2 = return ()
   unifyTails ([], Skolem _ _ _ s1 _) ([], Skolem _ _ _ s2 _) | s1 == s2 = return ()
@@ -225,7 +224,11 @@ elaborateKindMemo t = do
 {- |
 Replace type wildcards with unknowns
 -}
-replaceTypeWildcards :: (MonadWriter MultipleErrors m, MonadState CheckState m) => SourceType -> m SourceType
+-- replaceTypeWildcards :: (MonadWriter MultipleErrors m, MonadState CheckState m) => SourceType -> m SourceType
+-- |
+-- Replace type wildcards with unknowns
+--
+replaceTypeWildcards :: SourceType -> TypeCheckM SourceType
 replaceTypeWildcards = everywhereOnTypesM replace
  where
   replace (TypeWildcard ann wdata) = do
@@ -242,22 +245,25 @@ replaceTypeWildcards = everywhereOnTypesM replace
 {- |
 Replace outermost unsolved unification variables with named type variables
 -}
-varIfUnknown :: forall m. (MonadState CheckState m) => [(Unknown, SourceType)] -> SourceType -> m SourceType
+-- |
+-- Replace outermost unsolved unification variables with named type variables
+--
+varIfUnknown :: [(Unknown, SourceType)] -> SourceType -> TypeCheckM SourceType
 varIfUnknown unks ty = do
   bn' <- traverse toBinding unks
   ty' <- go ty
   pure $ mkForAll bn' ty'
- where
-  toName :: Unknown -> m T.Text
+  where
+  toName :: Unknown -> TypeCheckM T.Text
   toName u = (<> T.pack (show u)) . fromMaybe "t" <$> lookupUnkName u
 
-  toBinding :: (Unknown, SourceType) -> m (SourceAnn, (T.Text, Maybe SourceType))
+  toBinding :: (Unknown, SourceType) -> TypeCheckM (SourceAnn, (T.Text, Maybe SourceType))
   toBinding (u, k) = do
     u' <- toName u
     k' <- go k
     pure (getAnnForType ty, (u', Just k'))
 
-  go :: SourceType -> m SourceType
+  go :: SourceType -> TypeCheckM SourceType
   go = everywhereOnTypesM $ \case
     (TUnknown ann u) ->
       TypeVar ann <$> toName u
