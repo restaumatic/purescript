@@ -342,6 +342,7 @@ library
     Language.PureScript.Make.Monad
     Language.PureScript.ModuleDependencies
     Language.PureScript.Names
+    Language.PureScript.InternedText
     Language.PureScript.Options
     Language.PureScript.Pretty
     Language.PureScript.Pretty.Common

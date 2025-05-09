@@ -50,10 +50,10 @@ runDependency :: [Text] -> [Module]
 runDependency = runDependency' "Whatever"
 
 runDependency' :: Text -> [Text] -> [Module]
-runDependency' currentModuleName imports = Map.toList $ applyFilters [dependencyFilter Nothing (P.ModuleName currentModuleName) (testParseImports currentModuleName imports)] allModules
+runDependency' currentModuleName imports = Map.toList $ applyFilters [dependencyFilter Nothing (P.moduleNameFromString currentModuleName) (testParseImports currentModuleName imports)] allModules
 
 runDependencyQualified :: Text -> [Text] -> [Module]
-runDependencyQualified qualifier imports = Map.toList $ applyFilters [dependencyFilter (Just $ P.ModuleName qualifier) (P.ModuleName "Whatever") (testParseImports "Whatever" imports)] allModules
+runDependencyQualified qualifier imports = Map.toList $ applyFilters [dependencyFilter (Just $ P.moduleNameFromString qualifier) (P.ModuleName "Whatever") (testParseImports "Whatever" imports)] allModules
 
 testParseImports :: Text -> [Text] -> [Import]
 testParseImports currentModuleName imports = either (const []) (\(_, _, x, _) -> x) $ sliceImportSection moduleLines

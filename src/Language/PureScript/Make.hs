@@ -247,8 +247,8 @@ make' MakeOptions{..} ma@MakeActions{..} ms = do
   -- Here we return all the ExternsFile in the ordering of the topological sort,
   -- so they can be folded into an Environment. This result is used in the tests
   -- and in PSCI.
-  let lookupResult mn@(ModuleName name) =
-        fromMaybe (internalError $ "make: module not found in results: " <> T.unpack name)
+  let lookupResult mn =
+        fromMaybe (internalError $ "make: module not found in results: " <> T.unpack (runModuleName mn))
         $ M.lookup mn successes
 
   pure $

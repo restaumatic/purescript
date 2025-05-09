@@ -7,7 +7,7 @@ module Language.PureScript.Names where
 
 import Prelude
 
-import Codec.Serialise (Serialise)
+import Codec.Serialise (Serialise (..))
 import Control.Applicative ((<|>))
 import Control.Monad.Supply.Class (MonadSupply(..))
 import Control.DeepSeq (NFData)
@@ -22,6 +22,8 @@ import Data.Text qualified as T
 import Data.Int (Int64)
 
 import Language.PureScript.AST.SourcePos (SourcePos, pattern SourcePos)
+import Language.PureScript.InternedText (InternedName, unintern, intern)
+import GHC.Stack (HasCallStack)
 
 -- | A sum of the possible name types, useful for error and lint messages.
 data Name
@@ -188,20 +190,23 @@ coerceProperName = ProperName . runProperName
 -- |
 -- Module names
 --
-newtype ModuleName = ModuleName Text
+newtype ModuleName = ModuleName InternedName
   deriving (Show, Eq, Ord, Generic)
-  deriving newtype Serialise
+
+instance Serialise ModuleName where
+  encode (ModuleName i) = encode (unintern i)
+  decode = ModuleName . intern <$> decode
 
 instance NFData ModuleName
 
-runModuleName :: ModuleName -> Text
-runModuleName (ModuleName name) = name
+runModuleName :: HasCallStack => ModuleName -> Text
+runModuleName (ModuleName name) = unintern name
 
 moduleNameFromString :: Text -> ModuleName
-moduleNameFromString = ModuleName
+moduleNameFromString = ModuleName . intern
 
 isBuiltinModuleName :: ModuleName -> Bool
-isBuiltinModuleName (ModuleName mn) = mn == "Prim" || "Prim." `T.isPrefixOf` mn
+isBuiltinModuleName (ModuleName mn') = let mn = unintern mn' in mn == "Prim" || "Prim." `T.isPrefixOf` mn
 
 data QualifiedBy
   = BySourcePos SourcePos
@@ -306,12 +311,12 @@ instance FromJSON a => FromJSON (Qualified a) where
       pure $ Qualified (byMaybeModuleName mn) a
 
 instance ToJSON ModuleName where
-  toJSON (ModuleName name) = toJSON (T.splitOn "." name)
+  toJSON mn = toJSON (T.splitOn "." $ runModuleName mn)
 
 instance FromJSON ModuleName where
   parseJSON = withArray "ModuleName" $ \names -> do
     names' <- traverse parseJSON names
-    pure (ModuleName (T.intercalate "." (V.toList names')))
+    pure (moduleNameFromString (T.intercalate "." (V.toList names')))
 
 instance ToJSONKey ModuleName where
   toJSONKey = contramap runModuleName toJSONKey

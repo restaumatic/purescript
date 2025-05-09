@@ -23,7 +23,7 @@ import Language.PureScript.AST.SourcePos (SourceSpan(..))
 import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.CoreFn.Ann (Ann)
 import Language.PureScript.CoreFn (Bind(..), Binder(..), CaseAlternative(..), ConstructorType(..), Expr(..), Guard, Meta(..), Module(..))
-import Language.PureScript.Names (Ident(..), ModuleName(..), ProperName(..), Qualified(..), QualifiedBy(..), unusedIdent)
+import Language.PureScript.Names (Ident(..), ModuleName(..), ProperName(..), Qualified(..), QualifiedBy(..), unusedIdent, moduleNameFromString)
 import Language.PureScript.PSString (PSString)
 
 import Text.ParserCombinators.ReadP (readP_to_S)
@@ -125,7 +125,7 @@ qualifiedFromJSON f = withObject "Qualified" qualifiedFromObj
     pure $ Qualified (BySourcePos ss) i
 
 moduleNameFromJSON :: Value -> Parser ModuleName
-moduleNameFromJSON v = ModuleName . T.intercalate "." <$> listParser parseJSON v
+moduleNameFromJSON v = moduleNameFromString . T.intercalate "." <$> listParser parseJSON v
 
 moduleFromJSON :: Value -> Parser (Version, Module Ann)
 moduleFromJSON = withObject "Module" moduleFromObj

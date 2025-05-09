@@ -23,7 +23,7 @@ import Data.Text qualified as T
 import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.AST.SourcePos (SourceSpan(..))
 import Language.PureScript.CoreFn (Ann, Bind(..), Binder(..), CaseAlternative(..), ConstructorType(..), Expr(..), Meta(..), Module(..))
-import Language.PureScript.Names (Ident, ModuleName(..), ProperName(..), Qualified(..), QualifiedBy(..), runIdent)
+import Language.PureScript.Names (Ident, ModuleName(..), ProperName(..), Qualified(..), QualifiedBy(..), runIdent, runModuleName)
 import Language.PureScript.PSString (PSString)
 
 constructorTypeToJSON :: ConstructorType -> Value
@@ -114,7 +114,7 @@ qualifiedToJSON f (Qualified qb a) =
       ]
 
 moduleNameToJSON :: ModuleName -> Value
-moduleNameToJSON (ModuleName name) = toJSON (T.splitOn (T.pack ".") name)
+moduleNameToJSON mn = toJSON (T.splitOn (T.pack ".") $ runModuleName mn)
 
 moduleToJSON :: Version -> Module Ann -> Value
 moduleToJSON v m = object
