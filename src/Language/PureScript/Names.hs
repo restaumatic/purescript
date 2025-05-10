@@ -22,8 +22,7 @@ import Data.Text qualified as T
 import Data.Int (Int64)
 
 import Language.PureScript.AST.SourcePos (SourcePos, pattern SourcePos)
-import Language.PureScript.InternedText (InternedName, unintern, intern)
-import GHC.Stack (HasCallStack)
+import Language.PureScript.InternedText (InternedName, uninternText, internText)
 
 -- | A sum of the possible name types, useful for error and lint messages.
 data Name
@@ -95,7 +94,7 @@ data Ident
   --
   | UnusedIdent
   -- |
-  -- A generated name used only for internal transformations
+  -- A generated name used only for internTextal transformations
   --
   | InternalIdent !InternalIdentData
   deriving (Show, Eq, Ord, Generic)
@@ -163,23 +162,23 @@ newtype ProperName (a :: ProperNameType) = ProperName { unProperName :: Interned
   deriving newtype (NFData)
 
 properNameFromString :: Text -> ProperName a
-properNameFromString = ProperName . intern
+properNameFromString = ProperName . internText
 
 runProperName :: ProperName a -> Text
-runProperName (ProperName n) = unintern n
+runProperName (ProperName n) = uninternText n
 
 instance Show (ProperName a) where
-  show (ProperName i) = "<interned:" ++ show i ++ ">"
+  show (ProperName i) = "<internTexted:" ++ show i ++ ">"
 
 instance Serialise (ProperName a) where
-  encode (ProperName n) = encode (unintern n)
-  decode = ProperName . intern <$> decode
+  encode (ProperName n) = encode (uninternText n)
+  decode = ProperName . internText <$> decode
 
 instance ToJSON (ProperName a) where
   toJSON = toJSON . runProperName
 
 instance FromJSON (ProperName a) where
-  parseJSON = fmap (ProperName . intern) . parseJSON
+  parseJSON = fmap (ProperName . internText) . parseJSON
 
 -- |
 -- The closed set of proper name types.
@@ -205,19 +204,19 @@ newtype ModuleName = ModuleName InternedName
   deriving (Show, Eq, Ord, Generic)
 
 instance Serialise ModuleName where
-  encode (ModuleName i) = encode (unintern i)
-  decode = ModuleName . intern <$> decode
+  encode (ModuleName i) = encode (uninternText i)
+  decode = ModuleName . internText <$> decode
 
 instance NFData ModuleName
 
-runModuleName :: HasCallStack => ModuleName -> Text
-runModuleName (ModuleName name) = unintern name
+runModuleName :: ModuleName -> Text
+runModuleName (ModuleName name) = uninternText name
 
 moduleNameFromString :: Text -> ModuleName
-moduleNameFromString = ModuleName . intern
+moduleNameFromString = ModuleName . internText
 
 isBuiltinModuleName :: ModuleName -> Bool
-isBuiltinModuleName (ModuleName mn') = let mn = unintern mn' in mn == "Prim" || "Prim." `T.isPrefixOf` mn
+isBuiltinModuleName (ModuleName mn') = let mn = uninternText mn' in mn == "Prim" || "Prim." `T.isPrefixOf` mn
 
 data QualifiedBy
   = BySourcePos SourcePos

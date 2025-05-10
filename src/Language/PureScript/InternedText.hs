@@ -3,6 +3,8 @@ module Language.PureScript.InternedText
   , intern
   , unintern
   , IsString (..)
+  , internText
+  , uninternText
   ) where
 
 import Prelude
@@ -20,14 +22,20 @@ newtype InternedName = InternedName Int
   deriving newtype (NFData, Eq, Ord)
 
 instance IsString InternedName where
-  fromString s = intern (fromString s)
+  fromString s = intern (fromString s :: Text)
 
 -- Global state
 {-# NOINLINE interner #-}
-interner :: MVar (M.Map Text InternedName, IM.IntMap Text, InternedName)
+interner :: MVar (M.Map a InternedName, IM.IntMap a, InternedName)
 interner = unsafePerformIO $ newMVar (M.empty, IM.empty, InternedName 0)
 
-intern :: Text -> InternedName
+internText :: Text -> InternedName
+internText = intern
+
+uninternText :: InternedName -> Text
+uninternText = unintern
+
+intern :: Ord a => a -> InternedName
 intern s = s `seq` unsafePerformIO $ do
   modifyMVar interner $ \(m, im, next) ->
     case M.lookup s m of
@@ -38,10 +46,11 @@ intern s = s `seq` unsafePerformIO $ do
          in pure ((M.insert s i m, IM.insert ii s im, next'), i)
 
 
-unintern :: HasCallStack => InternedName -> Text
+unintern :: HasCallStack => InternedName -> a
 unintern (InternedName i) = unsafePerformIO $ do
   (_, im, _) <- readMVar interner
   case IM.lookup i im of
     Just s -> pure s
     Nothing -> error $ "Unknown interned name: " ++ show i
+
 
