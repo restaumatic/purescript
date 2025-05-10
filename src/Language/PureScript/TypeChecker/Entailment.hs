@@ -52,6 +52,8 @@ import Language.PureScript.Label (Label(..))
 import Language.PureScript.PSString (PSString, mkString, decodeString)
 import Language.PureScript.Constants.Libs qualified as C
 import Language.PureScript.Constants.Prim qualified as C
+import Language.PureScript.Timing (Metric, newMetric, timedIO)
+import GHC.IO (unsafePerformIO)
 
 -- | Describes what sort of dictionary to generate for type class instances
 data Evidence
@@ -175,6 +177,18 @@ instance Semigroup t => Semigroup (Matched t) where
 instance Monoid t => Monoid (Matched t) where
   mempty = Match mempty
 
+metric_entails :: Metric
+metric_entails = unsafePerformIO $ newMetric "entails"
+{-# NOINLINE metric_entails #-}
+
+metric_entails_unify :: Metric
+metric_entails_unify = unsafePerformIO $ newMetric "entails_unify"
+{-# NOINLINE metric_entails_unify #-}
+
+metric_entails_solution :: Metric
+metric_entails_solution = unsafePerformIO $ newMetric "entails_solution"
+{-# NOINLINE metric_entails_solution #-}
+
 -- | Check that the current set of type class dictionaries entail the specified type class goal, and, if so,
 -- return a type class dictionary reference.
 entails
@@ -188,7 +202,7 @@ entails
   -> [ErrorMessageHint]
   -- ^ Error message hints to apply to any instance errors
   -> WriterT (Any, [(Ident, InstanceContext, SourceConstraint)]) (StateT InstanceContext TypeCheckM) Expr
-entails SolverOptions{..} constraint context hints =
+entails SolverOptions{..} constraint context hints = timedIO metric_entails $
   overConstraintArgsAll (lift . lift . traverse replaceAllTypeSynonyms) constraint >>= solve
   where
     forClassNameM :: Environment -> InstanceContext -> Qualified (ProperName 'ClassName) -> [SourceType] -> [SourceType] -> TypeCheckM [TypeClassDict]
@@ -278,7 +292,7 @@ entails SolverOptions{..} constraint context hints =
                                     else Left (Left (tcdToInstanceDescription tcd)) -- can't continue with this chain yet, need proof of apartness
 
                   lefts [found]
-            solution <- lift . lift 
+            solution <- timedIO metric_entails_solution $ lift . lift 
               $ unique kinds'' tys'' ambiguous instances 
               $ unknownsInAllCoveringSets (fst . (typeClassArguments !!)) typeClassMembers tys'' typeClassCoveringSets
             case solution of
@@ -286,7 +300,7 @@ entails SolverOptions{..} constraint context hints =
                 -- Note that we solved something.
                 tell (Any True, mempty)
                 -- Make sure the substitution is valid:
-                lift . lift . for_ substs $ pairwiseM unifyTypes
+                timedIO metric_entails_unify $ lift . lift . for_ substs $ pairwiseM unifyTypes
                 -- Now enforce any functional dependencies, using unification
                 -- Note: we need to generate fresh types for any unconstrained
                 -- type variables before unifying.
@@ -295,7 +309,7 @@ entails SolverOptions{..} constraint context hints =
                 subst' <- lift . lift $ withFreshTypes tcd (fmap (substituteType currentSubst) subst)
                 lift . lift $ zipWithM_ (\t1 t2 -> do
                   let inferredType = replaceAllTypeVars (M.toList subst') t1
-                  unifyTypes inferredType t2) (tcdInstanceTypes tcd) tys''
+                  timedIO metric_entails_unify $ unifyTypes inferredType t2) (tcdInstanceTypes tcd) tys''
                 currentSubst' <- lift . lift $ gets checkSubstitution
                 let subst'' = fmap (substituteType currentSubst') subst'
                 -- Solve any necessary subgoals
