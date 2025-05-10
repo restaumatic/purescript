@@ -92,10 +92,14 @@ substituteType sub = everywhereOnTypes go
       Just t -> substituteType sub t
   go other = other
 
+metric_occursCheck :: Metric
+metric_occursCheck = unsafePerformIO $ newMetric "occursCheck"
+{-# NOINLINE metric_occursCheck #-}
+
 -- | Make sure that an unknown does not occur in a type
 occursCheck :: Int -> SourceType -> TypeCheckM ()
 occursCheck _ TUnknown{} = return ()
-occursCheck u t = void $ everywhereOnTypesM go t
+occursCheck u t = timedIO metric_occursCheck $ void $ everywhereOnTypesM go t
   where
   go (TUnknown _ u') | u == u' = throwError . errorMessage . InfiniteType $ t
   go other = return other
