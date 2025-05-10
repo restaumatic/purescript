@@ -34,6 +34,8 @@ import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), 
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, mkForAll, rowFromList, srcTUnknown)
 import Data.Set qualified as S
+import Language.PureScript.Timing (Metric, newMetric, timedIO, suspendIO)
+import GHC.IO (unsafePerformIO)
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: TypeCheckM SourceType
@@ -162,13 +164,17 @@ unifyTypes t1 t2 = do
   unifyTypes' t3 t4 =
     throwError . errorMessage $ TypesDoNotUnify t3 t4
 
+metric_unifyRows :: Metric
+metric_unifyRows = unsafePerformIO $ newMetric "unifyRows"
+{-# NOINLINE metric_unifyRows #-}
+
 -- | Unify two rows, updating the current substitution
 --
 -- Common labels are identified and unified. Remaining labels and types are unified with a
 -- trailing row unification variable, if appropriate.
 unifyRows :: SourceType -> SourceType -> TypeCheckM ()
-unifyRows r1 r2 = sequence_ matches *> uncurry unifyTails rest where
-  unifyTypesWithLabel l t1 t2 = withErrorMessageHint (ErrorInRowLabel l) $ unifyTypes t1 t2
+unifyRows r1 r2 = timedIO metric_unifyRows $ sequence_ matches *> uncurry unifyTails rest where
+  unifyTypesWithLabel l t1 t2 = withErrorMessageHint (ErrorInRowLabel l) $ suspendIO metric_unifyRows $ unifyTypes t1 t2
 
   (matches, rest) = alignRowsWith unifyTypesWithLabel r1 r2
 

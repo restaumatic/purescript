@@ -25,6 +25,8 @@ import System.Directory (getCurrentDirectory)
 import System.IO (hPutStr, stderr, stdout)
 import System.IO.UTF8 (readUTF8FilesT)
 
+import Language.PureScript.Timing as Timing
+
 data PSCMakeOptions = PSCMakeOptions
   { pscmInput        :: [FilePath]
   , pscmInputFromFile :: Maybe FilePath
@@ -56,6 +58,7 @@ printWarningsAndErrors verbose True files warnings errors = do
 
 compile :: PSCMakeOptions -> IO ()
 compile PSCMakeOptions{..} = do
+  Timing.start
   input <- toInputGlobs $ PSCGlobs
     { pscInputGlobs = pscmInput
     , pscInputGlobsFromFile = pscmInputFromFile
@@ -75,6 +78,7 @@ compile PSCMakeOptions{..} = do
     let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix
     P.make_ makeActions (map snd ms)
   printWarningsAndErrors (P.optionsVerboseErrors pscmOpts) pscmJSONErrors moduleFiles makeWarnings makeErrors
+  Timing.printResults
   exitSuccess
 
 outputDirectory :: Opts.Parser FilePath

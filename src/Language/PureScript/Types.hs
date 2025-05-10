@@ -28,6 +28,8 @@ import Language.PureScript.Constants.Prim qualified as C
 import Language.PureScript.Names (OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, coerceProperName)
 import Language.PureScript.Label (Label)
 import Language.PureScript.PSString (PSString)
+import Language.PureScript.Timing (timed, Metric, newMetric)
+import GHC.IO.Unsafe (unsafePerformIO)
 
 type SourceType = Type SourceAnn
 type SourceConstraint = Constraint SourceAnn
@@ -473,9 +475,13 @@ rowToList = go where
     first (RowListItem ann name ty :) (rowToList row)
   go r = ([], r)
 
+metric_rowToSortedList :: Metric
+metric_rowToSortedList = unsafePerformIO $ newMetric "rowToSortedList"
+{-# NOINLINE metric_rowToSortedList #-}
+
 -- | Convert a row to a list of pairs of labels and types, sorted by the labels.
 rowToSortedList :: Type a -> ([RowListItem a], Type a)
-rowToSortedList = first (sortOn rowListLabel) . rowToList
+rowToSortedList = timed metric_rowToSortedList . (\(!a, !b) -> (a, b)) . first (sortOn rowListLabel) . rowToList
 
 -- | Convert a list of labels and types to a row
 rowFromList :: ([RowListItem a], Type a) -> Type a

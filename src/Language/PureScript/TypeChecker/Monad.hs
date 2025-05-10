@@ -37,7 +37,7 @@ import Control.Monad.Logger (Logger, runLogger')
 import Control.Monad.Supply.Class qualified as Supply
 
 newtype TypeCheckM a = TypeCheckM { unTypeCheckM :: StateT CheckState (SupplyT (ExceptT MultipleErrors Logger)) a }
-  deriving newtype (Functor, Applicative, Monad, MonadSupply, MonadState CheckState, MonadWriter MultipleErrors, MonadError MultipleErrors)
+  deriving newtype (Functor, Applicative, Monad, MonadSupply, MonadState CheckState, MonadWriter MultipleErrors, MonadError MultipleErrors, MonadIO)
 
 -- | Lift a TypeCheckM computation into another monad that satisfies all its constraints
 liftTypeCheckM ::
