@@ -1,3 +1,4 @@
+{-# LANGUAGE InstanceSigs #-}
 module Language.PureScript.PSString
   ( PSString
   , toUTF16CodeUnits
@@ -11,8 +12,8 @@ module Language.PureScript.PSString
 
 import Prelude
 import GHC.Generics (Generic)
-import Codec.Serialise (Serialise)
-import Control.DeepSeq (NFData)
+import Codec.Serialise qualified as Codec
+import Control.DeepSeq (NFData (..))
 import Control.Exception (try, evaluate)
 import Control.Applicative ((<|>))
 import Data.Char qualified as Char
@@ -33,6 +34,7 @@ import Numeric (showHex)
 import System.IO.Unsafe (unsafePerformIO)
 import Data.Aeson qualified as A
 import Data.Aeson.Types qualified as A
+import Language.PureScript.Interner (Interned, uninternPSString, internPSString)
 
 -- |
 -- Strings in PureScript are sequences of UTF-16 code units, which do not
@@ -48,14 +50,31 @@ import Data.Aeson.Types qualified as A
 -- strings where that would be safe (i.e. when there are no lone surrogates),
 -- and arrays of UTF-16 code units (integers) otherwise.
 --
-newtype PSString = PSString { toUTF16CodeUnits :: [Word16] }
-  deriving (Eq, Ord, Semigroup, Monoid, Generic)
-
-instance NFData PSString
-instance Serialise PSString
+newtype PSString = PSString { unPSString :: Interned }
+  deriving (Eq, Ord, NFData, Generic)
 
 instance Show PSString where
   show = show . codePoints
+
+toUTF16CodeUnits :: PSString -> [Word16]
+toUTF16CodeUnits (PSString ps) = uninternPSString ps
+
+mkPSString :: [Word16] -> PSString
+mkPSString ps = PSString $ internPSString ps
+
+
+instance Semigroup PSString where
+  PSString a <> PSString b = PSString $ internPSString (uninternPSString a <> uninternPSString b)
+
+instance Monoid PSString where
+  mempty = PSString (internPSString [])
+  mappend = (<>)
+
+instance Codec.Serialise PSString where
+  encode (PSString s) = Codec.encode (uninternPSString s)
+  decode = mkPSString <$> Codec.decode
+
+
 
 -- |
 -- Decode a PSString to a String, representing any lone surrogates as the
@@ -66,7 +85,7 @@ instance Show PSString where
 -- we do not export it.
 --
 codePoints :: PSString -> String
-codePoints = map (either (Char.chr . fromIntegral) id) . decodeStringEither
+codePoints = map (either (Char.chr . fromIntegral) id) . decodeStringEither 
 
 -- |
 -- Decode a PSString as UTF-16 text. Lone surrogates will be replaced with
@@ -116,7 +135,7 @@ decodeString = hush . decodeEither . BS.pack . concatMap unpair . toUTF16CodeUni
   hush = either (const Nothing) Just
 
 instance IsString PSString where
-  fromString a = PSString $ concatMap encodeUTF16 a
+  fromString a = mkPSString $ concatMap encodeUTF16 a
     where
     surrogates :: Char -> (Word16, Word16)
     surrogates c = (toWord (h + 0xD800), toWord (l + 0xDC00))
@@ -138,7 +157,7 @@ instance A.FromJSON PSString where
     where
     jsonString = fromString <$> A.parseJSON a
 
-    arrayOfCodeUnits = PSString <$> parseArrayOfCodeUnits a
+    arrayOfCodeUnits = mkPSString <$> parseArrayOfCodeUnits a
 
     parseArrayOfCodeUnits :: A.Value -> A.Parser [Word16]
     parseArrayOfCodeUnits = A.withArray "array of UTF-16 code units" (traverse parseCodeUnit . V.toList)

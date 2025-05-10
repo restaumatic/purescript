@@ -10,7 +10,7 @@ import Test.Hspec (Spec, describe, it)
 import Test.QuickCheck (Arbitrary(..), Gen, Property, Testable, counterexample, forAllShrink, subterms, (===))
 
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, OpName(..), OpNameType(..), ProperName(..), ProperNameType(..), Qualified(..))
+import Language.PureScript.Names (pattern ByNullSourcePos, OpName(..), OpNameType(..), properNameFromString, ProperNameType(..), Qualified(..))
 import Language.PureScript.PSString (PSString)
 import Language.PureScript.Types (Constraint, ConstraintData, SkolemScope(..), Type(..), TypeVarVisibility(..), WildcardData, annForType, everythingOnTypes, everythingWithContextOnTypes, everywhereOnTypes, everywhereOnTypesM, everywhereOnTypesTopDownM, getAnnForType)
 
@@ -54,8 +54,8 @@ genTypeAnnotatedWith genTypeAnn genConstraintAnn = genType where
     :+ Label <$> genPSString
     :+ genPSString
     :+ genQualified (OpName @'TypeOpName)
-    :+ genQualified (ProperName @'ClassName)
-    :+ genQualified (ProperName @'TypeName)
+    :+ genQualified (properNameFromString @'ClassName)
+    :+ genQualified (properNameFromString @'TypeName)
     :+ genSkolemScope
     :+ maybeOf genSkolemScope
     :+ genText

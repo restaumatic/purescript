@@ -22,7 +22,7 @@ import Data.Text qualified as T
 import Data.Int (Int64)
 
 import Language.PureScript.AST.SourcePos (SourcePos, pattern SourcePos)
-import Language.PureScript.InternedText (InternedName, uninternText, internText)
+import Language.PureScript.Interner (Interned, uninternText, internText)
 
 -- | A sum of the possible name types, useful for error and lint messages.
 data Name
@@ -157,7 +157,7 @@ coerceOpName = OpName . runOpName
 -- |
 -- Proper names, i.e. capitalized names for e.g. module names, type//data constructors.
 --
-newtype ProperName (a :: ProperNameType) = ProperName { unProperName :: InternedName }
+newtype ProperName (a :: ProperNameType) = ProperName { unProperName :: Interned }
   deriving (Eq, Ord, Generic)
   deriving newtype (NFData)
 
@@ -200,7 +200,7 @@ coerceProperName = ProperName . unProperName
 -- |
 -- Module names
 --
-newtype ModuleName = ModuleName InternedName
+newtype ModuleName = ModuleName Interned
   deriving (Show, Eq, Ord, Generic)
 
 instance Serialise ModuleName where
@@ -216,7 +216,7 @@ moduleNameFromString :: Text -> ModuleName
 moduleNameFromString = ModuleName . internText
 
 isBuiltinModuleName :: ModuleName -> Bool
-isBuiltinModuleName (ModuleName mn') = let mn = uninternText mn' in mn == "Prim" || "Prim." `T.isPrefixOf` mn
+isBuiltinModuleName mn' = let mn = runModuleName mn' in mn == "Prim" || "Prim." `T.isPrefixOf` mn
 
 data QualifiedBy
   = BySourcePos SourcePos

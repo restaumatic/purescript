@@ -60,23 +60,23 @@ ideValue :: Text -> Maybe P.SourceType -> IdeDeclarationAnn
 ideValue i ty = ida (IdeDeclValue (IdeValue (P.Ident i) (fromMaybe P.tyString ty)))
 
 ideType :: Text -> Maybe P.SourceType -> [(P.ProperName 'P.ConstructorName, P.SourceType)] -> IdeDeclarationAnn
-ideType pn ki dtors = ida (IdeDeclType (IdeType (P.ProperName pn) (fromMaybe P.kindType ki) dtors))
+ideType pn ki dtors = ida (IdeDeclType (IdeType (P.properNameFromString pn) (fromMaybe P.kindType ki) dtors))
 
 ideSynonym :: Text -> Maybe P.SourceType -> Maybe P.SourceType -> IdeDeclarationAnn
-ideSynonym pn ty kind = ida (IdeDeclTypeSynonym (IdeTypeSynonym (P.ProperName pn) (fromMaybe P.tyString ty) (fromMaybe P.kindType kind)))
+ideSynonym pn ty kind = ida (IdeDeclTypeSynonym (IdeTypeSynonym (P.properNameFromString pn) (fromMaybe P.tyString ty) (fromMaybe P.kindType kind)))
 
 ideTypeClass :: Text -> P.SourceType -> [IdeInstance] -> IdeDeclarationAnn
-ideTypeClass pn kind instances = ida (IdeDeclTypeClass (IdeTypeClass (P.ProperName pn) kind instances))
+ideTypeClass pn kind instances = ida (IdeDeclTypeClass (IdeTypeClass (P.properNameFromString pn) kind instances))
 
 ideDtor :: Text -> Text -> Maybe P.SourceType -> IdeDeclarationAnn
-ideDtor pn tn ty = ida (IdeDeclDataConstructor (IdeDataConstructor (P.ProperName pn) (P.ProperName tn) (fromMaybe P.tyString ty)))
+ideDtor pn tn ty = ida (IdeDeclDataConstructor (IdeDataConstructor (P.properNameFromString pn) (P.properNameFromString tn) (fromMaybe P.tyString ty)))
 
 ideValueOp :: Text -> P.Qualified (Either Text Text) -> Integer -> Maybe P.Associativity -> Maybe P.SourceType -> IdeDeclarationAnn
 ideValueOp opName ident precedence assoc t =
   ida (IdeDeclValueOperator
        (IdeValueOperator
         (P.OpName opName)
-        (bimap P.Ident P.ProperName <$> ident)
+        (bimap P.Ident P.properNameFromString <$> ident)
         precedence
         (fromMaybe P.Infix assoc)
         t))
@@ -86,7 +86,7 @@ ideTypeOp opName ident precedence assoc k =
   ida (IdeDeclTypeOperator
        (IdeTypeOperator
         (P.OpName opName)
-        (P.ProperName <$> ident)
+        (P.properNameFromString <$> ident)
         precedence
         (fromMaybe P.Infix assoc)
         k))

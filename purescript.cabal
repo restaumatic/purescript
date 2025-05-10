@@ -169,7 +169,8 @@ common defaults
     clock >=0.8.3 && <0.9,
     containers >=0.6.5.1 && <0.7,
     -- unordered-containers,
-    -- hashable,
+    hashable,
+    random,
     cryptonite ==0.30.*,
     data-ordlist >=0.4.7.0 && <0.5,
     deepseq >=1.4.6.1 && <1.5,
@@ -342,7 +343,7 @@ library
     Language.PureScript.Make.Monad
     Language.PureScript.ModuleDependencies
     Language.PureScript.Names
-    Language.PureScript.InternedText
+    Language.PureScript.Interner
     Language.PureScript.Options
     Language.PureScript.Pretty
     Language.PureScript.Pretty.Common
