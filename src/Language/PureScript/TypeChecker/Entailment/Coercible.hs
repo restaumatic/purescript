@@ -38,7 +38,7 @@ import Data.Set qualified as S
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), TypeKind(..), unapplyKinds)
 import Language.PureScript.Errors (DeclarationRef(..), ErrorMessageHint(..), ExportSource, ImportDeclarationType(..), MultipleErrors, SimpleErrorMessage(..), SourceAnn, errorMessage, UnknownsHint(..))
-import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), Qualified(..), byMaybeModuleName, toMaybeModuleName)
+import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), Qualified(..), byMaybeModuleName, toMaybeModuleName, mkQualified_)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, freshKindWithKind, unifyKinds')
 import Language.PureScript.TypeChecker.Monad (CheckState(..), TypeCheckM)
 import Language.PureScript.TypeChecker.Roles (lookupRoles)
@@ -672,7 +672,7 @@ lookupNewtypeConstructorInScope
   -> Qualified (ProperName 'TypeName)
   -> [SourceType]
   -> Maybe (Bool, Maybe ModuleName, [Text], Qualified (ProperName 'ConstructorName), SourceType)
-lookupNewtypeConstructorInScope env currentModuleName currentModuleImports qualifiedNewtypeName@(Qualified newtypeModuleName newtypeName) ks = do
+lookupNewtypeConstructorInScope env currentModuleName currentModuleImports qualifiedNewtypeName@(Qualified newtypeModuleName newtypeName _) ks = do
   let fromModule = find isNewtypeCtorImported currentModuleImports
       fromModuleName = (\(_, n, _, _, _) -> n) <$> fromModule
       asModuleName = (\(_, _, _, n, _) -> n) =<< fromModule
@@ -680,7 +680,7 @@ lookupNewtypeConstructorInScope env currentModuleName currentModuleImports quali
       isImported = isJust fromModule
       inScope = isDefinedInCurrentModule || isImported
   (tvs, ctorName, wrappedTy) <- lookupNewtypeConstructor env qualifiedNewtypeName ks
-  pure (inScope, fromModuleName, tvs, Qualified (byMaybeModuleName asModuleName) ctorName, wrappedTy)
+  pure (inScope, fromModuleName, tvs, mkQualified_ (byMaybeModuleName asModuleName) ctorName, wrappedTy)
   where
   isNewtypeCtorImported (_, _, importDeclType, _, exportedTypes) =
     case M.lookup newtypeName exportedTypes of

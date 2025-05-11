@@ -24,7 +24,7 @@ import Data.List.NonEmpty qualified as NEL
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (Environment(..), NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..))
 import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition)
-import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName, runProperName, properNameFromString)
+import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName, runProperName, properNameFromString, mkQualified_)
 import Language.PureScript.Pretty.Types (prettyPrintType)
 import Language.PureScript.Pretty.Values (prettyPrintValue)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
@@ -175,9 +175,9 @@ withScopedTypeVars
 withScopedTypeVars mn ks ma = do
   orig <- get
   forM_ ks $ \(name, _) ->
-    when (Qualified (ByModuleName mn) (properNameFromString name) `M.member` types (checkEnv orig)) $
+    when (mkQualified_ (ByModuleName mn) (properNameFromString name) `M.member` types (checkEnv orig)) $
       tell . errorMessage $ ShadowedTypeVar name
-  bindTypes (M.fromList (map (\(name, k) -> (Qualified (ByModuleName mn) (properNameFromString name), (k, ScopedTypeVar))) ks)) ma
+  bindTypes (M.fromList (map (\(name, k) -> (mkQualified_ (ByModuleName mn) (properNameFromString name), (k, ScopedTypeVar))) ks)) ma
 
 withErrorMessageHint
   :: (MonadState CheckState m, MonadError MultipleErrors m)
@@ -220,7 +220,7 @@ withTypeClassDictionaries entries action = do
   let mentries =
         M.fromListWith (M.unionWith (M.unionWith (<>)))
           [ (qb, M.singleton className (M.singleton tcdValue (pure entry)))
-          | entry@TypeClassDictionaryInScope{ tcdValue = tcdValue@(Qualified qb _), tcdClassName = className }
+          | entry@TypeClassDictionaryInScope{ tcdValue = tcdValue@(Qualified qb _ _), tcdClassName = className }
               <- entries
           ]
 
@@ -253,7 +253,7 @@ bindLocalVariables
   -> TypeCheckM a
   -> TypeCheckM a
 bindLocalVariables bindings =
-  bindNames (M.fromList $ flip map bindings $ \(ss, name, ty, visibility) -> (Qualified (BySourcePos $ spanStart ss) name, (ty, Private, visibility)))
+  bindNames (M.fromList $ flip map bindings $ \(ss, name, ty, visibility) -> (mkQualified_ (BySourcePos $ spanStart ss) name, (ty, Private, visibility)))
 
 -- | Temporarily bind a collection of names to local type variables
 bindLocalTypeVariables
@@ -262,7 +262,7 @@ bindLocalTypeVariables
   -> TypeCheckM a
   -> TypeCheckM a
 bindLocalTypeVariables moduleName bindings =
-  bindTypes (M.fromList $ flip map bindings $ \(pn, kind) -> (Qualified (ByModuleName moduleName) pn, (kind, LocalTypeVariable)))
+  bindTypes (M.fromList $ flip map bindings $ \(pn, kind) -> (mkQualified_ (ByModuleName moduleName) pn, (kind, LocalTypeVariable)))
 
 -- | Update the visibility of all names to Defined
 makeBindingGroupVisible :: TypeCheckM ()
@@ -304,7 +304,7 @@ getVisibility qual = do
 checkVisibility
   :: Qualified Ident
   -> TypeCheckM ()
-checkVisibility name@(Qualified _ var) = do
+checkVisibility name@(Qualified _ var _) = do
   vis <- getVisibility name
   case vis of
     Undefined -> throwError . errorMessage $ CycleInDeclaration var
@@ -315,9 +315,9 @@ lookupTypeVariable
   :: ModuleName
   -> Qualified (ProperName 'TypeName)
   -> TypeCheckM SourceType
-lookupTypeVariable currentModule (Qualified qb name) = do
+lookupTypeVariable currentModule (Qualified qb name _) = do
   env <- getEnv
-  case M.lookup (Qualified qb' name) (types env) of
+  case M.lookup (mkQualified_ qb' name) (types env) of
     Nothing -> throwError . errorMessage $ UndefinedTypeVariable name
     Just (k, _) -> return k
   where
@@ -333,7 +333,7 @@ getEnv = gets checkEnv
 getLocalContext :: TypeCheckM Context
 getLocalContext = do
   env <- getEnv
-  return [ (ident, ty') | (Qualified (BySourcePos _) ident@Ident{}, (ty', _, Defined)) <- M.toList (names env) ]
+  return [ (ident, ty') | (Qualified (BySourcePos _) ident@Ident{} _, (ty', _, Defined)) <- M.toList (names env) ]
 
 -- | Update the @Environment@
 putEnv :: Environment -> TypeCheckM ()

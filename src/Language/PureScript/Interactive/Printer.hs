@@ -58,12 +58,12 @@ printModuleSignatures moduleName P.Environment{..} =
           :: (P.Qualified (P.ProperName 'P.ClassName), Maybe P.TypeClassData)
           -> Maybe Box.Box
         showTypeClass (_, Nothing) = Nothing
-        showTypeClass (P.Qualified _ name, Just P.TypeClassData{..}) =
+        showTypeClass (P.Qualified _ name _, Just P.TypeClassData{..}) =
             let constraints =
                     if null typeClassSuperclasses
                     then Box.text ""
                     else Box.text "("
-                         Box.<> Box.hcat Box.left (intersperse (Box.text ", ") $ map (\(P.Constraint _ (P.Qualified _ pn) _ lt _) -> textT (P.runProperName pn) Box.<+> Box.hcat Box.left (map (P.typeAtomAsBox maxBound) lt)) typeClassSuperclasses)
+                         Box.<> Box.hcat Box.left (intersperse (Box.text ", ") $ map (\(P.Constraint _ (P.Qualified _ pn _) _ lt _) -> textT (P.runProperName pn) Box.<+> Box.hcat Box.left (map (P.typeAtomAsBox maxBound) lt)) typeClassSuperclasses)
                          Box.<> Box.text ") <= "
                 className =
                     textT (P.runProperName name)
@@ -92,7 +92,7 @@ printModuleSignatures moduleName P.Environment{..} =
           -> M.Map (P.Qualified (P.ProperName 'P.TypeName)) ([(Text, Maybe P.SourceType)], P.SourceType)
           -> (P.Qualified (P.ProperName 'P.TypeName), Maybe (P.SourceType, P.TypeKind))
           -> Maybe Box.Box
-        showType typeClassesEnv dataConstructorsEnv typeSynonymsEnv (n@(P.Qualified modul name), typ) =
+        showType typeClassesEnv dataConstructorsEnv typeSynonymsEnv (n@(P.Qualified modul name _), typ) =
           case (typ, M.lookup n typeSynonymsEnv) of
             (Just (_, P.TypeSynonym), Just (typevars, dtType)) ->
                 if M.member (fmap P.coerceProperName n) typeClassesEnv
@@ -107,7 +107,7 @@ printModuleSignatures moduleName P.Environment{..} =
               let prefix =
                     case pt of
                       [(dtProperName,_)] ->
-                        case M.lookup (P.Qualified modul dtProperName) dataConstructorsEnv of
+                        case M.lookup (P.mkQualified_ modul dtProperName) dataConstructorsEnv of
                           Just (dataDeclType, _, _, _) -> P.showDataDeclType dataDeclType
                           _ -> "data"
                       _ -> "data"

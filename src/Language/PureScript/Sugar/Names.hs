@@ -28,7 +28,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage, errorMessage'', nonEmpty, parU, warnAndRethrow, warnAndRethrowWithPosition)
 import Language.PureScript.Externs (ExternsDeclaration(..), ExternsFile(..), ExternsImport(..))
 import Language.PureScript.Linter.Imports (Name(..), UsedImports)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident, OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..))
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident, OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), mkQualified_)
 import Language.PureScript.Sugar.Names.Env (Env, Exports(..), ImportProvenance(..), ImportRecord(..), Imports(..), checkImportConflicts, nullImports, primEnv)
 import Language.PureScript.Sugar.Names.Exports (findExportable, resolveExports)
 import Language.PureScript.Sugar.Names.Imports (resolveImports, resolveModuleImport)
@@ -232,15 +232,15 @@ renameInModule imports (Module modSS coms mn decls exps) =
       TypeFixityDeclaration sa fixity
         <$> updateTypeName alias ss
         <*> pure op
-  updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Left alias)) op) =
+  updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Left alias) _) op) =
     fmap (bound,) $
       ValueFixityDeclaration sa fixity . fmap Left
-        <$> updateValueName (Qualified mn' alias) ss
+        <$> updateValueName (mkQualified_ mn' alias) ss
         <*> pure op
-  updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Right alias)) op) =
+  updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Right alias) _) op) =
     fmap (bound,) $
       ValueFixityDeclaration sa fixity . fmap Right
-        <$> updateDataConstructorName (Qualified mn' alias) ss
+        <$> updateDataConstructorName (mkQualified_ mn' alias) ss
         <*> pure op
   updateDecl b d =
     return (b, d)
@@ -264,11 +264,11 @@ renameInModule imports (Module modSS coms mn decls exps) =
     when (nonEmpty duplicateArgsErrs) $
       throwError duplicateArgsErrs
     return ((pos, declarationsToMap ds `M.union` bound), Let w ds val')
-  updateValue (_, bound) (Var ss name'@(Qualified qualifiedBy ident)) =
+  updateValue (_, bound) (Var ss name'@(Qualified qualifiedBy ident _)) =
     ((ss, bound), ) <$> case (M.lookup ident bound, qualifiedBy) of
       -- bound idents that have yet to be locally qualified.
       (Just sourcePos, ByNullSourcePos) ->
-        pure $ Var ss (Qualified (BySourcePos sourcePos) ident)
+        pure $ Var ss (mkQualified_ (BySourcePos sourcePos) ident)
       -- unbound idents are likely import unqualified imports, so we
       -- handle them through updateValueName if they don't exist as a
       -- local binding.
@@ -412,7 +412,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
     -> Qualified a
     -> SourceSpan
     -> m (Qualified a)
-  update imps toName qname@(Qualified mn' name) pos = warnAndRethrowWithPosition pos $
+  update imps toName qname@(Qualified mn' name _) pos = warnAndRethrowWithPosition pos $
     case (M.lookup qname imps, mn') of
 
       -- We found the name in our imports, so we return the name for it,
@@ -424,7 +424,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
         (mnNew, mnOrig) <- checkImportConflicts pos mn toName options
         modify $ \usedImports ->
           M.insertWith (++) mnNew [fmap toName qname] usedImports
-        return $ Qualified (ByModuleName mnOrig) name
+        return $ mkQualified_ (ByModuleName mnOrig) name
 
       -- If the name wasn't found in our imports but was qualified then we need
       -- to check whether it's a failed import from a "pseudo" module (created
@@ -433,7 +433,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
       (Nothing, ByModuleName mn'') ->
         if mn'' `S.member` importedQualModules imports || mn'' `S.member` importedModules imports
         then throwUnknown
-        else throwError . errorMessage . UnknownName . Qualified ByNullSourcePos $ ModName mn''
+        else throwError . errorMessage . UnknownName . mkQualified_ ByNullSourcePos $ ModName mn''
 
       -- If neither of the above cases are true then it's an undefined or
       -- unimported symbol.

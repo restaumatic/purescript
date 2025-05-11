@@ -15,6 +15,7 @@ import Language.PureScript.Comments (Comment)
 import Data.Aeson qualified as A
 import Data.Text qualified as T
 import System.FilePath (makeRelative)
+import Data.Hashable (Hashable)
 
 -- | Source annotation - position information and comments.
 type SourceAnn = (SourceSpan, [Comment])
@@ -25,7 +26,7 @@ data SourcePos = SourcePos
     -- ^ Line number
   , sourcePosColumn :: Int
     -- ^ Column number
-  } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
+  } deriving (Show, Eq, Ord, Generic, NFData, Serialise, Hashable)
 
 displaySourcePos :: SourcePos -> Text
 displaySourcePos sp =

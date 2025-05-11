@@ -9,6 +9,7 @@ module Language.PureScript.Interner
   , textInterner
   , internPSString
   , uninternPSString
+  , getInternedHash
   ) where
 
 import Prelude
@@ -28,6 +29,11 @@ import System.Random (randomIO)
 newtype Interned = Interned Int
   deriving (Eq, Ord, NFData)
 
+instance Hashable Interned where
+  hashWithSalt salt (Interned i) = hashWithSalt salt i
+
+getInternedHash :: Interned -> Int
+getInternedHash (Interned i) = i
 
 instance IsString Interned where
   fromString s = internText (fromString s)

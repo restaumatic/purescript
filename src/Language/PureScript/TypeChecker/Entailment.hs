@@ -39,7 +39,7 @@ import Language.PureScript.AST.Declarations (UnknownsHint(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (Environment(..), FunctionalDependency(..), TypeClassData(..), dictTypeName, kindRow, tyBoolean, tyInt, tyString)
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, addHints, errorMessage, rethrow)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual, runProperName)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual, runProperName, mkQualified_)
 import Language.PureScript.TypeChecker.Entailment.Coercible (GivenSolverState(..), WantedSolverState(..), initialGivenSolverState, initialWantedSolverState, insoluble, solveGivens, solveWanteds)
 import Language.PureScript.TypeChecker.Entailment.IntCompare (mkFacts, mkRelation, solveRelation)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, unifyKinds')
@@ -217,12 +217,12 @@ entails SolverOptions{..} constraint context hints =
     forClassName _ _ C.RowLacks kinds args | Just dicts <- solveLacks kinds args = dicts
     forClassName _ _ C.RowCons kinds args | Just dicts <- solveRowCons kinds args = dicts
     forClassName _ _ C.RowToList kinds args | Just dicts <- solveRowToList kinds args = dicts
-    forClassName _ ctx cn@(Qualified (ByModuleName mn) _) _ tys = concatMap (findDicts ctx cn) (ordNub (ByNullSourcePos : ByModuleName mn : map ByModuleName (mapMaybe ctorModules tys)))
+    forClassName _ ctx cn@(Qualified (ByModuleName mn) _ _) _ tys = concatMap (findDicts ctx cn) (ordNub (ByNullSourcePos : ByModuleName mn : map ByModuleName (mapMaybe ctorModules tys)))
     forClassName _ _ _ _ _ = internalError "forClassName: expected qualified class name"
 
     ctorModules :: SourceType -> Maybe ModuleName
-    ctorModules (TypeConstructor _ (Qualified (ByModuleName mn) _)) = Just mn
-    ctorModules (TypeConstructor _ (Qualified (BySourcePos _) _)) = internalError "ctorModules: unqualified type name"
+    ctorModules (TypeConstructor _ (Qualified (ByModuleName mn) _ _)) = Just mn
+    ctorModules (TypeConstructor _ (Qualified (BySourcePos _) _ _)) = internalError "ctorModules: unqualified type name"
     ctorModules (TypeApp _ ty _) = ctorModules ty
     ctorModules (KindApp _ ty _) = ctorModules ty
     ctorModules (KindedType _ ty _) = ctorModules ty
@@ -311,7 +311,7 @@ entails SolverOptions{..} constraint context hints =
               Unsolved unsolved -> do
                 -- Generate a fresh name for the unsolved constraint's new dictionary
                 ident <- freshIdent ("dict" <> runProperName (disqualify (constraintClass unsolved)))
-                let qident = Qualified ByNullSourcePos ident
+                let qident = mkQualified_ ByNullSourcePos ident
                 -- Store the new dictionary in the InstanceContext so that we can solve this goal in
                 -- future.
                 newDicts <- lift . lift $ newDictionaries [] qident unsolved
@@ -376,7 +376,7 @@ entails SolverOptions{..} constraint context hints =
             tcdToInstanceDescription TypeClassDictionaryInScope{ tcdDescription, tcdValue } =
               let nii = namedInstanceIdentifier tcdValue
               in case tcdDescription of
-                Just ty -> flip Qualified (Left ty) <$> fmap (byMaybeModuleName . getQual) nii
+                Just ty -> flip mkQualified_ (Left ty) <$> fmap (byMaybeModuleName . getQual) nii
                 Nothing -> fmap Right <$> nii
 
             canBeGeneralized :: Type a -> Bool
@@ -441,7 +441,7 @@ entails SolverOptions{..} constraint context hints =
                       where
                         -- Only keep type class members that need VTAs to resolve their type class instances
                         qualifyAndFilter (ident, _, mbVtaRequiredArgs) = mbVtaRequiredArgs <&> \vtaRequiredArgs ->
-                          (Qualified (ByModuleName tyClassModuleName) ident, map (map indexToArgText . NEL.toList) $ S.toList vtaRequiredArgs)
+                          (mkQualified_ (ByModuleName tyClassModuleName) ident, map (map indexToArgText . NEL.toList) $ S.toList vtaRequiredArgs)
 
                     tyClassMembersInExpr :: Expr -> [(Qualified Ident, [[Text]])]
                     tyClassMembersInExpr = getVars

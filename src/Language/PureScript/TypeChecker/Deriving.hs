@@ -23,7 +23,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), FunctionalDependency(..), TypeClassData(..), TypeKind(..), kindType, (-:>))
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, errorMessage, internalCompilerError)
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify, properNameFromString)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify, properNameFromString, mkQualified_)
 import Language.PureScript.PSString (PSString, mkString)
 import Language.PureScript.Sugar.TypeClasses (superClassDictionaryNames)
 import Language.PureScript.TypeChecker.Entailment (InstanceContext, findDicts)
@@ -169,7 +169,7 @@ deriveNewtypeInstance className tys (UnwrappedTypeConstructor mn tyConNm dkargs 
     -- newtype-derived; see #3168. The whole verifySuperclasses feature
     -- is pretty sketchy, and could use a thorough review and probably rewrite.
     hasNewtypeSuperclassInstance (suModule, suClass) nt@(newtypeModule, _) dicts =
-      let su = Qualified (ByModuleName suModule) suClass
+      let su = mkQualified_ (ByModuleName suModule) suClass
           lookIn mn'
             = elem nt
             . (toList . extractNewtypeName mn' . tcdInstanceTypes
@@ -339,11 +339,11 @@ lookupTypeDecl
 lookupTypeDecl mn typeName = do
   env <- getEnv
   note (errorMessage $ CannotFindDerivingType typeName) $ do
-    (kind, DataType _ args dctors) <- Qualified (ByModuleName mn) typeName `M.lookup` types env
+    (kind, DataType _ args dctors) <- mkQualified_ (ByModuleName mn) typeName `M.lookup` types env
     (kargs, _) <- completeBinderList kind
     let dtype = do
           (ctorName, _) <- headMay dctors
-          (a, _, _, _) <- Qualified (ByModuleName mn) ctorName `M.lookup` dataConstructors env
+          (a, _, _, _) <- mkQualified_ (ByModuleName mn) ctorName `M.lookup` dataConstructors env
           pure a
     pure (dtype, fst . snd <$> kargs, map (\(v, k, _) -> (v, k)) args, dctors)
 
@@ -502,7 +502,7 @@ validateParamsInTypeConstructors derivingClass utc isBi CovariantClasses{..} con
   lparamIsContra = any lparamIsContravariant contravarianceSupport
 
   hasInstance :: InstanceContext -> Qualified (Either Text (ProperName 'TypeName)) -> Qualified (ProperName 'ClassName) -> Bool
-  hasInstance tcds ht@(Qualified qb _) cn@(Qualified cqb _) =
+  hasInstance tcds ht@(Qualified qb _ _) cn@(Qualified cqb _ _) =
     any tcdAppliesToType $ concatMap (findDicts tcds cn) (ordNub [ByNullSourcePos, cqb, qb])
     where
     tcdAppliesToType tcd = case tcdInstanceTypes tcd of
@@ -517,9 +517,9 @@ validateParamsInTypeConstructors derivingClass utc isBi CovariantClasses{..} con
   headOfType = fix $ \go -> \case
     TypeApp _ ty _ -> go ty
     KindApp _ ty _ -> go ty
-    TypeVar _ nm -> Qualified ByNullSourcePos (Left nm)
-    Skolem _ nm _ _ _ -> Qualified ByNullSourcePos (Left nm)
-    TypeConstructor _ (Qualified qb nm) -> Qualified qb (Right nm)
+    TypeVar _ nm -> mkQualified_ ByNullSourcePos (Left nm)
+    Skolem _ nm _ _ _ -> mkQualified_ ByNullSourcePos (Left nm)
+    TypeConstructor _ (Qualified qb nm h) -> Qualified qb (Right nm) h
     ty -> internalError $ "headOfType missing a case: " <> show (void ty)
 
 usingLamIdent :: (Expr -> TypeCheckM Expr) -> TypeCheckM Expr

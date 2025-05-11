@@ -26,7 +26,7 @@ matchBinderOperators = matchOperators isBinOp extractOp fromOp reapply id
   extractOp _ = Nothing
 
   fromOp :: Binder -> Maybe (SourceSpan, Qualified (OpName 'ValueOpName))
-  fromOp (OpBinder ss q@(Qualified _ (OpName _))) = Just (ss, q)
+  fromOp (OpBinder ss q@(Qualified _ (OpName _) _)) = Just (ss, q)
   fromOp _ = Nothing
 
   reapply :: SourceSpan -> Qualified (OpName 'ValueOpName) -> Binder -> Binder -> Binder

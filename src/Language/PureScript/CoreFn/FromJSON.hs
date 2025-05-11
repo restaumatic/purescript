@@ -23,7 +23,7 @@ import Language.PureScript.AST.SourcePos (SourceSpan(..))
 import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.CoreFn.Ann (Ann)
 import Language.PureScript.CoreFn (Bind(..), Binder(..), CaseAlternative(..), ConstructorType(..), Expr(..), Guard, Meta(..), Module(..))
-import Language.PureScript.Names (Ident(..), ModuleName(..), properNameFromString, Qualified(..), QualifiedBy(..), unusedIdent, moduleNameFromString, ProperName)
+import Language.PureScript.Names (Ident(..), ModuleName(..), properNameFromString, Qualified(..), QualifiedBy(..), unusedIdent, moduleNameFromString, ProperName, mkQualified_)
 import Language.PureScript.PSString (PSString)
 
 import Text.ParserCombinators.ReadP (readP_to_S)
@@ -118,11 +118,11 @@ qualifiedFromJSON f = withObject "Qualified" qualifiedFromObj
   qualifiedByModuleFromObj o = do
     mn <- o .: "moduleName" >>= moduleNameFromJSON
     i  <- o .: "identifier" >>= withText "Ident" (return . f)
-    pure $ Qualified (ByModuleName mn) i
+    pure $ mkQualified_ (ByModuleName mn) i
   qualifiedBySourcePosFromObj o = do
     ss <- o .: "sourcePos"
     i  <- o .: "identifier" >>= withText "Ident" (return . f)
-    pure $ Qualified (BySourcePos ss) i
+    pure $ mkQualified_ (BySourcePos ss) i
 
 moduleNameFromJSON :: Value -> Parser ModuleName
 moduleNameFromJSON v = moduleNameFromString . T.intercalate "." <$> listParser parseJSON v

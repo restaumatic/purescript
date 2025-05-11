@@ -293,7 +293,7 @@ handleKindOf print' typ = do
   case e of
     Left errs -> printErrors errs
     Right (_, env') ->
-      case M.lookup (P.Qualified (P.ByModuleName mName) $ P.ProperName "IT") (P.typeSynonyms env') of
+      case M.lookup (P.mkQualified_ (P.ByModuleName mName) $ P.ProperName "IT") (P.typeSynonyms env') of
         Just (_, typ') -> do
           let chk = (P.emptyCheckState env') { P.checkCurrentModule = Just mName }
               k   = undefined -- TODO: check (snd <$> P.kindOf typ') chk

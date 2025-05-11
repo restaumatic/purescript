@@ -21,8 +21,8 @@ moduleD = (P.moduleNameFromString "Module.D", [T.ideType "kind1" Nothing []])
 moduleE = (P.moduleNameFromString "Module.E", [T.ideSynonym "SFType" Nothing Nothing `annLoc` synonymSS])
 moduleF = (P.moduleNameFromString "Module.F", [T.ideDtor "DtorA" "TypeA" Nothing])
 moduleG = (P.moduleNameFromString "Module.G", [T.ideTypeClass "MyClass" P.kindType []])
-moduleH = (P.moduleNameFromString "Module.H", [T.ideValueOp "<$>" (P.Qualified P.ByNullSourcePos (Left "")) 0 Nothing Nothing])
-moduleI = (P.moduleNameFromString "Module.I", [T.ideTypeOp "~>" (P.Qualified P.ByNullSourcePos "") 0 Nothing Nothing])
+moduleH = (P.moduleNameFromString "Module.H", [T.ideValueOp "<$>" (P.mkQualified_ P.ByNullSourcePos (Left "")) 0 Nothing Nothing])
+moduleI = (P.moduleNameFromString "Module.I", [T.ideTypeOp "~>" (P.mkQualified_ P.ByNullSourcePos "") 0 Nothing Nothing])
 moduleDCtors = (P.moduleNameFromString "Module.WithDC", [T.ideType "Foo" Nothing [(P.ProperName "A", P.tyString), (P.ProperName "B", P.tyString)] ])
 
 modules :: ModuleMap [IdeDeclarationAnn]

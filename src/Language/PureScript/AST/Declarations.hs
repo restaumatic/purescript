@@ -27,7 +27,7 @@ import Language.PureScript.AST.Declarations.ChainId (ChainId)
 import Language.PureScript.Types (SourceConstraint, SourceType)
 import Language.PureScript.PSString (PSString)
 import Language.PureScript.Label (Label)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), toMaybeModuleName)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), toMaybeModuleName, mkQualified_)
 import Language.PureScript.Roles (Role)
 import Language.PureScript.TypeClassDictionaries (NamedDict)
 import Language.PureScript.Comments (Comment)
@@ -141,7 +141,7 @@ getModuleDeclarations (Module _ _ _ declarations _) = declarations
 -- (See #2197)
 --
 addDefaultImport :: Qualified ModuleName -> Module -> Module
-addDefaultImport (Qualified toImportAs toImport) m@(Module ss coms mn decls exps) =
+addDefaultImport (Qualified toImportAs toImport _) m@(Module ss coms mn decls exps) =
   if isExistingImport `any` decls || mn == toImport then m
   else Module ss coms mn (ImportDeclaration (ss, []) toImport Implicit toImportAs' : decls) exps
   where
@@ -161,8 +161,8 @@ importPrim =
   let
     primModName = C.M_Prim
   in
-    addDefaultImport (Qualified (ByModuleName primModName) primModName)
-      . addDefaultImport (Qualified ByNullSourcePos primModName)
+    addDefaultImport (mkQualified_ (ByModuleName primModName) primModName)
+      . addDefaultImport (mkQualified_ ByNullSourcePos primModName)
 
 data NameSource = UserNamed | CompilerNamed
   deriving (Eq, Show, Generic, NFData, Serialise)
@@ -856,8 +856,8 @@ $(deriveJSON (defaultOptions { sumEncoding = ObjectWithSingleField }) ''ImportDe
 
 isTrueExpr :: Expr -> Bool
 isTrueExpr (Literal _ (BooleanLiteral True)) = True
-isTrueExpr (Var _ (Qualified (ByModuleName (ModuleName "Prelude")) (Ident "otherwise"))) = True
-isTrueExpr (Var _ (Qualified (ByModuleName (ModuleName "Data.Boolean")) (Ident "otherwise"))) = True
+isTrueExpr (Var _ (Qualified (ByModuleName (ModuleName "Prelude")) (Ident "otherwise") _)) = True
+isTrueExpr (Var _ (Qualified (ByModuleName (ModuleName "Data.Boolean")) (Ident "otherwise") _)) = True
 isTrueExpr (TypedValue _ e _) = isTrueExpr e
 isTrueExpr (PositionedValue _ _ e) = isTrueExpr e
 isTrueExpr _ = False

@@ -263,7 +263,7 @@ moduleBindToJs mn = bindToJs
 
   guessEffects :: Expr Ann -> AST.InitializerEffects
   guessEffects = \case
-    Var _ (Qualified (BySourcePos _) _) -> NoEffects
+    Var _ (Qualified (BySourcePos _) _ _) -> NoEffects
     App (_, _, Just IsSyntheticApp) _ _ -> NoEffects
     _                                   -> UnknownEffects
 
@@ -319,7 +319,7 @@ moduleBindToJs mn = bindToJs
     unApp :: Expr Ann -> [Expr Ann] -> (Expr Ann, [Expr Ann])
     unApp (App _ val arg) args = unApp val (arg : args)
     unApp other args = (other, args)
-  valueToJs' (Var (_, _, Just IsForeign) qi@(Qualified (ByModuleName mn') ident)) =
+  valueToJs' (Var (_, _, Just IsForeign) qi@(Qualified (ByModuleName mn') ident _)) =
     return $ if mn' == mn
              then foreignIdent ident
              else varToJs qi
@@ -388,15 +388,15 @@ moduleBindToJs mn = bindToJs
   -- Generate code in the simplified JavaScript intermediate representation for a reference to a
   -- variable.
   varToJs :: Qualified Ident -> AST
-  varToJs (Qualified (BySourcePos _) ident) = var ident
+  varToJs (Qualified (BySourcePos _) ident _) = var ident
   varToJs qual = qualifiedToJS id qual
 
   -- Generate code in the simplified JavaScript intermediate representation for a reference to a
   -- variable that may have a qualified name.
   qualifiedToJS :: (a -> Ident) -> Qualified a -> AST
-  qualifiedToJS f (Qualified (ByModuleName C.M_Prim) a) = AST.Var Nothing . runIdent $ f a
-  qualifiedToJS f (Qualified (ByModuleName mn') a) | mn /= mn' = AST.ModuleAccessor Nothing mn' . mkString . T.concatMap identCharToText . runIdent $ f a
-  qualifiedToJS f (Qualified _ a) = AST.Var Nothing $ identToJs (f a)
+  qualifiedToJS f (Qualified (ByModuleName C.M_Prim) a _) = AST.Var Nothing . runIdent $ f a
+  qualifiedToJS f (Qualified (ByModuleName mn') a _) | mn /= mn' = AST.ModuleAccessor Nothing mn' . mkString . T.concatMap identCharToText . runIdent $ f a
+  qualifiedToJS f (Qualified _ a _) = AST.Var Nothing $ identToJs (f a)
 
   foreignIdent :: Ident -> AST
   foreignIdent ident = accessorString (mkString $ runIdent ident) (AST.Var Nothing FFINamespace)

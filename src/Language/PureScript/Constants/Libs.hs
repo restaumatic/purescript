@@ -276,4 +276,4 @@ $(TH.declare do
   )
 
 pattern IsSymbolDict :: Qualified Ident
-pattern IsSymbolDict = Qualified (ByModuleName M_Data_Symbol) (Ident "IsSymbol$Dict")
+pattern IsSymbolDict = Qualified (ByModuleName M_Data_Symbol) (Ident "IsSymbol$Dict") (-7980125151384708176)

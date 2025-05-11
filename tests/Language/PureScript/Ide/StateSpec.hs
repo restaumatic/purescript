@@ -11,15 +11,15 @@ import Data.Map qualified as Map
 
 valueOperator :: Maybe P.SourceType -> IdeDeclarationAnn
 valueOperator =
-  ideValueOp "<$>" (P.Qualified (P.ByModuleName (mn "Test")) (Left "function")) 2 Nothing
+  ideValueOp "<$>" (P.mkQualified_ (P.ByModuleName (mn "Test")) (Left "function")) 2 Nothing
 
 ctorOperator :: Maybe P.SourceType -> IdeDeclarationAnn
 ctorOperator =
-  ideValueOp ":" (P.Qualified (P.ByModuleName (mn "Test")) (Right "Cons")) 2 Nothing
+  ideValueOp ":" (P.mkQualified_ (P.ByModuleName (mn "Test")) (Right "Cons")) 2 Nothing
 
 typeOperator :: Maybe P.SourceType -> IdeDeclarationAnn
 typeOperator =
-  ideTypeOp ":" (P.Qualified (P.ByModuleName (mn "Test")) "List") 2 Nothing
+  ideTypeOp ":" (P.mkQualified_ (P.ByModuleName (mn "Test")) "List") 2 Nothing
 
 testModule :: (P.ModuleName, [IdeDeclarationAnn])
 testModule =
@@ -53,7 +53,7 @@ ef = P.ExternsFile
   --, efDeclarations =
     [ P.EDInstance
       -- { edInstanceClassName =
-      (P.Qualified (P.ByModuleName (mn "ClassModule")) (P.ProperName "MyClass"))
+      (P.mkQualified_ (P.ByModuleName (mn "ClassModule")) (P.ProperName "MyClass"))
       -- , edInstanceName =
       (P.Ident "myClassInstance")
       -- . edInstanceForAll =

@@ -51,7 +51,7 @@ import Data.Traversable (for)
 import Language.PureScript.Crash (HasCallStack, internalError)
 import Language.PureScript.Environment qualified as E
 import Language.PureScript.Errors
-import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, mkQualified, runProperName, properNameFromString)
+import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, mkQualified, runProperName, properNameFromString, mkQualified_)
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, bindLocalTypeVariables, debugType, getEnv, lookupTypeVariable, unsafeCheckCurrentModule, withErrorMessageHint, withFreshSubstitution, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, newSkolemScope, skolemize)
 import Language.PureScript.TypeChecker.Synonyms (replaceAllTypeSynonyms)
@@ -190,7 +190,7 @@ inferKind = \tyToInfer ->
       pure (ty, E.tyInt $> ann)
     ty@(TypeVar ann v) -> do
       moduleName <- unsafeCheckCurrentModule
-      kind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos $ properNameFromString v)
+      kind <- apply =<< lookupTypeVariable moduleName (mkQualified_ ByNullSourcePos $ properNameFromString v)
       pure (ty, kind $> ann)
     ty@(Skolem ann _ mbK _ _) -> do
       kind <- apply $ fromMaybe (internalError "Skolem has no kind") mbK
@@ -529,7 +529,7 @@ elaborateKind = \case
         ($> ann) <$> apply kind
   TypeVar ann a -> do
     moduleName <- unsafeCheckCurrentModule
-    kind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos $ properNameFromString a)
+    kind <- apply =<< lookupTypeVariable moduleName (mkQualified_ ByNullSourcePos $ properNameFromString a)
     pure (kind $> ann)
   (Skolem ann _ mbK _ _) -> do
     kind <- apply $ fromMaybe (internalError "Skolem has no kind") mbK
@@ -641,7 +641,7 @@ inferDataDeclaration
   -> DataDeclarationArgs
   -> TypeCheckM [(DataConstructorDeclaration, SourceType)]
 inferDataDeclaration moduleName (ann, tyName, tyArgs, ctors) = do
-  tyKind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos tyName)
+  tyKind <- apply =<< lookupTypeVariable moduleName (mkQualified_ ByNullSourcePos tyName)
   let (sigBinders, tyKind') = fromJust . completeBinderList $ tyKind
   bindLocalTypeVariables moduleName (first properNameFromString . snd <$> sigBinders) $ do
     tyArgs' <- for tyArgs . traverse . maybe (freshKind (fst ann)) $ replaceAllTypeSynonyms <=< apply <=< checkIsSaturatedType
@@ -693,7 +693,7 @@ inferTypeSynonym
   -> TypeDeclarationArgs
   -> TypeCheckM SourceType
 inferTypeSynonym moduleName (ann, tyName, tyArgs, tyBody) = do
-  tyKind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos tyName)
+  tyKind <- apply =<< lookupTypeVariable moduleName (mkQualified_ ByNullSourcePos tyName)
   let (sigBinders, tyKind') = fromJust . completeBinderList $ tyKind
   bindLocalTypeVariables moduleName (first properNameFromString . snd <$> sigBinders) $ do
     kindRes <- freshKind (fst ann)
@@ -810,7 +810,7 @@ inferClassDeclaration
   -> ClassDeclarationArgs
   -> TypeCheckM ([(Text, SourceType)], [SourceConstraint], [Declaration])
 inferClassDeclaration moduleName (ann, clsName, clsArgs, superClasses, decls) = do
-  clsKind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos $ coerceProperName clsName)
+  clsKind <- apply =<< lookupTypeVariable moduleName (mkQualified_ ByNullSourcePos $ coerceProperName clsName)
   let (sigBinders, clsKind') = fromJust . completeBinderList $ clsKind
   bindLocalTypeVariables moduleName (first properNameFromString. snd <$> sigBinders) $ do
     clsArgs' <- for clsArgs . traverse . maybe (freshKind (fst ann)) $ replaceAllTypeSynonyms <=< apply <=< checkIsSaturatedType
@@ -941,7 +941,7 @@ existingSignatureOrFreshKind
   -> TypeCheckM SourceType
 existingSignatureOrFreshKind moduleName ss name = do
   env <- getEnv
-  case M.lookup (Qualified (ByModuleName moduleName) name) (E.types env) of
+  case M.lookup (mkQualified_ (ByModuleName moduleName) name) (E.types env) of
     Nothing -> freshKind ss
     Just (kind, _) -> pure kind
 

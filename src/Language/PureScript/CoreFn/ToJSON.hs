@@ -102,7 +102,7 @@ properNameToJSON :: ProperName a -> Value
 properNameToJSON = toJSON . runProperName
 
 qualifiedToJSON :: (a -> Text) -> Qualified a -> Value
-qualifiedToJSON f (Qualified qb a) =
+qualifiedToJSON f (Qualified qb a _) =
   case qb of
     ByModuleName mn -> object
       [ "moduleName" .= moduleNameToJSON mn

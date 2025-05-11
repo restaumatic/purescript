@@ -26,7 +26,7 @@ import Data.Text (Text)
 
 import Language.PureScript.Environment (Environment(..), TypeKind(..))
 import Language.PureScript.Errors (DataConstructorDeclaration(..), MultipleErrors, RoleDeclarationData(..), SimpleErrorMessage(..), errorMessage)
-import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..))
+import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), mkQualified_)
 import Language.PureScript.Roles (Role(..))
 import Language.PureScript.Types (Constraint(..), SourceType, Type(..), freeTypeVariables, unapplyTypes)
 
@@ -140,12 +140,12 @@ inferDataBindingGroupRoles
   -> [(Text, Maybe SourceType)]
   -> [Role]
 inferDataBindingGroupRoles env moduleName roleDeclarations group =
-  let declaredRoleEnv = M.fromList $ map (Qualified (ByModuleName moduleName) . rdeclIdent &&& rdeclRoles) roleDeclarations
+  let declaredRoleEnv = M.fromList $ map (mkQualified_ (ByModuleName moduleName) . rdeclIdent &&& rdeclRoles) roleDeclarations
       inferredRoleEnv = getRoleEnv env
       initialRoleEnv = declaredRoleEnv `M.union` inferredRoleEnv
       inferredRoleEnv' = inferDataBindingGroupRoles' moduleName group initialRoleEnv
   in \tyName tyArgs ->
-        let qualTyName = Qualified (ByModuleName moduleName) tyName
+        let qualTyName = mkQualified_ (ByModuleName moduleName) tyName
             inferredRoles = M.lookup qualTyName inferredRoleEnv'
         in fromMaybe (Phantom <$ tyArgs) inferredRoles
 
@@ -177,7 +177,7 @@ inferDataDeclarationRoles
   -> RoleEnv
   -> (Any, RoleEnv)
 inferDataDeclarationRoles moduleName (tyName, tyArgs, ctors) roleEnv =
-  let qualTyName = Qualified (ByModuleName moduleName) tyName
+  let qualTyName = mkQualified_ (ByModuleName moduleName) tyName
       ctorRoles = getRoleMap . foldMap (walk mempty . snd) $ ctors >>= dataCtorFields
       inferredRoles = map (\(arg, _) -> fromMaybe Phantom (M.lookup arg ctorRoles)) tyArgs
   in updateRoleEnv qualTyName inferredRoles roleEnv

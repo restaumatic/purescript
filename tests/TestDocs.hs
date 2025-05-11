@@ -2,7 +2,6 @@ module TestDocs where
 
 import Prelude
 
-import GHC.Stack (HasCallStack)
 import Data.Bifunctor (first)
 import Data.List (findIndex)
 import Data.Foldable (find, forM_)
@@ -126,7 +125,7 @@ data TagsAssertion
   -- | Assert that a particular declaration is not tagged
   | ShouldNotBeTagged Text
 
-displayAssertion :: HasCallStack => DocsAssertion -> Text
+displayAssertion :: DocsAssertion -> Text
 displayAssertion = \case
   ShouldBeDocumented mn decl children ->
     showQual mn decl <> " should be documented" <>
@@ -978,7 +977,7 @@ testTagsCases =
       ])
   ]
 
-showQual :: HasCallStack => P.ModuleName -> Text -> Text
+showQual :: P.ModuleName -> Text -> Text
 showQual mn decl =
   P.runModuleName mn <> "." <> decl
 

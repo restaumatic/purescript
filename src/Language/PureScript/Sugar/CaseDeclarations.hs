@@ -22,7 +22,7 @@ import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (NameKind(..))
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors(..), SimpleErrorMessage(..), addHint, errorMessage', parU, rethrow, withPosition)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident, Qualified(..), freshIdent')
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident, freshIdent', mkQualified_)
 import Language.PureScript.TypeChecker.Monad (guardWith)
 
 -- |
@@ -64,7 +64,7 @@ desugarGuardedExprs ss (Case scrut alternatives)
     -- We bind the scrutinee to Vars here to mitigate this case.
     (scrut', scrut_decls) <- unzip <$> forM scrut (\e -> do
       scrut_id <- freshIdent'
-      pure ( Var ss (Qualified ByNullSourcePos scrut_id)
+      pure ( Var ss (mkQualified_ ByNullSourcePos scrut_id)
            , ValueDecl (ss, []) scrut_id Private [] [MkUnguarded e]
            )
       )
@@ -226,7 +226,7 @@ desugarGuardedExprs ss (Case scrut alternatives) =
 
         let
           goto_rem_case :: Expr
-          goto_rem_case = Var ss (Qualified ByNullSourcePos rem_case_id)
+          goto_rem_case = Var ss (mkQualified_ ByNullSourcePos rem_case_id)
             `App` Literal ss (BooleanLiteral True)
           alt_fail :: Int -> [CaseAlternative]
           alt_fail n = [CaseAlternative (replicate n NullBinder) [MkUnguarded goto_rem_case]]
@@ -313,7 +313,7 @@ desugarAbs = flip parU f
     pure (Abs (VarBinder ss i) val)
   replace (Abs binder val) = do
     ident <- freshIdent'
-    return $ Abs (VarBinder nullSourceSpan ident) $ Case [Var nullSourceSpan (Qualified ByNullSourcePos ident)] [CaseAlternative [binder] [MkUnguarded val]]
+    return $ Abs (VarBinder nullSourceSpan ident) $ Case [Var nullSourceSpan (mkQualified_ ByNullSourcePos ident)] [CaseAlternative [binder] [MkUnguarded val]]
   replace other = return other
 
 stripPositioned :: Binder -> Binder
@@ -381,7 +381,7 @@ makeCaseDeclaration ss ident alternatives = do
   args <- if allUnique (catMaybes argNames)
             then mapM argName argNames
             else replicateM (length argNames) ((nullSourceSpan, ) <$> freshIdent')
-  let vars = map (Var ss . Qualified ByNullSourcePos . snd) args
+  let vars = map (Var ss . mkQualified_ ByNullSourcePos . snd) args
       binders = [ CaseAlternative bs result | (bs, result) <- alternatives ]
   let value = foldr (Abs . uncurry VarBinder) (Case vars binders) args
 

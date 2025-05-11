@@ -23,7 +23,7 @@ import Language.PureScript.CoreFn.Module (Module(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), NameKind(..), isDictTypeName, lookupConstructor, lookupValue)
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), getQual, runProperName)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), getQual, runProperName, mkQualified_)
 import Language.PureScript.PSString (PSString)
 import Language.PureScript.Types (pattern REmptyKinded, SourceType, Type(..))
 import Language.PureScript.AST qualified as A
@@ -65,7 +65,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
   declToCoreFn :: A.Declaration -> [Bind Ann]
   declToCoreFn (A.DataDeclaration (ss, com) Newtype _ _ [ctor]) =
     [NonRec (ss, [], declMeta) (properToIdent $ A.dataCtorName ctor) $
-      Abs (ss, com, Just IsNewtype) (Ident "x") (Var (ssAnn ss) $ Qualified ByNullSourcePos (Ident "x"))]
+      Abs (ss, com, Just IsNewtype) (Ident "x") (Var (ssAnn ss) $ mkQualified_ ByNullSourcePos (Ident "x"))]
     where
     declMeta = isDictTypeName (A.dataCtorName ctor) `orEmpty` IsTypeClassConstructor
   declToCoreFn d@(A.DataDeclaration _ Newtype _ _ _) =
@@ -74,7 +74,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     flip fmap ctors $ \ctorDecl ->
       let
         ctor = A.dataCtorName ctorDecl
-        (_, _, _, fields) = lookupConstructor env (Qualified (ByModuleName mn) ctor)
+        (_, _, _, fields) = lookupConstructor env (mkQualified_ (ByModuleName mn) ctor)
       in NonRec (ssA ss) (properToIdent ctor) $ Constructor (ss, com, Nothing) tyName ctor fields
   declToCoreFn (A.DataBindingGroupDeclaration ds) =
     concatMap declToCoreFn ds
@@ -113,7 +113,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     v1' = exprToCoreFn ss [] Nothing v1
     v2' = exprToCoreFn ss [] Nothing v2
     isDictCtor = \case
-      A.Constructor _ (Qualified _ name) -> isDictTypeName name
+      A.Constructor _ (Qualified _ name _) -> isDictTypeName name
       _ -> False
     isSynthetic = \case
       A.App v3 v4            -> isDictCtor v3 || isSynthetic v3 && isSynthetic v4
@@ -168,9 +168,9 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     NullBinder (ss, com, Nothing)
   binderToCoreFn _ com (A.VarBinder ss name) =
     VarBinder (ss, com, Nothing) name
-  binderToCoreFn _ com (A.ConstructorBinder ss dctor@(Qualified mn' _) bs) =
+  binderToCoreFn _ com (A.ConstructorBinder ss dctor@(Qualified mn' _ _) bs) =
     let (_, tctor, _, _) = lookupConstructor env dctor
-    in ConstructorBinder (ss, com, Just $ getConstructorMeta dctor) (Qualified mn' tctor) dctor (fmap (binderToCoreFn ss []) bs)
+    in ConstructorBinder (ss, com, Just $ getConstructorMeta dctor) (mkQualified_ mn' tctor) dctor (fmap (binderToCoreFn ss []) bs)
   binderToCoreFn _ com (A.NamedBinder ss name b) =
     NamedBinder (ss, com, Nothing) name (binderToCoreFn ss [] b)
   binderToCoreFn _ com (A.PositionedBinder ss com1 b) =
@@ -214,7 +214,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     typeConstructor
       :: (Qualified (ProperName 'ConstructorName), (DataDeclType, ProperName 'TypeName, SourceType, [Ident]))
       -> (ModuleName, ProperName 'TypeName)
-    typeConstructor (Qualified (ByModuleName mn') _, (_, tyCtor, _, _)) = (mn', tyCtor)
+    typeConstructor (Qualified (ByModuleName mn') _ _, (_, tyCtor, _, _)) = (mn', tyCtor)
     typeConstructor _ = internalError "Invalid argument to typeConstructor"
 
 -- | Find module names from qualified references to values. This is used to
