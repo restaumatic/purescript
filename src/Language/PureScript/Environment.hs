@@ -12,6 +12,7 @@ import Data.Foldable (find, fold)
 import Data.Functor ((<&>))
 import Data.IntMap qualified as IM
 import Data.IntSet qualified as IS
+import Data.HashMap.Strict qualified as HM
 import Data.Map qualified as M
 import Data.Set qualified as S
 import Data.Maybe (fromMaybe, mapMaybe)
@@ -39,7 +40,7 @@ data Environment = Environment
   -- constructor name, argument types and return type.
   , typeSynonyms :: M.Map (Qualified (ProperName 'TypeName)) ([(Text, Maybe SourceType)], SourceType)
   -- ^ Type synonyms currently in scope
-  , typeClassDictionaries :: M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
+  , typeClassDictionaries :: HM.HashMap QualifiedBy (HM.HashMap (Qualified (ProperName 'ClassName)) (HM.HashMap (Qualified Ident) (NEL.NonEmpty NamedDict)))
   -- ^ Available type class dictionaries. When looking up 'Nothing' in the
   -- outer map, this returns the map of type class dictionaries in local
   -- scope (ie dictionaries brought in by a constrained type).
@@ -101,7 +102,7 @@ instance A.ToJSON FunctionalDependency where
 
 -- | The initial environment with no values and only the default javascript types defined
 initEnvironment :: Environment
-initEnvironment = Environment M.empty allPrimTypes M.empty M.empty M.empty allPrimClasses
+initEnvironment = Environment M.empty allPrimTypes M.empty M.empty HM.empty allPrimClasses
 
 -- | A constructor for TypeClassData that computes which type class arguments are fully determined
 -- and argument covering sets.

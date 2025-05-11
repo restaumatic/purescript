@@ -31,6 +31,7 @@ import Language.PureScript.TypeChecker.Monad (getEnv, getTypeClassDictionaries, 
 import Language.PureScript.TypeChecker.Synonyms (replaceAllTypeSynonyms)
 import Language.PureScript.TypeClassDictionaries (TypeClassDictionaryInScope(..))
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, SourceType, Type(..), completeBinderList, eqType, everythingOnTypes, replaceAllTypeVars, srcTypeVar, usedTypeVariables)
+import Data.HashMap.Strict qualified as HM
 
 -- | Extract the name of the newtype appearing in the last type argument of
 -- a derived newtype instance.
@@ -173,8 +174,8 @@ deriveNewtypeInstance className tys (UnwrappedTypeConstructor mn tyConNm dkargs 
           lookIn mn'
             = elem nt
             . (toList . extractNewtypeName mn' . tcdInstanceTypes
-                <=< foldMap toList . M.elems
-                <=< toList . (M.lookup su <=< M.lookup (ByModuleName mn')))
+                <=< foldMap toList . HM.elems
+                <=< toList . (HM.lookup su <=< HM.lookup (ByModuleName mn')))
             $ dicts
       in lookIn suModule || lookIn newtypeModule
 

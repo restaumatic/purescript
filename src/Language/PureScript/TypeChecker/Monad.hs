@@ -35,6 +35,7 @@ import Control.Monad.Supply.Class (MonadSupply)
 import Control.Monad.Except (ExceptT, runExceptT)
 import Control.Monad.Logger (Logger, runLogger')
 import Control.Monad.Supply.Class qualified as Supply
+import Data.HashMap.Strict qualified as HM
 
 newtype TypeCheckM a = TypeCheckM { unTypeCheckM :: StateT CheckState (SupplyT (ExceptT MultipleErrors Logger)) a }
   deriving newtype (Functor, Applicative, Monad, MonadSupply, MonadState CheckState, MonadWriter MultipleErrors, MonadError MultipleErrors)
@@ -218,34 +219,34 @@ withTypeClassDictionaries entries action = do
   orig <- get
 
   let mentries =
-        M.fromListWith (M.unionWith (M.unionWith (<>)))
-          [ (qb, M.singleton className (M.singleton tcdValue (pure entry)))
+        HM.fromListWith (HM.unionWith (HM.unionWith (<>)))
+          [ (qb, HM.singleton className (HM.singleton tcdValue (pure entry)))
           | entry@TypeClassDictionaryInScope{ tcdValue = tcdValue@(Qualified qb _), tcdClassName = className }
               <- entries
           ]
 
-  modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = M.unionWith (M.unionWith (M.unionWith (<>))) (typeClassDictionaries . checkEnv $ st) mentries } }
+  modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = HM.unionWith (HM.unionWith (HM.unionWith (<>))) (typeClassDictionaries . checkEnv $ st) mentries } }
   a <- action
   modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = typeClassDictionaries . checkEnv $ orig } }
   return a
 
 -- | Get the currently available map of type class dictionaries
 getTypeClassDictionaries
-  :: TypeCheckM (M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))))
+  :: TypeCheckM (HM.HashMap QualifiedBy (HM.HashMap (Qualified (ProperName 'ClassName)) (HM.HashMap (Qualified Ident) (NEL.NonEmpty NamedDict))))
 getTypeClassDictionaries = gets $ typeClassDictionaries . checkEnv
 
 -- | Lookup type class dictionaries in a module.
 lookupTypeClassDictionaries
   :: QualifiedBy
-  -> TypeCheckM (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
-lookupTypeClassDictionaries mn = gets $ fromMaybe M.empty . M.lookup mn . typeClassDictionaries . checkEnv
+  -> TypeCheckM (HM.HashMap (Qualified (ProperName 'ClassName)) (HM.HashMap (Qualified Ident) (NEL.NonEmpty NamedDict)))
+lookupTypeClassDictionaries mn = gets $ fromMaybe HM.empty . HM.lookup mn . typeClassDictionaries . checkEnv
 
 -- | Lookup type class dictionaries in a module.
 lookupTypeClassDictionariesForClass
   :: QualifiedBy
   -> Qualified (ProperName 'ClassName)
-  -> TypeCheckM (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))
-lookupTypeClassDictionariesForClass mn cn = fromMaybe M.empty . M.lookup cn <$> lookupTypeClassDictionaries mn
+  -> TypeCheckM (HM.HashMap (Qualified Ident) (NEL.NonEmpty NamedDict))
+lookupTypeClassDictionariesForClass mn cn = fromMaybe HM.empty . HM.lookup cn <$> lookupTypeClassDictionaries mn
 
 -- | Temporarily bind a collection of names to local variables
 bindLocalVariables
@@ -450,10 +451,11 @@ debugTypeSynonyms = fmap go . M.toList . typeSynonyms
 debugTypeClassDictionaries :: Environment -> [String]
 debugTypeClassDictionaries = go . typeClassDictionaries
   where
+  -- TODO: order? 
   go tcds = do
-    (mbModuleName, classes) <- M.toList tcds
-    (className, instances) <- M.toList classes
-    (ident, dicts) <- M.toList instances
+    (mbModuleName, classes) <- HM.toList tcds
+    (className, instances) <- HM.toList classes
+    (ident, dicts) <- HM.toList instances
     let
       moduleName = maybe "" (\m -> "[" <> runModuleName m <> "] ") (toMaybeModuleName mbModuleName)
       className' = showQualified runProperName className

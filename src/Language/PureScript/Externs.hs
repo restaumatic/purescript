@@ -40,6 +40,8 @@ import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionary
 import Language.PureScript.Types (SourceConstraint, SourceType, srcInstanceType)
 
 import Paths_purescript as Paths
+import Data.HashMap.Strict qualified as HM
+import Data.Hashable (Hashable)
 
 -- | The data which will be serialized to an externs file
 data ExternsFile = ExternsFile
@@ -183,15 +185,15 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
   applyDecl env (EDClass pn args members cs deps tcIsEmpty) = env { typeClasses = M.insert (qual pn) (makeTypeClassData args members cs deps tcIsEmpty) (typeClasses env) }
   applyDecl env (EDInstance className ident vars kinds tys cs ch idx ns ss) =
     env { typeClassDictionaries =
-            updateMap
-              (updateMap (M.insertWith (<>) (qual ident) (pure dict)) className)
+            updateHMap
+              (updateHMap (HM.insertWith (<>) (qual ident) (pure dict)) className)
               (ByModuleName efModuleName) (typeClassDictionaries env) }
     where
     dict :: NamedDict
     dict = TypeClassDictionaryInScope ch idx (qual ident) [] className vars kinds tys cs instTy
 
-    updateMap :: (Ord k, Monoid a) => (a -> a) -> k -> M.Map k a -> M.Map k a
-    updateMap f = M.alter (Just . f . fold)
+    updateHMap :: (Hashable k, Monoid a) => (a -> a) -> k -> HM.HashMap k a -> HM.HashMap k a
+    updateHMap f = HM.alter (Just . f . fold)
 
     instTy :: Maybe SourceType
     instTy = case ns of
@@ -264,9 +266,9 @@ moduleToExternsFile (Module ss _ mn ds (Just exps)) env renamedIdents = ExternsF
       ]
   toExternsDeclaration (TypeInstanceRef ss' ident ns)
     = [ EDInstance tcdClassName (lookupRenamedIdent ident) tcdForAll tcdInstanceKinds tcdInstanceTypes tcdDependencies tcdChain tcdIndex ns ss'
-      | m1 <- maybeToList (M.lookup (ByModuleName mn) (typeClassDictionaries env))
-      , m2 <- M.elems m1
-      , nel <- maybeToList (M.lookup (Qualified (ByModuleName mn) ident) m2)
+      | m1 <- maybeToList (HM.lookup (ByModuleName mn) (typeClassDictionaries env))
+      , m2 <- HM.elems m1
+      , nel <- maybeToList (HM.lookup (Qualified (ByModuleName mn) ident) m2)
       , TypeClassDictionaryInScope{..} <- NEL.toList nel
       ]
   toExternsDeclaration _ = []

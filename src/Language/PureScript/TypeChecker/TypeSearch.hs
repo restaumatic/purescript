@@ -6,6 +6,7 @@ import Protolude
 
 import Control.Monad.Writer (WriterT, runWriterT)
 import Data.Map qualified as Map
+import Data.HashMap.Strict qualified as HM
 import Language.PureScript.TypeChecker.Entailment qualified as Entailment
 
 import Language.PureScript.TypeChecker.Monad qualified as TC
@@ -75,7 +76,7 @@ checkSubsume unsolved env st userT envT = checkInEnvironment env st $ do
   -- Now check that any unsolved constraints have not become impossible
   (traverse_ . traverse_) (\(_, context, constraint) -> do
     let constraint' = P.mapConstraintArgs (map (P.substituteType subst)) constraint
-    flip evalStateT Map.empty . evalWriterT $
+    flip evalStateT HM.empty . evalWriterT $
       Entailment.entails
         (Entailment.SolverOptions
           { solverShouldGeneralize = True

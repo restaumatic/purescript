@@ -27,6 +27,7 @@ import Data.Functor (($>), (<&>))
 import Data.List (delete, findIndices, minimumBy, nubBy, sortOn, tails)
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
 import Data.Map qualified as M
+import Data.HashMap.Strict qualified as HM
 import Data.Set qualified as S
 import Data.Traversable (for)
 import Data.Text (Text, stripPrefix, stripSuffix)
@@ -93,12 +94,12 @@ namedInstanceIdentifier _ = Nothing
 type TypeClassDict = TypeClassDictionaryInScope Evidence
 
 -- | The 'InstanceContext' tracks those constraints which can be satisfied.
-type InstanceContext = M.Map QualifiedBy
-                         (M.Map (Qualified (ProperName 'ClassName))
-                           (M.Map (Qualified Ident) (NonEmpty NamedDict)))
+type InstanceContext = HM.HashMap QualifiedBy
+                         (HM.HashMap (Qualified (ProperName 'ClassName))
+                           (HM.HashMap (Qualified Ident) (NonEmpty NamedDict)))
 
 findDicts :: InstanceContext -> Qualified (ProperName 'ClassName) -> QualifiedBy -> [TypeClassDict]
-findDicts ctx cn = fmap (fmap NamedInstance) . foldMap NEL.toList . foldMap M.elems . (M.lookup cn <=< flip M.lookup ctx)
+findDicts ctx cn = fmap (fmap NamedInstance) . foldMap NEL.toList . foldMap HM.elems . (HM.lookup cn <=< flip HM.lookup ctx)
 
 -- | A type substitution which makes an instance head match a list of types.
 --
@@ -107,7 +108,7 @@ findDicts ctx cn = fmap (fmap NamedInstance) . foldMap NEL.toList . foldMap M.el
 type Matching a = M.Map Text a
 
 combineContexts :: InstanceContext -> InstanceContext -> InstanceContext
-combineContexts = M.unionWith (M.unionWith (M.unionWith (<>)))
+combineContexts = HM.unionWith (HM.unionWith (HM.unionWith (<>)))
 
 -- | Replace type class dictionary placeholders with inferred type class dictionaries
 replaceTypeClassDictionaries
@@ -115,7 +116,7 @@ replaceTypeClassDictionaries
    Bool
   -> Expr
   -> TypeCheckM (Expr, [(Ident, InstanceContext, SourceConstraint)])
-replaceTypeClassDictionaries shouldGeneralize expr = flip evalStateT M.empty $ do
+replaceTypeClassDictionaries shouldGeneralize expr = flip evalStateT HM.empty $ do
     -- Loop, deferring any unsolved constraints, until there are no more
     -- constraints which can be solved, then make a generalization pass.
     let loop e = do
@@ -883,8 +884,8 @@ newDictionaries path name (Constraint _ className instanceKinds instanceTy _) = 
     return (TypeClassDictionaryInScope Nothing 0 name path className [] instanceKinds instanceTy Nothing Nothing : supDicts)
 
 mkContext :: [NamedDict] -> InstanceContext
-mkContext = foldr combineContexts M.empty . map fromDict where
-  fromDict d = M.singleton ByNullSourcePos (M.singleton (tcdClassName d) (M.singleton (tcdValue d) (pure d)))
+mkContext = foldr combineContexts HM.empty . map fromDict where
+  fromDict d = HM.singleton ByNullSourcePos (HM.singleton (tcdClassName d) (HM.singleton (tcdValue d) (pure d)))
 
 -- | Check all pairs of values in a list match a predicate
 pairwiseAll :: Monoid m => (a -> a -> m) -> [a] -> m

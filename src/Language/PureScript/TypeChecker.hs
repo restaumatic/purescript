@@ -46,6 +46,7 @@ import Language.PureScript.TypeChecker.Types as T
 import Language.PureScript.TypeChecker.Unify (varIfUnknown)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
 import Language.PureScript.Types (Constraint(..), SourceConstraint, SourceType, Type(..), containsForAll, eqType, everythingOnTypes, overConstraintArgs, srcInstanceType, unapplyTypes)
+import Data.HashMap.Strict qualified as HM
 
 addDataType
   :: ModuleName
@@ -175,11 +176,11 @@ addTypeClass _ qualifiedClassName args implies dependencies ds kind = do
 
 addTypeClassDictionaries
   :: QualifiedBy
-  -> M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))
+  -> HM.HashMap (Qualified (ProperName 'ClassName)) (HM.HashMap (Qualified Ident) (NEL.NonEmpty NamedDict))
   -> TypeCheckM ()
 addTypeClassDictionaries mn entries =
   modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = insertState st } }
-  where insertState st = M.insertWith (M.unionWith (M.unionWith (<>))) mn entries (typeClassDictionaries . checkEnv $ st)
+  where insertState st = HM.insertWith (HM.unionWith (HM.unionWith (<>))) mn entries (typeClassDictionaries . checkEnv $ st)
 
 checkDuplicateTypeArguments
   :: [Text]
@@ -379,7 +380,7 @@ typeCheckAll moduleName = traverse go
       let qualifiedDictName = Qualified (ByModuleName moduleName) dictName
       flip (traverse_ . traverse_) (typeClassDictionaries env) $ \dictionaries ->
         guardWith (errorMessage (DuplicateInstance dictName ss)) $
-          not (M.member qualifiedDictName dictionaries)
+          not (HM.member qualifiedDictName dictionaries)
       case M.lookup className (typeClasses env) of
         Nothing -> internalError "typeCheckAll: Encountered unknown type class in instance declaration"
         Just typeClass -> do
@@ -396,7 +397,7 @@ typeCheckAll moduleName = traverse go
           let dict =
                 TypeClassDictionaryInScope chainId idx qualifiedDictName [] className vars kinds' tys'' (Just deps'') $
                   if isPlainIdent dictName then Nothing else Just $ srcInstanceType ss vars className tys''
-          addTypeClassDictionaries (ByModuleName moduleName) . M.singleton className $ M.singleton (tcdValue dict) (pure dict)
+          addTypeClassDictionaries (ByModuleName moduleName) . HM.singleton className $ HM.singleton (tcdValue dict) (pure dict)
           return d
 
   checkInstanceArity :: Ident -> Qualified (ProperName 'ClassName) -> TypeClassData -> [SourceType] -> TypeCheckM ()
@@ -478,7 +479,7 @@ typeCheckAll moduleName = traverse go
     -> TypeCheckM ()
   checkOverlappingInstance ss ch dictName vars className typeClass tys' nonOrphanModules = do
     for_ nonOrphanModules $ \m -> do
-      dicts <- M.toList <$> lookupTypeClassDictionariesForClass (ByModuleName m) className
+      dicts <- HM.toList <$> lookupTypeClassDictionariesForClass (ByModuleName m) className
 
       for_ dicts $ \(Qualified mn' ident, dictNel) -> do
         for_ dictNel $ \dict -> do
@@ -753,7 +754,7 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
       ] $ \className -> do
         env <- getEnv
         let dicts = foldMap (foldMap NEL.toList) $
-              M.lookup (ByModuleName mn) (typeClassDictionaries env) >>= M.lookup className
+              HM.lookup (ByModuleName mn) (typeClassDictionaries env) >>= HM.lookup className
         when (any isDictOfTypeRef dicts) $
           tell . errorMessage' ss' $ HiddenConstructors dr className
     | otherwise = do

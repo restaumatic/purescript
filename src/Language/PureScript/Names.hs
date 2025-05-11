@@ -1,4 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 -- |
 -- Data types for names
@@ -20,6 +22,7 @@ import Data.Aeson.TH (deriveJSON)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Int (Int64)
+import Data.Hashable (Hashable)
 
 import Language.PureScript.AST.SourcePos (SourcePos, pattern SourcePos)
 
@@ -32,7 +35,7 @@ data Name
   | DctorName (ProperName 'ConstructorName)
   | TyClassName (ProperName 'ClassName)
   | ModName ModuleName
-  deriving (Eq, Ord, Show, Generic)
+  deriving (Eq, Ord, Show, Generic, Hashable)
 
 instance NFData Name
 instance Serialise Name
@@ -71,7 +74,7 @@ getClassName _ = Nothing
 data InternalIdentData
   -- Used by CoreFn.Laziness
   = RuntimeLazyFactory | Lazy !Text
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Show, Eq, Ord, Generic, Hashable)
 
 instance NFData InternalIdentData
 instance Serialise InternalIdentData
@@ -96,7 +99,7 @@ data Ident
   -- A generated name used only for internal transformations
   --
   | InternalIdent !InternalIdentData
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Show, Eq, Ord, Generic, Hashable)
 
 instance NFData Ident
 instance Serialise Ident
@@ -129,6 +132,7 @@ isPlainIdent _ = False
 --
 newtype OpName (a :: OpNameType) = OpName { runOpName :: Text }
   deriving (Show, Eq, Ord, Generic)
+  deriving newtype Hashable
 
 instance NFData (OpName a)
 instance Serialise (OpName a)
@@ -158,6 +162,8 @@ coerceOpName = OpName . runOpName
 --
 newtype ProperName (a :: ProperNameType) = ProperName { runProperName :: Text }
   deriving (Show, Eq, Ord, Generic)
+  deriving newtype (Hashable)
+
 
 instance NFData (ProperName a)
 instance Serialise (ProperName a)
@@ -191,6 +197,7 @@ coerceProperName = ProperName . runProperName
 newtype ModuleName = ModuleName Text
   deriving (Show, Eq, Ord, Generic)
   deriving newtype Serialise
+  deriving newtype (Hashable)
 
 instance NFData ModuleName
 
@@ -206,7 +213,7 @@ isBuiltinModuleName (ModuleName mn) = mn == "Prim" || "Prim." `T.isPrefixOf` mn
 data QualifiedBy
   = BySourcePos SourcePos
   | ByModuleName ModuleName
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Show, Eq, Ord, Generic, Hashable)
 
 pattern ByNullSourcePos :: QualifiedBy
 pattern ByNullSourcePos = BySourcePos (SourcePos 0 0)
@@ -230,7 +237,7 @@ toMaybeModuleName (BySourcePos _) = Nothing
 -- A qualified name, i.e. a name with an optional module name
 --
 data Qualified a = Qualified QualifiedBy a
-  deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic)
+  deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic, Hashable)
 
 instance NFData a => NFData (Qualified a)
 instance Serialise a => Serialise (Qualified a)
