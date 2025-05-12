@@ -21,6 +21,7 @@ import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets, modify, state)
 import Control.Monad.Writer.Class (MonadWriter(..))
 
+import Data.List (sortOn)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe)
 import Data.IntMap.Lazy qualified as IM
@@ -34,6 +35,8 @@ import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), 
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, mkForAll, rowFromList, srcTUnknown)
 import Data.Set qualified as S
+import Language.PureScript.Label (Label)
+import Data.Bifunctor (second, first)
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: TypeCheckM SourceType
@@ -106,11 +109,18 @@ unknownsInType t = everythingOnTypes (.) go t []
   go (TUnknown ann u) = ((ann, u) :)
   go _ = id
 
+-- | Look up an unknown type in substitution, but ignore unknowns pointing at themselves.
+substLookup :: Int -> Substitution -> Maybe SourceType
+substLookup u sub =
+    case IM.lookup u (substType sub) of
+      Nothing -> Nothing
+      Just (TUnknown _ u1) | u1 == u -> Nothing
+      Just t -> Just t
+
 -- | Unify two types, updating the current substitution
 unifyTypes :: SourceType -> SourceType -> TypeCheckM ()
 unifyTypes t1 t2 = do
-  sub <- gets checkSubstitution
-  withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes'' (substituteType sub t1) (substituteType sub t2)
+  withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes'' t1 t2
   where
   unifyTypes'' t1' t2'= do
     cache <- gets unificationCache
@@ -118,8 +128,16 @@ unifyTypes t1 t2 = do
       modify $ \st -> st { unificationCache = S.insert (t1', t2') cache }
       unifyTypes' t1' t2'
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()
-  unifyTypes' (TUnknown _ u) t = solveType u t
-  unifyTypes' t (TUnknown _ u) = solveType u t
+  unifyTypes' (TUnknown _ u) t2' = do
+    sub <- gets checkSubstitution
+    case substLookup u sub of
+      Nothing -> solveType u (substituteType sub t2')
+      Just targetType -> unifyTypes targetType t2'
+  unifyTypes' t1' (TUnknown _ u) = do
+    sub <- gets checkSubstitution
+    case substLookup u sub of
+      Nothing -> solveType u (substituteType sub t1')
+      Just targetType -> unifyTypes t1' targetType
   unifyTypes' (ForAll ann1 _ ident1 mbK1 ty1 sc1) (ForAll ann2 _ ident2 mbK2 ty2 sc2) =
     case (sc1, sc2) of
       (Just sc1', Just sc2') -> do
@@ -162,15 +180,51 @@ unifyTypes t1 t2 = do
   unifyTypes' t3 t4 =
     throwError . errorMessage $ TypesDoNotUnify t3 t4
 
+alignRowsWithM
+  :: (Label -> SourceType -> SourceType -> r)
+  -> SourceType
+  -> SourceType
+  -> TypeCheckM ([r], (([RowListItem SourceAnn], SourceType), ([RowListItem SourceAnn], SourceType)))
+alignRowsWithM f ty1 ty2 = do
+  (s1, tail1) <- rowToSortedListM ty1
+  (s2, tail2) <- rowToSortedListM ty2
+
+  let
+    go [] r = ([], (([], tail1), (r, tail2)))
+    go r [] = ([], ((r, tail1), ([], tail2)))
+    go lhs@(RowListItem a1 l1 t1 : r1) rhs@(RowListItem a2 l2 t2 : r2) = 
+      case compare l1 l2 of
+        LT -> (second . first . first) (RowListItem a1 l1 t1 :) (go r1 rhs)
+        GT -> (second . second . first) (RowListItem a2 l2 t2 :) (go lhs r2)
+        EQ -> first (f l1 t1 t2 :) (go r1 r2)
+  pure $ go s1 s2
+
+  where
+  rowToListM :: SourceType -> TypeCheckM ([RowListItem SourceAnn], SourceType)
+  rowToListM = go where
+    go (RCons ann name ty row) =
+      first (RowListItem ann name ty :) <$> rowToListM row
+    go r@(TUnknown _ u) = do
+      sub <- gets checkSubstitution
+      case substLookup u sub of
+        Just t -> go t
+        _ -> pure ([], r)
+    go r = pure ([], r)
+
+  -- Convert a row to a list of pairs of labels and types, sorted by the labels.
+  rowToSortedListM :: SourceType -> TypeCheckM ([RowListItem SourceAnn], SourceType)
+  rowToSortedListM = fmap (first (sortOn rowListLabel)) . rowToListM
+
 -- | Unify two rows, updating the current substitution
 --
 -- Common labels are identified and unified. Remaining labels and types are unified with a
 -- trailing row unification variable, if appropriate.
 unifyRows :: SourceType -> SourceType -> TypeCheckM ()
-unifyRows r1 r2 = sequence_ matches *> uncurry unifyTails rest where
+unifyRows r1 r2 = do
+  (matches, rest) <- alignRowsWithM unifyTypesWithLabel r1 r2
+  sequence_ matches *> uncurry unifyTails rest
+  where
   unifyTypesWithLabel l t1 t2 = withErrorMessageHint (ErrorInRowLabel l) $ unifyTypes t1 t2
-
-  (matches, rest) = alignRowsWith unifyTypesWithLabel r1 r2
 
   unifyTails :: ([RowListItem SourceAnn], SourceType) -> ([RowListItem SourceAnn], SourceType) -> TypeCheckM ()
   unifyTails ([], TUnknown _ u)    (sd, r)               = solveType u (rowFromList (sd, r))
