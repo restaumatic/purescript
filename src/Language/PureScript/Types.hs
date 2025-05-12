@@ -471,7 +471,20 @@ rowToList :: Type a -> ([RowListItem a], Type a)
 rowToList = go where
   go (RCons ann name ty row) =
     first (RowListItem ann name ty :) (rowToList row)
+  -- go (TUnknown ...) = -- lookup in subst
   go r = ([], r)
+
+{-
+
+r1 ~ (a :: Int, b :: Int | r2)
+r2 ~ (c :: Int)
+
+rowToList r1
+
+r1 ~ (a :: Int, b :: Int, c :: Int)
+r2 ~ (c :: Int)
+
+-}
 
 -- | Convert a row to a list of pairs of labels and types, sorted by the labels.
 rowToSortedList :: Type a -> ([RowListItem a], Type a)
