@@ -28,6 +28,7 @@ import Language.PureScript.Constants.Prim qualified as C
 import Language.PureScript.Names (OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, coerceProperName)
 import Language.PureScript.Label (Label)
 import Language.PureScript.PSString (PSString)
+import Data.Hashable (Hashable (hashWithSalt))
 
 type SourceType = Type SourceAnn
 type SourceConstraint = Constraint SourceAnn
@@ -40,6 +41,7 @@ newtype SkolemScope = SkolemScope { runSkolemScope :: Int }
 
 instance NFData SkolemScope
 instance Serialise SkolemScope
+instance Hashable SkolemScope
 
 -- |
 -- Describes how a TypeWildcard should be presented to the user during
@@ -52,6 +54,7 @@ data WildcardData = HoleWildcard Text | UnnamedWildcard | IgnoredWildcard
 
 instance NFData WildcardData
 instance Serialise WildcardData
+instance Hashable WildcardData
 
 data TypeVarVisibility
   = TypeVarVisible
@@ -60,6 +63,7 @@ data TypeVarVisibility
 
 instance NFData TypeVarVisibility
 instance Serialise TypeVarVisibility
+instance Hashable TypeVarVisibility
 
 typeVarVisibilityPrefix :: TypeVarVisibility -> Text
 typeVarVisibilityPrefix = \case
@@ -114,6 +118,9 @@ data Type a
 
 instance NFData a => NFData (Type a)
 instance Serialise a => Serialise (Type a)
+
+instance Hashable (Type a) where
+  hashWithSalt = hashType
 
 srcTUnknown :: Int -> SourceType
 srcTUnknown = TUnknown NullSourceAnn
@@ -177,6 +184,7 @@ data ConstraintData
 
 instance NFData ConstraintData
 instance Serialise ConstraintData
+instance Hashable ConstraintData
 
 -- | A typeclass constraint
 data Constraint a = Constraint
@@ -815,6 +823,33 @@ eqMaybeType (Just a) (Just b) = eqType a b
 eqMaybeType Nothing Nothing = True
 eqMaybeType _ _ = False
 
+infixl 0 `hashType`
+hashType :: Int -> Type a -> Int
+hashType s =  \case
+  (TUnknown _ a) -> hashWithSalt s a
+  (TypeVar _ a) -> hashWithSalt s a
+  (TypeLevelString _ a) -> hashWithSalt s a
+  (TypeLevelInt _ a) -> hashWithSalt s a
+  (TypeWildcard _ a) -> hashWithSalt s a
+  (TypeConstructor _ a) -> hashWithSalt s a
+  (TypeOp _ a) -> hashWithSalt s a
+  (TypeApp _ a b) -> s `hashType` a `hashType` b
+  (KindApp _ a b) -> s `hashType` a `hashType` b
+  (ForAll _ _ a b c d) -> 
+    s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c `hashWithSalt` d
+  (ConstrainedType _ a b) -> s `hashWithSalt` a `hashType` b
+  (Skolem _ a b c d) -> s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c `hashWithSalt` d
+  (REmpty _) -> hashWithSalt s ("REmpty" :: Text)
+  (RCons _ a b c) -> s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c
+  (KindedType _ a b) -> s `hashWithSalt` a `hashWithSalt` b
+  (BinaryNoParensType _ a b c) -> s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c
+  (ParensInType _ a) -> hashWithSalt s a
+
+infixl 0 `hashTypeMaybe`
+hashTypeMaybe :: Int -> Maybe (Type a) -> Int
+hashTypeMaybe s Nothing = s `hashWithSalt` (0 :: Int)
+hashTypeMaybe s (Just a) = s `hashType` a
+
 compareType :: Type a -> Type b -> Ordering
 compareType (TUnknown _ a) (TUnknown _ a') = compare a a'
 compareType (TypeVar _ a) (TypeVar _ a') = compare a a'
@@ -855,6 +890,7 @@ compareType typ typ' =
       orderOf BinaryNoParensType{} = 15
       orderOf ParensInType{} = 16
 
+
 compareMaybeType :: Maybe (Type a) -> Maybe (Type b) -> Ordering
 compareMaybeType (Just a) (Just b) = compareType a b
 compareMaybeType Nothing Nothing = EQ
@@ -867,8 +903,12 @@ instance Eq (Constraint a) where
 instance Ord (Constraint a) where
   compare = compareConstraint
 
+instance Hashable (Constraint a) where
+  hashWithSalt s (Constraint _ a b c d) = s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c `hashWithSalt` d
+
 eqConstraint :: Constraint a -> Constraint b -> Bool
 eqConstraint (Constraint _ a b c d) (Constraint _ a' b' c' d') = a == a' && and (zipWith eqType b b') && and (zipWith eqType c c') && d == d'
 
 compareConstraint :: Constraint a -> Constraint b -> Ordering
 compareConstraint (Constraint _ a b c d) (Constraint _ a' b' c' d') = compare a a' <> fold (zipWith compareType b b') <> fold (zipWith compareType c c') <> compare d d'
+

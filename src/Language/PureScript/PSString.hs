@@ -33,6 +33,7 @@ import Numeric (showHex)
 import System.IO.Unsafe (unsafePerformIO)
 import Data.Aeson qualified as A
 import Data.Aeson.Types qualified as A
+import Data.Hashable (Hashable)
 
 -- |
 -- Strings in PureScript are sequences of UTF-16 code units, which do not
@@ -50,6 +51,7 @@ import Data.Aeson.Types qualified as A
 --
 newtype PSString = PSString { toUTF16CodeUnits :: [Word16] }
   deriving (Eq, Ord, Semigroup, Monoid, Generic)
+  deriving newtype Hashable
 
 instance NFData PSString
 instance Serialise PSString
