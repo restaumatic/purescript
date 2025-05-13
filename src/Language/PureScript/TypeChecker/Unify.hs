@@ -16,7 +16,7 @@ module Language.PureScript.TypeChecker.Unify
 
 import Prelude
 
-import Control.Monad (forM_, void, when)
+import Control.Monad (forM_, void)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets, modify, state)
 import Control.Monad.Writer.Class (MonadWriter(..))
@@ -34,7 +34,6 @@ import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, un
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, mkForAll, rowFromList, srcTUnknown)
-import Data.Set qualified as S
 import Language.PureScript.Label (Label)
 import Data.Bifunctor (second, first)
 
@@ -63,6 +62,25 @@ freshTypeWithKind kind = state $ \st -> do
                  (checkSubstitution st) { substUnsolved = IM.insert t (UnkLevel (pure t), kind) (substUnsolved (checkSubstitution st)) }
              }
   (srcTUnknown t, st')
+
+{-
+
+instance Monoid a => Monoid (Maybe a)
+
+
+Monoid (Maybe u1), u1 ~ BigType
+
+
+
+Monoid (Maybe BigType)    Monoid (Maybe a)
+ Maybe                     Maybe
+ BigType                   a
+
+a -> BigType
+
+Monoid a where a ~ Int
+
+-}
 
 -- | Update the substitution to solve a type constraint
 solveType :: Int -> SourceType -> TypeCheckM ()
@@ -120,13 +138,9 @@ substLookup u sub =
 -- | Unify two types, updating the current substitution
 unifyTypes :: SourceType -> SourceType -> TypeCheckM ()
 unifyTypes t1 t2 = do
-  withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes'' t1 t2
+  sub <- gets checkSubstitution
+  withErrorMessageHint (ErrorUnifyingTypes (substituteType sub t1) (substituteType sub t2)) $ unifyTypes' t1 t2
   where
-  unifyTypes'' t1' t2'= do
-    cache <- gets unificationCache
-    when (S.notMember (t1', t2') cache) $ do
-      modify $ \st -> st { unificationCache = S.insert (t1', t2') cache }
-      unifyTypes' t1' t2'
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()
   unifyTypes' (TUnknown _ u) t2' = do
     sub <- gets checkSubstitution
