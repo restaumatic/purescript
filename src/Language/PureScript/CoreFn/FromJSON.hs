@@ -27,6 +27,7 @@ import Language.PureScript.Names (Ident(..), ModuleName(..), properNameFromStrin
 import Language.PureScript.PSString (PSString)
 
 import Text.ParserCombinators.ReadP (readP_to_S)
+import Data.Hashable (Hashable)
 
 parseVersion' :: String -> Maybe Version
 parseVersion' str =
@@ -110,7 +111,7 @@ identFromJSON = withText "Ident" $ \case
 properNameFromJSON :: Value -> Parser (ProperName a)
 properNameFromJSON = fmap properNameFromString . parseJSON
 
-qualifiedFromJSON :: (Text -> a) -> Value -> Parser (Qualified a)
+qualifiedFromJSON :: Hashable a => (Text -> a) -> Value -> Parser (Qualified a)
 qualifiedFromJSON f = withObject "Qualified" qualifiedFromObj
   where
   qualifiedFromObj o =

@@ -200,7 +200,7 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
       CompilerNamed -> Just $ srcInstanceType ss vars className tys
       UserNamed -> Nothing
 
-  qual :: a -> Qualified a
+  qual :: Hashable a => a -> Qualified a
   qual = mkQualified_ (ByModuleName efModuleName)
 
 -- | Generate an externs file for all declarations in a module.

@@ -34,6 +34,7 @@ import Language.PureScript.Sugar.Names.Exports (findExportable, resolveExports)
 import Language.PureScript.Sugar.Names.Imports (resolveImports, resolveModuleImport)
 import Language.PureScript.Traversals (defS, sndM)
 import Language.PureScript.Types (Constraint(..), SourceConstraint, SourceType, Type(..), everywhereOnTypesM)
+import Data.Hashable (Hashable)
 
 -- |
 -- Replaces all local names with qualified names.
@@ -406,7 +407,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
   -- qualified references are replaced with their canonical qualified names
   -- (e.g. M.Map -> Data.Map.Map).
   update
-    :: (Ord a)
+    :: (Ord a, Hashable a)
     => M.Map (Qualified a) [ImportRecord a]
     -> (a -> Name)
     -> Qualified a

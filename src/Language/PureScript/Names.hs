@@ -21,10 +21,9 @@ import Data.Aeson.TH (deriveJSON)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Int (Int64)
-import Data.Hashable (Hashable)
 
 import Language.PureScript.AST.SourcePos (SourcePos, pattern SourcePos)
-import Language.PureScript.Interner (Interned, uninternText, internText, getInternedHash)
+import Language.PureScript.Interner (Interned, uninternText, internText)
 import Data.Hashable (Hashable (..))
 
 -- | A sum of the possible name types, useful for error and lint messages.
@@ -250,27 +249,36 @@ toMaybeModuleName (BySourcePos _) = Nothing
 -- |
 -- A qualified name, i.e. a name with an optional module name
 --
-data Qualified a = Qualified QualifiedBy a Int
+data Qualified a = Qualified' QualifiedBy a Int
   deriving (Functor, Foldable, Traversable, Generic)
 
+pattern Qualified qb a <- Qualified' qb a _ where
+  Qualified qb a = mkQualified_ qb a
+
+
 instance Show a => Show (Qualified a) where
-  show (Qualified qb a _) = case qb of
+  show (Qualified qb a) = case qb of
     BySourcePos _ -> show a
     ByModuleName mn -> T.unpack (runModuleName mn) <> "." <> show a
 
 instance NFData a => NFData (Qualified a)
-instance Serialise a => Serialise (Qualified a)
+
+instance (Serialise a, Hashable a) => Serialise (Qualified a) where
+  encode (Qualified qb a) = encode $ Qualified' qb a
+  decode = do
+    Qualified qb a <- decode
+    pure $ mkQualified_ qb a
 
 instance Eq a => Eq (Qualified a) where
-  (Qualified qb a _) == (Qualified qb' a' _) = qb == qb' && a == a'
+  (Qualified q a _) == (Qualified q' a' _) = (q == q' && a == a')
 
 instance Ord a => Ord (Qualified a) where
-  compare (Qualified qb a1 _) (Qualified qb' a2 _) = case compare qb qb' of 
+  compare (Qualified qb a1 _) (Qualified qb' a2 _) = case compare qb qb' of
                                                        EQ -> compare a1 a2
                                                        other -> other
 
 instance Hashable a => Hashable (Qualified a) where
-  hashWithSalt s (Qualified _ a h) = hashWithSalt s h `hashWithSalt` a
+  hashWithSalt s (Qualified _ _ h) = hashWithSalt s h
 
 
 showQualified :: (a -> Text) -> Qualified a -> Text
@@ -290,11 +298,11 @@ qualify _ (Qualified (ByModuleName m) a _) = (m, a)
 -- |
 -- Makes a qualified value from a name and module name.
 --
-mkQualified :: a -> ModuleName -> Qualified a
-mkQualified name mn@(ModuleName i) = Qualified (ByModuleName mn) name (getInternedHash i)
+mkQualified :: Hashable a => a -> ModuleName -> Qualified a
+mkQualified name mn = Qualified (ByModuleName mn) name (hashWithSalt 1 mn `hashWithSalt` name)
 
-mkQualified_ :: QualifiedBy -> a -> Qualified a
-mkQualified_ qb name = Qualified qb name (hash qb)
+mkQualified_ :: Hashable a => QualifiedBy -> a -> Qualified a
+mkQualified_ qb name = Qualified qb name (hashWithSalt 1 qb `hashWithSalt` name)
 
 
 -- | Remove the module name from a qualified name

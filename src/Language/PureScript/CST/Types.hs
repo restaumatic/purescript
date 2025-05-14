@@ -18,6 +18,7 @@ import GHC.Generics (Generic)
 import Language.PureScript.Names qualified as N
 import Language.PureScript.Roles qualified as R
 import Language.PureScript.PSString (PSString)
+import Data.Hashable (Hashable)
 
 data SourcePos = SourcePos
   { srcLine :: {-# UNPACK #-} !Int
@@ -90,7 +91,7 @@ data SourceToken = SourceToken
 
 data Ident = Ident
   { getIdent :: Text
-  } deriving (Show, Eq, Ord, Generic)
+  } deriving (Show, Eq, Ord, Generic, Hashable)
 
 data Name a = Name
   { nameTok :: SourceToken

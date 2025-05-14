@@ -37,6 +37,7 @@ import Language.PureScript.Types qualified as T
 import Language.PureScript.CST.Positions
 import Language.PureScript.CST.Print (printToken)
 import Language.PureScript.CST.Types
+import Data.Hashable (Hashable)
 
 comment :: Comment a -> Maybe C.Comment
 comment = \case
@@ -89,7 +90,7 @@ moduleName = \case
   go [] = Nothing
   go ns = Just $ N.moduleNameFromString $ Text.intercalate "." ns
 
-qualified :: QualifiedName a -> N.Qualified a
+qualified :: Hashable a=> QualifiedName a -> N.Qualified a
 qualified q = N.mkQualified_ qb (qualName q)
   where
   qb = maybe N.ByNullSourcePos N.ByModuleName $ qualModule q

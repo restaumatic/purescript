@@ -75,7 +75,8 @@ import Control.Monad.Trans.Writer (Writer, execWriter)
 import Control.Monad.Writer.Class (tell)
 import Data.String (String, fromString)
 import Language.Haskell.TH (Dec, Name, Pat, Q, Type, conP, implBidir, litP, mkName, patSynD, patSynSigD, prefixPatSyn, stringL, nameBase, Lit (IntegerL))
-import Language.PureScript.Names (Ident(..), ModuleName(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), moduleNameFromString)
+import Language.PureScript.Names (Ident(..), ModuleName(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), moduleNameFromString, properNameFromString)
+import Data.Text qualified as T
 
 -- | Generate pattern synonyms corresponding to the provided PureScript
 -- declarations.
@@ -191,12 +192,12 @@ mkPrefixedName tag prefix = mkName . (tag <>) . camelAppend prefix
 -- 'TypeName -> M_Data_Foo -> "Function" -> "Foo" ->
 --   pattern FunctionFoo :: Qualified (ProperName 'TypeName)
 --   pattern FunctionFoo = Qualified (ByModuleName M_Data_Foo) (ProperName "Foo")
-
 mkPnPat :: Q Type -> VarToDec
 mkPnPat pnType mn prefix str = do
   let modNameStr = nameBase mn
   -- Compute the hash
-  let hashValue = toInteger (hash (ByModuleName (moduleNameFromString (fromString modNameStr))))
+  let q = ByModuleName (moduleNameFromString (fromString modNameStr))
+  let hashValue = toInteger (hashWithSalt 1 q `hashWithSalt` properNameFromString (T.pack str))
   typedPatSyn (mkName $ cap prefix <> str)
     [t| Qualified (ProperName $pnType) |]
     [p| Qualified (ByModuleName $(conP mn [])) (ProperName $(litP $ stringL str)) $(litP $ IntegerL hashValue) |]
@@ -209,7 +210,8 @@ mkIdentDec :: VarToDec
 mkIdentDec mn prefix str = do
   let modNameStr = nameBase mn
   -- Compute the hash
-  let hashValue = toInteger (hash (ByModuleName (moduleNameFromString (fromString modNameStr))))
+  let q = ByModuleName (moduleNameFromString (fromString modNameStr))
+  let hashValue = toInteger (hashWithSalt 1 q `hashWithSalt` Ident (T.pack str))
 
   typedPatSyn (mkPrefixedName "I_" prefix str)
     [t| Qualified Ident |]

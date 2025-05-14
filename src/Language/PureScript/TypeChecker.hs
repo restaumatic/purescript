@@ -47,6 +47,7 @@ import Language.PureScript.TypeChecker.Unify (varIfUnknown)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
 import Language.PureScript.Types (Constraint(..), SourceConstraint, SourceType, Type(..), containsForAll, eqType, everythingOnTypes, overConstraintArgs, srcInstanceType, unapplyTypes)
 import Data.HashMap.Strict qualified as HM
+import Data.Hashable (Hashable)
 
 addDataType
   :: ModuleName
@@ -608,7 +609,7 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
   toImportDecl (sa, moduleName, importDeclarationType, asModuleName, _) =
     ImportDeclaration sa moduleName importDeclarationType asModuleName
 
-  qualify' :: a -> Qualified a
+  qualify' :: Hashable a => a -> Qualified a
   qualify' = mkQualified_ (ByModuleName mn)
 
   getSuperClassExportCheck = do
