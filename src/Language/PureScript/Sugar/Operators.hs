@@ -19,7 +19,7 @@ import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage, errorMessage', parU, rethrow, rethrowWithPosition)
 import Language.PureScript.Externs (ExternsFile(..), ExternsFixity(..), ExternsTypeFixity(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), freshIdent')
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), freshIdent', mkQualified_)
 import Language.PureScript.Sugar.Operators.Binders (matchBinderOperators)
 import Language.PureScript.Sugar.Operators.Expr (matchExprOperators)
 import Language.PureScript.Sugar.Operators.Types (matchTypeOperators)
@@ -50,7 +50,7 @@ desugarSignedLiterals (Module ss coms mn ds exts) =
   Module ss coms mn (map f' ds) exts
   where
   (f', _, _) = everywhereOnValues id go id
-  go (UnaryMinus ss' val) = App (Var ss' (Qualified ByNullSourcePos (Ident C.S_negate))) val
+  go (UnaryMinus ss' val) = App (Var ss' (mkQualified_ ByNullSourcePos (Ident C.S_negate))) val
   go other = other
 
 -- |
@@ -150,10 +150,10 @@ rebracketFiltered !caller pred_ externs m = do
     goExpr _ e@(PositionedValue pos _ _) = return (pos, e)
     goExpr _ (Op pos op) =
       (pos,) <$> case op `M.lookup` valueAliased of
-        Just (Qualified mn' (Left alias)) ->
-          return $ Var pos (Qualified mn' alias)
-        Just (Qualified mn' (Right alias)) ->
-          return $ Constructor pos (Qualified mn' alias)
+        Just (Qualified mn' (Left alias) _) ->
+          return $ Var pos (mkQualified_ mn' alias)
+        Just (Qualified mn' (Right alias) _) ->
+          return $ Constructor pos (mkQualified_ mn' alias)
         Nothing ->
           throwError . errorMessage' pos . UnknownName $ fmap ValOpName op
     goExpr pos other = return (pos, other)
@@ -162,10 +162,10 @@ rebracketFiltered !caller pred_ externs m = do
     goBinder _ b@(PositionedBinder pos _ _) = return (pos, b)
     goBinder _ (BinaryNoParensBinder (OpBinder pos op) lhs rhs) =
       case op `M.lookup` valueAliased of
-        Just (Qualified mn' (Left alias)) ->
-          throwError . errorMessage' pos $ InvalidOperatorInBinder op (Qualified mn' alias)
-        Just (Qualified mn' (Right alias)) ->
-          return (pos, ConstructorBinder pos (Qualified mn' alias) [lhs, rhs])
+        Just (Qualified mn' (Left alias) _) ->
+          throwError . errorMessage' pos $ InvalidOperatorInBinder op (mkQualified_ mn' alias)
+        Just (Qualified mn' (Right alias) _) ->
+          return (pos, ConstructorBinder pos (mkQualified_ mn' alias) [lhs, rhs])
         Nothing ->
           throwError . errorMessage' pos . UnknownName $ fmap ValOpName op
     goBinder _ BinaryNoParensBinder{} =
@@ -254,9 +254,9 @@ removeBinaryNoParens u
                             where err = throwError . errorMessage $ IncorrectAnonymousArgument
 removeBinaryNoParens (Parens (stripPositionInfo -> BinaryNoParens op l r))
   | isAnonymousArgument r = do arg <- freshIdent'
-                               return $ Abs (VarBinder nullSourceSpan arg) $ App (App op l) (Var nullSourceSpan (Qualified ByNullSourcePos arg))
+                               return $ Abs (VarBinder nullSourceSpan arg) $ App (App op l) (Var nullSourceSpan (mkQualified_ ByNullSourcePos arg))
   | isAnonymousArgument l = do arg <- freshIdent'
-                               return $ Abs (VarBinder nullSourceSpan arg) $ App (App op (Var nullSourceSpan (Qualified ByNullSourcePos arg))) r
+                               return $ Abs (VarBinder nullSourceSpan arg) $ App (App op (Var nullSourceSpan (mkQualified_ ByNullSourcePos arg))) r
 removeBinaryNoParens (BinaryNoParens op l r) = return $ App (App op l) r
 removeBinaryNoParens e = return e
 
@@ -303,7 +303,7 @@ externsFixities ExternsFile{..} =
     -> Either ValueFixityRecord TypeFixityRecord
   fromFixity (ExternsFixity assoc prec op name) =
     Left
-      ( Qualified (ByModuleName efModuleName) op
+      ( mkQualified_ (ByModuleName efModuleName) op
       , internalModuleSourceSpan ""
       , Fixity assoc prec
       , name
@@ -314,7 +314,7 @@ externsFixities ExternsFile{..} =
     -> Either ValueFixityRecord TypeFixityRecord
   fromTypeFixity (ExternsTypeFixity assoc prec op name) =
     Right
-      ( Qualified (ByModuleName efModuleName) op
+      ( mkQualified_ (ByModuleName efModuleName) op
       , internalModuleSourceSpan ""
       , Fixity assoc prec
       , name
@@ -325,9 +325,9 @@ collectFixities (Module _ _ moduleName ds _) = concatMap collect ds
   where
   collect :: Declaration -> [Either ValueFixityRecord TypeFixityRecord]
   collect (ValueFixityDeclaration (ss, _) fixity name op) =
-    [Left (Qualified (ByModuleName moduleName) op, ss, fixity, name)]
+    [Left (mkQualified_ (ByModuleName moduleName) op, ss, fixity, name)]
   collect (TypeFixityDeclaration (ss, _) fixity name op) =
-    [Right (Qualified (ByModuleName moduleName) op, ss, fixity, name)]
+    [Right (mkQualified_ (ByModuleName moduleName) op, ss, fixity, name)]
   collect _ = []
 
 ensureNoDuplicates
@@ -339,7 +339,7 @@ ensureNoDuplicates toError m = go $ sortOn fst m
   where
   go [] = return ()
   go [_] = return ()
-  go ((x@(Qualified (ByModuleName mn) op), _) : (y, pos) : _) | x == y =
+  go ((x@(Qualified (ByModuleName mn) op _), _) : (y, pos) : _) | x == y =
     rethrow (addHint (ErrorInModule mn)) $
       rethrowWithPosition pos $ throwError . errorMessage $ toError op
   go (_ : rest) = go rest
@@ -464,7 +464,7 @@ checkFixityExports m@(Module ss _ mn ds (Just exps)) =
   getTypeOpAlias op =
     listToMaybe (mapMaybe (either (const Nothing) go <=< getFixityDecl) ds)
     where
-    go (TypeFixity _ (Qualified (ByModuleName mn') ident) op')
+    go (TypeFixity _ (Qualified (ByModuleName mn') ident _) op')
       | mn == mn' && op == op' = Just ident
     go _ = Nothing
 
@@ -476,7 +476,7 @@ checkFixityExports m@(Module ss _ mn ds (Just exps)) =
   getValueOpAlias op =
     listToMaybe (mapMaybe (either go (const Nothing) <=< getFixityDecl) ds)
     where
-    go (ValueFixity _ (Qualified (ByModuleName mn') ident) op')
+    go (ValueFixity _ (Qualified (ByModuleName mn') ident _) op')
       | mn == mn' && op == op' = Just ident
     go _ = Nothing
 

@@ -23,7 +23,7 @@ import Data.List.NonEmpty qualified as NEL
 
 import Language.PureScript.AST.SourcePos (nullSourceAnn)
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Names (Ident, ProperName(..), ProperNameType(..), Qualified, QualifiedBy, coerceProperName)
+import Language.PureScript.Names (Ident, ProperName(..), ProperNameType(..), Qualified, QualifiedBy, coerceProperName, runProperName, properNameFromString)
 import Language.PureScript.Roles (Role(..))
 import Language.PureScript.TypeClassDictionaries (NamedDict)
 import Language.PureScript.Types (SourceConstraint, SourceType, Type(..), TypeVarVisibility(..), eqType, srcTypeConstructor, freeTypeVariables)
@@ -666,7 +666,7 @@ dictTypeName' :: Text -> Text
 dictTypeName' = (<> "$Dict")
 
 dictTypeName :: ProperName a -> ProperName a
-dictTypeName = ProperName . dictTypeName' . runProperName
+dictTypeName = properNameFromString . dictTypeName' . runProperName
 
 isDictTypeName :: ProperName a -> Bool
 isDictTypeName = T.isSuffixOf "$Dict" . runProperName

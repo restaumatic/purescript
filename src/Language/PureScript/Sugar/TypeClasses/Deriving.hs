@@ -13,7 +13,7 @@ import Language.PureScript.Constants.Libs qualified as Libs
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), NameKind(..))
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), errorMessage')
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), freshIdent)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), QualifiedBy(..), freshIdent, runProperName, mkQualified_)
 import Language.PureScript.PSString (mkString)
 import Language.PureScript.Types (SourceType, Type(..), WildcardData(..), replaceAllTypeVars, srcTypeApp, srcTypeConstructor, srcTypeLevelString)
 import Language.PureScript.TypeChecker (checkNewtype)
@@ -83,13 +83,13 @@ deriveGenericRep ss mn tyCon tyConArgs =
                       lamCase x
                         [ CaseAlternative
                             [NullBinder]
-                            (unguarded (App (Var ss Libs.I_to) (Var ss' (Qualified ByNullSourcePos x))))
+                            (unguarded (App (Var ss Libs.I_to) (Var ss' (mkQualified_ ByNullSourcePos x))))
                         ]
                    , ValueDecl (ss', []) (Ident "from") Public [] $ unguarded $
                       lamCase x
                         [ CaseAlternative
                             [NullBinder]
-                            (unguarded (App (Var ss Libs.I_from) (Var ss' (Qualified ByNullSourcePos x))))
+                            (unguarded (App (Var ss Libs.I_from) (Var ss' (mkQualified_ ByNullSourcePos x))))
                         ]
                    ]
                | otherwise =
@@ -132,8 +132,8 @@ deriveGenericRep ss mn tyCon tyConArgs =
                                   (srcTypeLevelString $ mkString (runProperName ctorName)))
                          ctorTy
                , CaseAlternative [ ConstructorBinder ss Libs.C_Constructor [matchProduct] ]
-                                 (unguarded (foldl' App (Constructor ss (Qualified (ByModuleName mn) ctorName)) ctorArgs))
-               , CaseAlternative [ ConstructorBinder ss (Qualified (ByModuleName mn) ctorName) matchCtor ]
+                                 (unguarded (foldl' App (Constructor ss (mkQualified_ (ByModuleName mn) ctorName)) ctorArgs))
+               , CaseAlternative [ ConstructorBinder ss (mkQualified_ (ByModuleName mn) ctorName) matchCtor ]
                                  (unguarded (App (Constructor ss Libs.C_Constructor) mkProduct))
                )
 
@@ -156,9 +156,9 @@ deriveGenericRep ss mn tyCon tyConArgs =
       argName <- freshIdent "arg"
       pure ( srcTypeApp (srcTypeConstructor Libs.Argument) arg
            , ConstructorBinder ss Libs.C_Argument [ VarBinder ss argName ]
-           , Var ss (Qualified (BySourcePos $ spanStart ss) argName)
+           , Var ss (mkQualified_ (BySourcePos $ spanStart ss) argName)
            , VarBinder ss argName
-           , App (Constructor ss Libs.C_Argument) (Var ss (Qualified (BySourcePos $ spanStart ss) argName))
+           , App (Constructor ss Libs.C_Argument) (Var ss (mkQualified_ (BySourcePos $ spanStart ss) argName))
            )
 
     underBinder :: (Binder -> Binder) -> CaseAlternative -> CaseAlternative

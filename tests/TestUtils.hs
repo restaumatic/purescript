@@ -5,7 +5,6 @@ import Prelude
 import Language.PureScript qualified as P
 import Language.PureScript.CST qualified as CST
 import Language.PureScript.AST qualified as AST
-import Language.PureScript.Names qualified as N
 import Language.PureScript.Interactive.IO (findNodeProcess)
 
 import Control.Arrow ((***), (>>>))
@@ -235,7 +234,7 @@ compile' options expectedModule SupportModules{..} inputFiles = do
 
 getPsModuleName :: (a, AST.Module) -> T.Text
 getPsModuleName psModule = case snd psModule of
-  AST.Module _ _ (N.ModuleName t) _ _ -> t
+  AST.Module _ _ mn _ _ -> P.runModuleName mn
 
 makeActions :: [P.Module] -> M.Map P.ModuleName FilePath -> P.MakeActions P.Make
 makeActions modules foreigns = (P.buildMakeActions modulesDir (P.internalError "makeActions: input file map was read.") foreigns False)

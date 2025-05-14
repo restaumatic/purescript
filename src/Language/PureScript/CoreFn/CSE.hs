@@ -26,7 +26,7 @@ import Language.PureScript.CoreFn.Expr (Bind(..), CaseAlternative(..), Expr(..))
 import Language.PureScript.CoreFn.Meta (Meta(IsSyntheticApp))
 import Language.PureScript.CoreFn.Traversals (everywhereOnValues, traverseCoreFn)
 import Language.PureScript.Environment (dictTypeName)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), Qualified(..), QualifiedBy(..), freshIdent, runIdent, toMaybeModuleName)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Qualified(..), QualifiedBy(..), freshIdent, runIdent, toMaybeModuleName, properNameFromString, mkQualified_)
 import Language.PureScript.PSString (decodeString)
 
 -- |
@@ -248,13 +248,13 @@ generateIdentFor d e = at d . non mempty . at e %%<~ \case
   nameHint = \case
     App _ v1 v2
       | Var _ n <- v1
-      , fmap (ProperName . runIdent) n == fmap dictTypeName C.IsSymbol
+      , fmap (properNameFromString . runIdent) n == fmap dictTypeName C.IsSymbol
       , Literal _ (ObjectLiteral [(_, Abs _ _ (Literal _ (StringLiteral str)))]) <- v2
       , Just decodedStr <- decodeString str
         -> decodedStr <> "IsSymbol"
       | otherwise
         -> nameHint v1
-    Var _ (Qualified _ ident)
+    Var _ (Qualified _ ident _)
       | Ident name             <- ident -> name
       | GenIdent (Just name) _ <- ident -> name
     Accessor _ prop _
@@ -270,7 +270,7 @@ nullAnn = (nullSourceSpan, [], Nothing)
 replaceLocals :: M.Map Ident (Expr Ann) -> [Bind Ann] -> [Bind Ann]
 replaceLocals m = if M.null m then identity else map f' where
   (f', g', _) = everywhereOnValues identity f identity
-  f e@(Var _ (Qualified _ ident)) = maybe e g' $ ident `M.lookup` m
+  f e@(Var _ (Qualified _ ident _)) = maybe e g' $ ident `M.lookup` m
   f e = e
 
 -- |
@@ -292,7 +292,7 @@ floatExpr topLevelQB = \case
     let w' = w
           & (if isNew then newBindings %~ addToScope deepestScope [(ident, (_plurality, e))] else identity)
           & plurality .~ PluralityMap (M.singleton ident False)
-    pure (Var nullAnn (Qualified qb ident), w')
+    pure (Var nullAnn (mkQualified_ qb ident), w')
   (e, w) -> pure (e, w)
 
 -- |
@@ -339,7 +339,7 @@ summarizeName
   => ModuleName
   -> Qualified Ident
   -> m ()
-summarizeName mn (Qualified mn' ident) = do
+summarizeName mn (Qualified mn' ident _) = do
   m <- view bound
   let (s, bt) =
         fromMaybe (0, NonRecursive) $

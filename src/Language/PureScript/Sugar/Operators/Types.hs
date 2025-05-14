@@ -27,7 +27,7 @@ matchTypeOperators ss = matchOperators isBinOp extractOp fromOp reapply id
   extractOp _ = Nothing
 
   fromOp :: SourceType -> Maybe (SourceSpan, Qualified (OpName 'TypeOpName))
-  fromOp (TypeOp _ q@(Qualified _ (OpName _))) = Just (ss, q)
+  fromOp (TypeOp _ q@(Qualified _ (OpName _) _)) = Just (ss, q)
   fromOp _ = Nothing
 
   reapply :: a -> Qualified (OpName 'TypeOpName) -> SourceType -> SourceType -> SourceType

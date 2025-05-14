@@ -28,7 +28,7 @@ import Data.Text qualified as T
 
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (tyFunction, tyRecord)
-import Language.PureScript.Names (OpName(..), OpNameType(..), ProperName(..), ProperNameType(..), Qualified, coerceProperName, disqualify, showQualified)
+import Language.PureScript.Names (OpName(..), OpNameType(..), ProperName(..), runProperName, ProperNameType(..), Qualified, coerceProperName, disqualify, showQualified)
 import Language.PureScript.Pretty.Common (before, objectKeyRequiresQuoting)
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), Type(..), TypeVarVisibility(..), WildcardData(..), eqType, rowToSortedList, typeVarVisibilityPrefix)
 import Language.PureScript.PSString (PSString, prettyPrintString, decodeString)

@@ -1,6 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveAnyClass #-}
 
 -- |
 -- Data types for names
@@ -9,7 +8,7 @@ module Language.PureScript.Names where
 
 import Prelude
 
-import Codec.Serialise (Serialise)
+import Codec.Serialise (Serialise (..))
 import Control.Applicative ((<|>))
 import Control.Monad.Supply.Class (MonadSupply(..))
 import Control.DeepSeq (NFData)
@@ -25,6 +24,8 @@ import Data.Int (Int64)
 import Data.Hashable (Hashable)
 
 import Language.PureScript.AST.SourcePos (SourcePos, pattern SourcePos)
+import Language.PureScript.Interner (Interned, uninternText, internText, getInternedHash)
+import Data.Hashable (Hashable (..))
 
 -- | A sum of the possible name types, useful for error and lint messages.
 data Name
@@ -96,7 +97,7 @@ data Ident
   --
   | UnusedIdent
   -- |
-  -- A generated name used only for internal transformations
+  -- A generated name used only for internTextal transformations
   --
   | InternalIdent !InternalIdentData
   deriving (Show, Eq, Ord, Generic, Hashable)
@@ -160,19 +161,28 @@ coerceOpName = OpName . runOpName
 -- |
 -- Proper names, i.e. capitalized names for e.g. module names, type//data constructors.
 --
-newtype ProperName (a :: ProperNameType) = ProperName { runProperName :: Text }
-  deriving (Show, Eq, Ord, Generic)
-  deriving newtype (Hashable)
+newtype ProperName (a :: ProperNameType) = ProperName { unProperName :: Interned }
+  deriving (Eq, Ord, Generic)
+  deriving newtype (NFData, Hashable)
 
+properNameFromString :: Text -> ProperName a
+properNameFromString = ProperName . internText
 
-instance NFData (ProperName a)
-instance Serialise (ProperName a)
+runProperName :: ProperName a -> Text
+runProperName (ProperName n) = uninternText n
+
+instance Show (ProperName a) where
+  show (ProperName i) = "<internTexted:" ++ show i ++ ">"
+
+instance Serialise (ProperName a) where
+  encode (ProperName n) = encode (uninternText n)
+  decode = ProperName . internText <$> decode
 
 instance ToJSON (ProperName a) where
   toJSON = toJSON . runProperName
 
 instance FromJSON (ProperName a) where
-  parseJSON = fmap ProperName . parseJSON
+  parseJSON = fmap (ProperName . internText) . parseJSON
 
 -- |
 -- The closed set of proper name types.
@@ -189,26 +199,29 @@ data ProperNameType
 -- classes have been desugared.
 --
 coerceProperName :: ProperName a -> ProperName b
-coerceProperName = ProperName . runProperName
+coerceProperName = ProperName . unProperName
 
 -- |
 -- Module names
 --
-newtype ModuleName = ModuleName Text
+newtype ModuleName = ModuleName Interned
   deriving (Show, Eq, Ord, Generic)
-  deriving newtype Serialise
   deriving newtype (Hashable)
+
+instance Serialise ModuleName where
+  encode (ModuleName i) = encode (uninternText i)
+  decode = ModuleName . internText <$> decode
 
 instance NFData ModuleName
 
 runModuleName :: ModuleName -> Text
-runModuleName (ModuleName name) = name
+runModuleName (ModuleName name) = uninternText name
 
 moduleNameFromString :: Text -> ModuleName
-moduleNameFromString = ModuleName
+moduleNameFromString = ModuleName . internText
 
 isBuiltinModuleName :: ModuleName -> Bool
-isBuiltinModuleName (ModuleName mn) = mn == "Prim" || "Prim." `T.isPrefixOf` mn
+isBuiltinModuleName mn' = let mn = runModuleName mn' in mn == "Prim" || "Prim." `T.isPrefixOf` mn
 
 data QualifiedBy
   = BySourcePos SourcePos
@@ -217,6 +230,7 @@ data QualifiedBy
 
 pattern ByNullSourcePos :: QualifiedBy
 pattern ByNullSourcePos = BySourcePos (SourcePos 0 0)
+
 
 instance NFData QualifiedBy
 instance Serialise QualifiedBy
@@ -236,49 +250,70 @@ toMaybeModuleName (BySourcePos _) = Nothing
 -- |
 -- A qualified name, i.e. a name with an optional module name
 --
-data Qualified a = Qualified QualifiedBy a
-  deriving (Show, Eq, Ord, Functor, Foldable, Traversable, Generic, Hashable)
+data Qualified a = Qualified QualifiedBy a Int
+  deriving (Functor, Foldable, Traversable, Generic)
+
+instance Show a => Show (Qualified a) where
+  show (Qualified qb a _) = case qb of
+    BySourcePos _ -> show a
+    ByModuleName mn -> T.unpack (runModuleName mn) <> "." <> show a
 
 instance NFData a => NFData (Qualified a)
 instance Serialise a => Serialise (Qualified a)
 
+instance Eq a => Eq (Qualified a) where
+  (Qualified qb a _) == (Qualified qb' a' _) = qb == qb' && a == a'
+
+instance Ord a => Ord (Qualified a) where
+  compare (Qualified qb a1 _) (Qualified qb' a2 _) = case compare qb qb' of 
+                                                       EQ -> compare a1 a2
+                                                       other -> other
+
+instance Hashable a => Hashable (Qualified a) where
+  hashWithSalt s (Qualified _ a h) = hashWithSalt s h `hashWithSalt` a
+
+
 showQualified :: (a -> Text) -> Qualified a -> Text
-showQualified f (Qualified (BySourcePos  _) a) = f a
-showQualified f (Qualified (ByModuleName name) a) = runModuleName name <> "." <> f a
+showQualified f (Qualified (BySourcePos  _) a _) = f a
+showQualified f (Qualified (ByModuleName name) a _) = runModuleName name <> "." <> f a
 
 getQual :: Qualified a -> Maybe ModuleName
-getQual (Qualified qb _) = toMaybeModuleName qb
+getQual (Qualified qb _ _) = toMaybeModuleName qb
 
 -- |
 -- Provide a default module name, if a name is unqualified
 --
 qualify :: ModuleName -> Qualified a -> (ModuleName, a)
-qualify m (Qualified (BySourcePos _) a) = (m, a)
-qualify _ (Qualified (ByModuleName m) a) = (m, a)
+qualify m (Qualified (BySourcePos _) a _) = (m, a)
+qualify _ (Qualified (ByModuleName m) a _) = (m, a)
 
 -- |
 -- Makes a qualified value from a name and module name.
 --
 mkQualified :: a -> ModuleName -> Qualified a
-mkQualified name mn = Qualified (ByModuleName mn) name
+mkQualified name mn@(ModuleName i) = Qualified (ByModuleName mn) name (getInternedHash i)
+
+mkQualified_ :: QualifiedBy -> a -> Qualified a
+mkQualified_ qb name = Qualified qb name (hash qb)
+
 
 -- | Remove the module name from a qualified name
 disqualify :: Qualified a -> a
-disqualify (Qualified _ a) = a
+disqualify (Qualified _ a _) = a
 
 -- |
 -- Remove the qualification from a value when it is qualified with a particular
 -- module name.
 --
 disqualifyFor :: Maybe ModuleName -> Qualified a -> Maybe a
-disqualifyFor mn (Qualified qb a) | mn == toMaybeModuleName qb = Just a
+disqualifyFor mn (Qualified qb a _) | mn == toMaybeModuleName qb = Just a
 disqualifyFor _ _ = Nothing
 
 -- |
 -- Checks whether a qualified value is actually qualified with a module reference
 --
 isQualified :: Qualified a -> Bool
-isQualified (Qualified (BySourcePos  _) _) = False
+isQualified (Qualified (BySourcePos  _) _ _) = False
 isQualified _ = True
 
 -- |
@@ -291,34 +326,34 @@ isUnqualified = not . isQualified
 -- Checks whether a qualified value is qualified with a particular module
 --
 isQualifiedWith :: ModuleName -> Qualified a -> Bool
-isQualifiedWith mn (Qualified (ByModuleName mn') _) = mn == mn'
+isQualifiedWith mn (Qualified (ByModuleName mn') _ _) = mn == mn'
 isQualifiedWith _ _ = False
 
 instance ToJSON a => ToJSON (Qualified a) where
-  toJSON (Qualified qb a) = case qb of
+  toJSON (Qualified qb a _) = case qb of
     ByModuleName mn -> toJSON2 (mn, a)
     BySourcePos ss -> toJSON2 (ss, a)
 
-instance FromJSON a => FromJSON (Qualified a) where
+instance (FromJSON a, Hashable a) => FromJSON (Qualified a) where
   parseJSON v = byModule <|> bySourcePos <|> byMaybeModuleName'
     where
     byModule = do
       (mn, a) <- parseJSON2 v
-      pure $ Qualified (ByModuleName mn) a
+      pure $ mkQualified_ (ByModuleName mn) a
     bySourcePos = do
       (ss, a) <- parseJSON2 v
-      pure $ Qualified (BySourcePos ss) a
+      pure $ mkQualified_ (BySourcePos ss) a
     byMaybeModuleName' = do
       (mn, a) <- parseJSON2 v
-      pure $ Qualified (byMaybeModuleName mn) a
+      pure $ mkQualified_ (byMaybeModuleName mn) a
 
 instance ToJSON ModuleName where
-  toJSON (ModuleName name) = toJSON (T.splitOn "." name)
+  toJSON mn = toJSON (T.splitOn "." $ runModuleName mn)
 
 instance FromJSON ModuleName where
   parseJSON = withArray "ModuleName" $ \names -> do
     names' <- traverse parseJSON names
-    pure (ModuleName (T.intercalate "." (V.toList names')))
+    pure (moduleNameFromString (T.intercalate "." (V.toList names')))
 
 instance ToJSONKey ModuleName where
   toJSONKey = contramap runModuleName toJSONKey

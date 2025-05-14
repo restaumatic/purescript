@@ -22,8 +22,8 @@ desugarAccessorModule externs m
 desugarAccessorModule _externs (Module ss coms mn ds exts) =
   let (ds', Any used) = runWriter $ traverse desugarAccessor ds
       extraImports    = if used
-        then addDefaultImport (Qualified (ByModuleName C.M_Data_Record) C.M_Data_Record)
-          . addDefaultImport (Qualified (ByModuleName C.M_Type_Proxy) C.M_Type_Proxy)
+        then addDefaultImport (mkQualified_ (ByModuleName C.M_Data_Record) C.M_Data_Record)
+          . addDefaultImport (mkQualified_ (ByModuleName C.M_Type_Proxy) C.M_Type_Proxy)
         else id
   in  extraImports $ Module ss coms mn ds' exts
 

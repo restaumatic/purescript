@@ -13,7 +13,7 @@ import Data.Monoid (First(..))
 import Language.PureScript.AST (Binder(..), CaseAlternative(..), Declaration, DoNotationElement(..), Expr(..), pattern MkUnguarded, Module(..), SourceSpan, pattern ValueDecl, WhereProvenance(..), binderNames, declSourceSpan, everywhereOnValuesM)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage', parU, rethrowWithPosition)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Qualified(..), byMaybeModuleName, freshIdent')
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, byMaybeModuleName, freshIdent', mkQualified_)
 import Language.PureScript.Constants.Libs qualified as C
 
 -- | Replace all @DoNotationBind@ and @DoNotationValue@ constructors with
@@ -30,10 +30,10 @@ desugarDo d =
   in rethrowWithPosition ss $ f d
   where
   bind :: SourceSpan -> Maybe ModuleName -> Expr
-  bind ss m = Var ss (Qualified (byMaybeModuleName m) (Ident C.S_bind))
+  bind ss m = Var ss (mkQualified_ (byMaybeModuleName m) (Ident C.S_bind))
 
   discard :: SourceSpan -> Maybe ModuleName -> Expr
-  discard ss m = Var ss (Qualified (byMaybeModuleName m) (Ident C.S_discard))
+  discard ss m = Var ss (mkQualified_ (byMaybeModuleName m) (Ident C.S_discard))
 
   replace :: SourceSpan -> Expr -> m Expr
   replace pos (Do m els) = go pos m els
@@ -70,7 +70,7 @@ desugarDo d =
         return $ App (App (bind pos m) val) (Abs (VarBinder ss ident) rest')
       _ -> do
         ident <- freshIdent'
-        return $ App (App (bind pos m) val) (Abs (VarBinder pos ident) (Case [Var pos (Qualified ByNullSourcePos ident)] [CaseAlternative [binder] [MkUnguarded rest']]))
+        return $ App (App (bind pos m) val) (Abs (VarBinder pos ident) (Case [Var pos (mkQualified_ ByNullSourcePos ident)] [CaseAlternative [binder] [MkUnguarded rest']]))
   go _ _ [DoNotationLet _] = throwError . errorMessage $ InvalidDoLet
   go pos m (DoNotationLet ds : rest) = do
     let checkBind :: Declaration -> m ()
