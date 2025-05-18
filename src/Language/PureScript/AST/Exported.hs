@@ -15,6 +15,7 @@ import Data.Map qualified as M
 import Language.PureScript.AST.Declarations (DataConstructorDeclaration(..), Declaration(..), DeclarationRef(..), Module(..), declName, declRefName, flattenDecls)
 import Language.PureScript.Types (Constraint(..), Type(..), everythingOnTypes)
 import Language.PureScript.Names (ModuleName, Name(..), ProperName, ProperNameType(..), Qualified, coerceProperName, disqualify, isQualified, isQualifiedWith)
+import Data.Hashable (Hashable)
 
 -- |
 -- Return a list of all declarations which are exported from a module.
@@ -89,7 +90,7 @@ filterInstances mn (Just exps) =
     | otherwise = either (Left . disqualify) (Right . disqualify) q `elem` refs
 
   -- Check that a qualified name is qualified for a different module
-  checkQual :: Qualified a -> Bool
+  checkQual :: (Show a, Hashable a) => Qualified a -> Bool
   checkQual q = isQualified q && not (isQualifiedWith mn q)
 
   typeName :: DeclarationRef -> Maybe (ProperName 'TypeName)

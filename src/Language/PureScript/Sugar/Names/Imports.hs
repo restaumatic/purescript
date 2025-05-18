@@ -18,7 +18,7 @@ import Data.Set qualified as S
 import Language.PureScript.AST (Declaration(..), DeclarationRef(..), ErrorMessageHint(..), ExportSource(..), ImportDeclarationType(..), Module(..), SourceSpan, internalModuleSourceSpan)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage', rethrow)
-import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName, ProperNameType(..), QualifiedBy(..), byMaybeModuleName, mkQualified_, Qualified)
 import Language.PureScript.Sugar.Names.Env (Env, Exports(..), ImportProvenance(..), ImportRecord(..), Imports(..), envModuleExports, nullImports)
 import Data.Hashable (Hashable)
 
@@ -211,7 +211,7 @@ resolveImport importModule exps imps impQual = resolveByType
 
   -- Add something to an import resolution list
   updateImports
-    :: (Ord a, Hashable a)
+    :: (Ord a, Hashable a, Show a)
     => M.Map (Qualified a) [ImportRecord a]
     -> M.Map a b
     -> (b -> ExportSource)

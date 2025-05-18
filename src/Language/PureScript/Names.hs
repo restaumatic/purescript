@@ -4,7 +4,7 @@
 -- |
 -- Data types for names
 --
-module Language.PureScript.Names where
+module Language.PureScript.Names (Name (..), getIdentName, getValOpName, getTypeName, getQual, disqualify, ModuleName (..), ProperName (..), runProperName, properNameFromString, OpName (..), ProperNameType (..), OpNameType (..), Qualified, mkQualified_, pattern Qualified, moduleNameFromString, InternalIdentData (..), Ident (..), coerceOpName, coerceProperName, QualifiedBy (..), runModuleName, unusedIdent, runIdent, toMaybeModuleName, pattern ByNullSourcePos, freshIdent, isQualifiedWith, isQualified, isBySourcePos, isPlainIdent, showIdent, byMaybeModuleName, disqualifyFor, getTypeOpName, getDctorName, getClassName, freshIdent', showOp, eraseOpName, isBuiltinModuleName, showQualified, qualify, mkQualified, isUnqualified) where
 
 import Prelude
 
@@ -21,10 +21,10 @@ import Data.Aeson.TH (deriveJSON)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Int (Int64)
-
 import Language.PureScript.AST.SourcePos (SourcePos, pattern SourcePos)
 import Language.PureScript.Interner (Interned, uninternText, internText)
-import Data.Hashable (Hashable (..))
+import Data.Hashable (Hashable (hashWithSalt))
+import Debug.Trace (trace, traceStack)
 
 -- | A sum of the possible name types, useful for error and lint messages.
 data Name
@@ -161,8 +161,10 @@ coerceOpName = OpName . runOpName
 -- Proper names, i.e. capitalized names for e.g. module names, type//data constructors.
 --
 newtype ProperName (a :: ProperNameType) = ProperName { unProperName :: Interned }
-  deriving (Eq, Ord, Generic)
-  deriving newtype (NFData, Hashable)
+  deriving (Eq, Generic)
+  deriving newtype (NFData)
+
+instance Hashable (ProperName a)
 
 properNameFromString :: Text -> ProperName a
 properNameFromString = ProperName . internText
@@ -171,11 +173,14 @@ runProperName :: ProperName a -> Text
 runProperName (ProperName n) = uninternText n
 
 instance Show (ProperName a) where
-  show (ProperName i) = "<internTexted:" ++ show i ++ ">"
+  show (ProperName i) = T.unpack $ uninternText i -- "<internTexted:" ++ show i ++ ">"
 
 instance Serialise (ProperName a) where
   encode (ProperName n) = encode (uninternText n)
   decode = ProperName . internText <$> decode
+
+instance Ord (ProperName a) where
+  compare (ProperName a) (ProperName b) = compare (uninternText a) (uninternText b)
 
 instance ToJSON (ProperName a) where
   toJSON = toJSON . runProperName
@@ -198,14 +203,20 @@ data ProperNameType
 -- classes have been desugared.
 --
 coerceProperName :: ProperName a -> ProperName b
-coerceProperName = ProperName . unProperName
+coerceProperName = properNameFromString . runProperName
 
 -- |
 -- Module names
 --
 newtype ModuleName = ModuleName Interned
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Eq, Generic)
   deriving newtype (Hashable)
+
+instance Show ModuleName where
+  show (ModuleName i) = T.unpack $ uninternText i
+
+instance Ord ModuleName where
+  compare (ModuleName a) (ModuleName b) = compare (uninternText a) (uninternText b)
 
 instance Serialise ModuleName where
   encode (ModuleName i) = encode (uninternText i)
@@ -250,99 +261,131 @@ toMaybeModuleName (BySourcePos _) = Nothing
 -- A qualified name, i.e. a name with an optional module name
 --
 data Qualified a = Qualified' QualifiedBy a Int
-  deriving (Functor, Foldable, Traversable, Generic)
+  deriving (Functor, Foldable, Traversable, Generic, Show)
 
+{-# COMPLETE Qualified #-}
+pattern Qualified :: (Show a, Hashable a) => QualifiedBy -> a -> Qualified a
 pattern Qualified qb a <- Qualified' qb a _ where
   Qualified qb a = mkQualified_ qb a
 
 
-instance Show a => Show (Qualified a) where
-  show (Qualified qb a) = case qb of
-    BySourcePos _ -> show a
-    ByModuleName mn -> T.unpack (runModuleName mn) <> "." <> show a
+-- instance Show a => Show (Qualified a) where
+--   show (Qualified' qb a _) = case qb of
+--     BySourcePos _ -> show a
+--     ByModuleName mn -> T.unpack (runModuleName mn) <> "." <> show a
 
 instance NFData a => NFData (Qualified a)
+-- instance Serialise a => Serialise (Qualified a)
 
-instance (Serialise a, Hashable a) => Serialise (Qualified a) where
-  encode (Qualified qb a) = encode $ Qualified' qb a
+instance (Show a, Serialise a, Hashable a) => Serialise (Qualified a) where
+  encode (Qualified' qb a _) = encode $ QualifiedS qb a
   decode = do
-    Qualified qb a <- decode
+    QualifiedS qb a <- decode
     pure $ mkQualified_ qb a
 
-instance Eq a => Eq (Qualified a) where
-  (Qualified q a _) == (Qualified q' a' _) = (q == q' && a == a')
 
+data QualifiedS a = QualifiedS QualifiedBy a
+  deriving (Generic)
+
+instance Serialise a => Serialise (QualifiedS a)
+instance NFData a => NFData (QualifiedS a)
+
+--
+-- instance Ord a => Ord (Qualified a) where
+--   compare (Qualified' qb a1 _) (Qualified' qb' a2 _) = case compare qb qb' of
+--                                                        EQ -> compare a1 a2
+--                                                        other -> other
+
+instance Hashable a => Hashable (Qualified a) where
+  hashWithSalt s (Qualified' _ _ h) = hashWithSalt s h
+
+-- instance Eq a => Eq (Qualified a) where
+--   (Qualified' q a _) == (Qualified' q' a' _) = (q == q' && a == a')
+
+instance (Eq a) => Eq (Qualified a) where
+  (Qualified' q a h1) == (Qualified' q' a' h2) =
+    -- if q == q' && a == a' && h1 /= h2 then error "Hash mismatch when comparing"
+      (h1 == h2) || (q == q' && a == a')
+--
 instance Ord a => Ord (Qualified a) where
-  compare (Qualified qb a1 _) (Qualified qb' a2 _) = case compare qb qb' of
+  compare (Qualified' qb a1 _) (Qualified' qb' a2 _) = case compare qb qb' of
                                                        EQ -> compare a1 a2
                                                        other -> other
 
-instance Hashable a => Hashable (Qualified a) where
-  hashWithSalt s (Qualified _ _ h) = hashWithSalt s h
 
 
-showQualified :: (a -> Text) -> Qualified a -> Text
-showQualified f (Qualified (BySourcePos  _) a _) = f a
-showQualified f (Qualified (ByModuleName name) a _) = runModuleName name <> "." <> f a
+showQualified :: (Show a, Hashable a) => (a -> Text) -> Qualified a -> Text
+showQualified f (Qualified (BySourcePos  _) a) = f a
+showQualified f (Qualified (ByModuleName name) a) = runModuleName name <> "." <> f a
 
-getQual :: Qualified a -> Maybe ModuleName
-getQual (Qualified qb _ _) = toMaybeModuleName qb
+getQual :: (Show a, Hashable a) => Qualified a -> Maybe ModuleName
+getQual (Qualified qb _) = toMaybeModuleName qb
 
 -- |
 -- Provide a default module name, if a name is unqualified
 --
-qualify :: ModuleName -> Qualified a -> (ModuleName, a)
-qualify m (Qualified (BySourcePos _) a _) = (m, a)
-qualify _ (Qualified (ByModuleName m) a _) = (m, a)
+qualify :: (Show a, Hashable a) => ModuleName -> Qualified a -> (ModuleName, a)
+qualify m (Qualified (BySourcePos _) a) = (m, a)
+qualify _ (Qualified (ByModuleName m) a) = (m, a)
 
 -- |
 -- Makes a qualified value from a name and module name.
 --
-mkQualified :: Hashable a => a -> ModuleName -> Qualified a
-mkQualified name mn = Qualified (ByModuleName mn) name (hashWithSalt 1 mn `hashWithSalt` name)
+mkQualified :: (Show a, Hashable a) => a -> ModuleName -> Qualified a
+mkQualified name mn =
+  let
+    qb = ByModuleName mn
+    h = (hashWithSalt 1 qb `hashWithSalt` name)
+   -- in if h == -8933003785015192445 || h == 126158207429918995
+   --    then traceStack ("mkQualified: " <> show qb <> " " <> show name <> " h:" <> show h) $ Qualified' qb name h
+     in Qualified' qb name h
 
-mkQualified_ :: Hashable a => QualifiedBy -> a -> Qualified a
-mkQualified_ qb name = Qualified qb name (hashWithSalt 1 qb `hashWithSalt` name)
+mkQualified_ :: (Show a, Hashable a) => QualifiedBy -> a -> Qualified a
+mkQualified_ qb name =
+  let h = (hashWithSalt 1 qb `hashWithSalt` name)
+   -- in if h == -8933003785015192445 || h == 126158207429918995
+   --    then traceStack ("mkQualified: " <> show qb <> " " <> show name <> " h:" <> show h) $ Qualified' qb name h
+   in Qualified' qb name h
 
 
 -- | Remove the module name from a qualified name
-disqualify :: Qualified a -> a
-disqualify (Qualified _ a _) = a
+disqualify :: (Show a, Hashable a) => Qualified a -> a
+disqualify (Qualified _ a) = a
 
 -- |
 -- Remove the qualification from a value when it is qualified with a particular
 -- module name.
 --
-disqualifyFor :: Maybe ModuleName -> Qualified a -> Maybe a
-disqualifyFor mn (Qualified qb a _) | mn == toMaybeModuleName qb = Just a
+disqualifyFor :: (Show a, Hashable a) => Maybe ModuleName -> Qualified a -> Maybe a
+disqualifyFor mn (Qualified qb a) | mn == toMaybeModuleName qb = Just a
 disqualifyFor _ _ = Nothing
 
 -- |
 -- Checks whether a qualified value is actually qualified with a module reference
 --
-isQualified :: Qualified a -> Bool
-isQualified (Qualified (BySourcePos  _) _ _) = False
+isQualified :: (Show a, Hashable a) => Qualified a -> Bool
+isQualified (Qualified (BySourcePos  _) _) = False
 isQualified _ = True
 
 -- |
 -- Checks whether a qualified value is not actually qualified with a module reference
 --
-isUnqualified :: Qualified a -> Bool
+isUnqualified :: (Show a, Hashable a) => Qualified a -> Bool
 isUnqualified = not . isQualified
 
 -- |
 -- Checks whether a qualified value is qualified with a particular module
 --
-isQualifiedWith :: ModuleName -> Qualified a -> Bool
-isQualifiedWith mn (Qualified (ByModuleName mn') _ _) = mn == mn'
+isQualifiedWith :: (Show a, Hashable a) => ModuleName -> Qualified a -> Bool
+isQualifiedWith mn (Qualified (ByModuleName mn') _) = mn == mn'
 isQualifiedWith _ _ = False
 
-instance ToJSON a => ToJSON (Qualified a) where
-  toJSON (Qualified qb a _) = case qb of
+instance (Show a, Hashable a, ToJSON a) => ToJSON (Qualified a) where
+  toJSON (Qualified qb a) = case qb of
     ByModuleName mn -> toJSON2 (mn, a)
     BySourcePos ss -> toJSON2 (ss, a)
 
-instance (FromJSON a, Hashable a) => FromJSON (Qualified a) where
+instance (Show a, FromJSON a, Hashable a) => FromJSON (Qualified a) where
   parseJSON v = byModule <|> bySourcePos <|> byMaybeModuleName'
     where
     byModule = do

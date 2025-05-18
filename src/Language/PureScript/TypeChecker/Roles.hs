@@ -26,7 +26,7 @@ import Data.Text (Text)
 
 import Language.PureScript.Environment (Environment(..), TypeKind(..))
 import Language.PureScript.Errors (DataConstructorDeclaration(..), MultipleErrors, RoleDeclarationData(..), SimpleErrorMessage(..), errorMessage)
-import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), mkQualified_)
+import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), Qualified, QualifiedBy(..), mkQualified_)
 import Language.PureScript.Roles (Role(..))
 import Language.PureScript.Types (Constraint(..), SourceType, Type(..), freeTypeVariables, unapplyTypes)
 

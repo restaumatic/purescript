@@ -35,7 +35,7 @@ import Language.PureScript.AST (Associativity, Declaration(..), DeclarationRef(.
 import Language.PureScript.AST.Declarations.ChainId (ChainId)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType, Environment(..), FunctionalDependency, NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..), dictTypeName, makeTypeClassData)
-import Language.PureScript.Names (Ident, ModuleName, OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, isPlainIdent, mkQualified_)
+import Language.PureScript.Names (Ident, ModuleName, OpName, OpNameType(..), ProperName, ProperNameType(..), QualifiedBy(..), coerceProperName, isPlainIdent, mkQualified_, Qualified)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
 import Language.PureScript.Types (SourceConstraint, SourceType, srcInstanceType)
 
@@ -200,7 +200,7 @@ applyExternsFileToEnvironment ExternsFile{..} = flip (foldl' applyDecl) efDeclar
       CompilerNamed -> Just $ srcInstanceType ss vars className tys
       UserNamed -> Nothing
 
-  qual :: Hashable a => a -> Qualified a
+  qual :: (Show a, Hashable a) => a -> Qualified a
   qual = mkQualified_ (ByModuleName efModuleName)
 
 -- | Generate an externs file for all declarations in a module.

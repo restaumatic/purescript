@@ -3,7 +3,7 @@ module Language.PureScript.AST.Utils where
 import Protolude
 
 import Language.PureScript.AST (Binder(..), CaseAlternative, Expr(..), GuardedExpr, Literal, pattern MkUnguarded, nullSourceSpan)
-import Language.PureScript.Names (Ident, ModuleName, ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, mkQualified_)
+import Language.PureScript.Names (Ident, ModuleName, ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), byMaybeModuleName, mkQualified_)
 import Language.PureScript.Types (SourceType, Type(..))
 
 lam :: Ident -> Expr -> Expr
@@ -53,7 +53,7 @@ unwrapTypeConstructor :: SourceType -> Maybe UnwrappedTypeConstructor
 unwrapTypeConstructor = go [] []
   where
   go kargs args = \case
-    TypeConstructor _ (Qualified (ByModuleName mn) tyCon _) -> Just (UnwrappedTypeConstructor mn tyCon kargs args)
+    TypeConstructor _ (Qualified (ByModuleName mn) tyCon) -> Just (UnwrappedTypeConstructor mn tyCon kargs args)
     TypeApp _ ty arg -> go kargs (arg : args) ty
     KindApp _ ty karg -> go (karg : kargs) args ty
     _ -> Nothing

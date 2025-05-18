@@ -28,7 +28,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage, errorMessage'', nonEmpty, parU, warnAndRethrow, warnAndRethrowWithPosition)
 import Language.PureScript.Externs (ExternsDeclaration(..), ExternsFile(..), ExternsImport(..))
 import Language.PureScript.Linter.Imports (Name(..), UsedImports)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident, OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident, OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), mkQualified_)
 import Language.PureScript.Sugar.Names.Env (Env, Exports(..), ImportProvenance(..), ImportRecord(..), Imports(..), checkImportConflicts, nullImports, primEnv)
 import Language.PureScript.Sugar.Names.Exports (findExportable, resolveExports)
 import Language.PureScript.Sugar.Names.Imports (resolveImports, resolveModuleImport)
@@ -233,12 +233,12 @@ renameInModule imports (Module modSS coms mn decls exps) =
       TypeFixityDeclaration sa fixity
         <$> updateTypeName alias ss
         <*> pure op
-  updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Left alias) _) op) =
+  updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Left alias)) op) =
     fmap (bound,) $
       ValueFixityDeclaration sa fixity . fmap Left
         <$> updateValueName (mkQualified_ mn' alias) ss
         <*> pure op
-  updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Right alias) _) op) =
+  updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Right alias)) op) =
     fmap (bound,) $
       ValueFixityDeclaration sa fixity . fmap Right
         <$> updateDataConstructorName (mkQualified_ mn' alias) ss
@@ -265,7 +265,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
     when (nonEmpty duplicateArgsErrs) $
       throwError duplicateArgsErrs
     return ((pos, declarationsToMap ds `M.union` bound), Let w ds val')
-  updateValue (_, bound) (Var ss name'@(Qualified qualifiedBy ident _)) =
+  updateValue (_, bound) (Var ss name'@(Qualified qualifiedBy ident)) =
     ((ss, bound), ) <$> case (M.lookup ident bound, qualifiedBy) of
       -- bound idents that have yet to be locally qualified.
       (Just sourcePos, ByNullSourcePos) ->
@@ -407,13 +407,13 @@ renameInModule imports (Module modSS coms mn decls exps) =
   -- qualified references are replaced with their canonical qualified names
   -- (e.g. M.Map -> Data.Map.Map).
   update
-    :: (Ord a, Hashable a)
+    :: (Ord a, Hashable a, Show a)
     => M.Map (Qualified a) [ImportRecord a]
     -> (a -> Name)
     -> Qualified a
     -> SourceSpan
     -> m (Qualified a)
-  update imps toName qname@(Qualified mn' name _) pos = warnAndRethrowWithPosition pos $
+  update imps toName qname@(Qualified mn' name) pos = warnAndRethrowWithPosition pos $
     case (M.lookup qname imps, mn') of
 
       -- We found the name in our imports, so we return the name for it,

@@ -45,8 +45,9 @@ import Data.Text qualified as T
 import Data.ByteString.Lazy qualified as BS
 import Data.Text.Encoding qualified as TE
 
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, OpName(..), OpNameType(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), moduleNameFromString, runIdent, runModuleName, runProperName, properNameFromString, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, OpName(..), OpNameType(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), moduleNameFromString, runIdent, runModuleName, runProperName, properNameFromString, mkQualified_)
 import Language.PureScript.AST (Associativity(..))
+import Data.Hashable (Hashable)
 
 -- | Given a list of actions, attempt them all, returning the first success.
 -- If all the actions fail, 'tryAll' returns the first argument.
@@ -116,9 +117,9 @@ maybeToContainingModule :: Maybe ModuleName -> ContainingModule
 maybeToContainingModule Nothing = ThisModule
 maybeToContainingModule (Just mn) = OtherModule mn
 
-fromQualified :: Qualified a -> (ContainingModule, a)
-fromQualified (Qualified (ByModuleName mn) x _) = (OtherModule mn, x)
-fromQualified (Qualified _ x _) = (ThisModule, x)
+fromQualified :: Show a => Hashable a => Qualified a -> (ContainingModule, a)
+fromQualified (Qualified (ByModuleName mn) x) = (OtherModule mn, x)
+fromQualified (Qualified _ x) = (ThisModule, x)
 
 data Link
   = NoLink

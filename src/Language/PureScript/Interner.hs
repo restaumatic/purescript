@@ -27,7 +27,7 @@ import System.Random (randomIO)
 
 -- | The opaque interned identifier
 newtype Interned = Interned Int
-  deriving (Eq, Ord, NFData)
+  deriving (Eq, NFData)
 
 instance Hashable Interned where
   hashWithSalt salt (Interned i) = hashWithSalt salt i
@@ -49,7 +49,7 @@ data Interner k = Interner
   , reverseMap   :: !(IM.IntMap k)
   , internerId :: Int
   }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Show)
 
 type InternerVar k = MVar (Interner k)
 

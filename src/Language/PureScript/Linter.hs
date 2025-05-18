@@ -17,7 +17,7 @@ import Language.PureScript.AST
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage')
 import Language.PureScript.Linter.Exhaustive as L
 import Language.PureScript.Linter.Imports as L
-import Language.PureScript.Names (Ident(..), Qualified(..), QualifiedBy(..), getIdentName, runIdent)
+import Language.PureScript.Names (Ident(..), pattern Qualified, QualifiedBy(..), getIdentName, runIdent)
 import Language.PureScript.Types (Constraint(..), SourceType, Type(..), everythingWithContextOnTypes)
 import Language.PureScript.Constants.Libs qualified as C
 
@@ -183,13 +183,13 @@ lintUnused (Module modSS _ mn modDecls exports) =
         in
           (vars, errs')
 
-    goDecl (ValueFixityDeclaration _ _ (Qualified _ (Left v) _) _) = (S.singleton v, mempty)
+    goDecl (ValueFixityDeclaration _ _ (Qualified _ (Left v)) _) = (S.singleton v, mempty)
 
     goDecl (TypeInstanceDeclaration _ _ _ _ _ _ _ _ (ExplicitInstance decls)) = mconcat $ map goDecl decls
     goDecl _ = mempty
 
     go :: Expr -> (S.Set Ident, MultipleErrors)
-    go (Var _ (Qualified (BySourcePos _) v _)) = (S.singleton v, mempty)
+    go (Var _ (Qualified (BySourcePos _) v)) = (S.singleton v, mempty)
     go (Var _ _) = (S.empty, mempty)
 
     go (Let _ ds e) = onDecls ds (go e)

@@ -18,9 +18,10 @@ import Data.Map qualified as M
 import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage', rethrow, rethrowWithPosition, warnAndRethrow)
-import Language.PureScript.Names (Ident, ModuleName, Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), disqualifyFor, isQualifiedWith, isUnqualified)
+import Language.PureScript.Names (Ident, ModuleName, Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), disqualifyFor, isQualifiedWith, isUnqualified)
 import Language.PureScript.Sugar.Names.Env (Env, ExportMode(..), Exports(..), ImportRecord(..), Imports(..), checkImportConflicts, envModuleExports, exportType, exportTypeClass, exportTypeOp, exportValue, exportValueOp, nullExports)
 import Language.PureScript.Sugar.Names.Common (warnDuplicateRefs)
+import Data.Hashable (Hashable)
 
 -- |
 -- Finds all exportable members of a module, disregarding any explicit exports.
@@ -121,7 +122,9 @@ resolveExports env ss mn imps exps refs =
   -- Extracts a list of values for a module based on a lookup table. If the
   -- boolean is true the values are filtered by the qualification
   extract
-    :: SourceSpan
+    :: Hashable a
+    => Show a
+    => SourceSpan
     -> Bool
     -> ModuleName
     -> (a -> Name)
@@ -170,7 +173,7 @@ resolveExports env ss mn imps exps refs =
     go
       :: Qualified (ProperName 'TypeName)
       -> ((ProperName 'TypeName, [ProperName 'ConstructorName]), ExportSource)
-    go (Qualified (ByModuleName mn'') name _) =
+    go (Qualified (ByModuleName mn'') name) =
       fromMaybe (internalError "Missing value in resolveTypeExports") $ do
         exps' <- envModuleExports <$> mn'' `M.lookup` env
         (dctors', src) <- name `M.lookup` exportedTypes exps'
@@ -179,7 +182,7 @@ resolveExports env ss mn imps exps refs =
           ( (name, relevantDctors `intersect` dctors')
           , src { exportSourceImportedFrom = Just mn'' }
           )
-    go (Qualified _ _ _) = internalError "Unqualified value in resolveTypeExports"
+    go (Qualified _ _) = internalError "Unqualified value in resolveTypeExports"
 
   -- Looks up an imported type operator and re-qualifies it with the original
   -- module it came from.
@@ -210,11 +213,11 @@ resolveExports env ss mn imps exps refs =
     $ resolve exportedValueOps op
 
   resolve
-    :: Ord a
+    :: (Ord a, Hashable a, Show a)
     => (Exports -> M.Map a ExportSource)
     -> Qualified a
     -> Maybe (a, ExportSource)
-  resolve f (Qualified (ByModuleName mn'') a _) = do
+  resolve f (Qualified (ByModuleName mn'') a) = do
     exps' <- envModuleExports <$> mn'' `M.lookup` env
     src <- a `M.lookup` f exps'
     return (a, src { exportSourceImportedFrom = Just mn'' })

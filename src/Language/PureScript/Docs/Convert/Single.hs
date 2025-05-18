@@ -192,16 +192,16 @@ convertDeclaration (P.TypeInstanceDeclaration (ss, com) _ _ _ _ constraints clas
   where
   classNameString = unQual className
   typeNameStrings = ordNub (concatMap (P.everythingOnTypes (++) extractProperNames) tys)
-  unQual x = let (P.Qualified _ y _) = x in P.runProperName y
+  unQual x = let (P.Qualified _ y) = x in P.runProperName y
 
   extractProperNames (P.TypeConstructor _ n) = [unQual n]
   extractProperNames _ = []
 
   childDecl = ChildDeclaration title (convertComments com) (Just ss) (ChildInstance (fmap ($> ()) constraints) (classApp $> ()))
   classApp = foldl' P.srcTypeApp (P.srcTypeConstructor (fmap P.coerceProperName className)) tys
-convertDeclaration (P.ValueFixityDeclaration sa fixity (P.Qualified mn alias _) _) title =
+convertDeclaration (P.ValueFixityDeclaration sa fixity (P.Qualified mn alias) _) title =
   Just . Right $ mkDeclaration sa title (AliasDeclaration fixity (P.mkQualified_ mn (Right alias)))
-convertDeclaration (P.TypeFixityDeclaration sa fixity (P.Qualified mn alias _) _) title =
+convertDeclaration (P.TypeFixityDeclaration sa fixity (P.Qualified mn alias) _) title =
   Just . Right $ mkDeclaration sa title (AliasDeclaration fixity (P.mkQualified_ mn (Left alias)))
 convertDeclaration (P.KindDeclaration sa keyword _ kind) title =
   Just $ Left ([(title, AugmentType), (title, AugmentClass)], AugmentKindSig ksi)

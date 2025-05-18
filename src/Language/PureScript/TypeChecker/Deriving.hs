@@ -23,7 +23,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), FunctionalDependency(..), TypeClassData(..), TypeKind(..), kindType, (-:>))
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, errorMessage, internalCompilerError)
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify, properNameFromString, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify, properNameFromString, mkQualified_)
 import Language.PureScript.PSString (PSString, mkString)
 import Language.PureScript.Sugar.TypeClasses (superClassDictionaryNames)
 import Language.PureScript.TypeChecker.Entailment (InstanceContext, findDicts)
@@ -503,7 +503,7 @@ validateParamsInTypeConstructors derivingClass utc isBi CovariantClasses{..} con
   lparamIsContra = any lparamIsContravariant contravarianceSupport
 
   hasInstance :: InstanceContext -> Qualified (Either Text (ProperName 'TypeName)) -> Qualified (ProperName 'ClassName) -> Bool
-  hasInstance tcds ht@(Qualified qb _ _) cn@(Qualified cqb _ _) =
+  hasInstance tcds ht@(Qualified qb _) cn@(Qualified cqb _) =
     any tcdAppliesToType $ concatMap (findDicts tcds cn) (ordNub [ByNullSourcePos, cqb, qb])
     where
     tcdAppliesToType tcd = case tcdInstanceTypes tcd of
@@ -520,7 +520,7 @@ validateParamsInTypeConstructors derivingClass utc isBi CovariantClasses{..} con
     KindApp _ ty _ -> go ty
     TypeVar _ nm -> mkQualified_ ByNullSourcePos (Left nm)
     Skolem _ nm _ _ _ -> mkQualified_ ByNullSourcePos (Left nm)
-    TypeConstructor _ (Qualified qb nm h) -> Qualified qb (Right nm) h
+    TypeConstructor _ (Qualified qb nm) -> Qualified qb (Right nm)
     ty -> internalError $ "headOfType missing a case: " <> show (void ty)
 
 usingLamIdent :: (Expr -> TypeCheckM Expr) -> TypeCheckM Expr

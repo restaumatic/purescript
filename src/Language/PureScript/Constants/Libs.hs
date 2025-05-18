@@ -9,7 +9,7 @@ import Protolude qualified as P
 import Data.String (IsString)
 import Language.PureScript.Constants.TH qualified as TH
 import Language.PureScript.PSString (PSString)
-import Language.PureScript.Names (Ident (..), Qualified (..), QualifiedBy (..))
+import Language.PureScript.Names (Ident (..), Qualified (..), QualifiedBy (..), pattern Qualified, Qualified(..))
 
 -- Core lib values
 
@@ -276,4 +276,4 @@ $(TH.declare do
   )
 
 pattern IsSymbolDict :: Qualified Ident
-pattern IsSymbolDict = Qualified (ByModuleName M_Data_Symbol) (Ident "IsSymbol$Dict") (-7980125151384708176)
+pattern IsSymbolDict = Qualified (ByModuleName M_Data_Symbol) (Ident "IsSymbol$Dict")

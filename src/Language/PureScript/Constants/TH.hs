@@ -73,10 +73,9 @@ import Control.Lens (over, _head)
 import Control.Monad.Trans.RWS (RWS, execRWS)
 import Control.Monad.Trans.Writer (Writer, execWriter)
 import Control.Monad.Writer.Class (tell)
-import Data.String (String, fromString)
-import Language.Haskell.TH (Dec, Name, Pat, Q, Type, conP, implBidir, litP, mkName, patSynD, patSynSigD, prefixPatSyn, stringL, nameBase, Lit (IntegerL))
-import Language.PureScript.Names (Ident(..), ModuleName(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), moduleNameFromString, properNameFromString)
-import Data.Text qualified as T
+import Data.String (String)
+import Language.Haskell.TH (Dec, Name, Pat, Q, Type, conP, implBidir, litP, mkName, patSynD, patSynSigD, prefixPatSyn, stringL)
+import Language.PureScript.Names (Ident(..), ModuleName(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), Qualified (..))
 
 -- | Generate pattern synonyms corresponding to the provided PureScript
 -- declarations.
@@ -193,29 +192,20 @@ mkPrefixedName tag prefix = mkName . (tag <>) . camelAppend prefix
 --   pattern FunctionFoo :: Qualified (ProperName 'TypeName)
 --   pattern FunctionFoo = Qualified (ByModuleName M_Data_Foo) (ProperName "Foo")
 mkPnPat :: Q Type -> VarToDec
-mkPnPat pnType mn prefix str = do
-  let modNameStr = nameBase mn
-  -- Compute the hash
-  let q = ByModuleName (moduleNameFromString (fromString modNameStr))
-  let hashValue = toInteger (hashWithSalt 1 q `hashWithSalt` properNameFromString (T.pack str))
+mkPnPat pnType mn prefix str =
   typedPatSyn (mkName $ cap prefix <> str)
     [t| Qualified (ProperName $pnType) |]
-    [p| Qualified (ByModuleName $(conP mn [])) (ProperName $(litP $ stringL str)) $(litP $ IntegerL hashValue) |]
+    [p| Qualified (ByModuleName $(conP mn [])) (ProperName $(litP $ stringL str))|]
 
 
 -- M_Data_Foo -> "function" -> "foo" ->
 --   pattern I_functionFoo :: Qualified Ident
 --   pattern I_functionFoo = Qualified (ByModuleName M_Data_Foo) (Ident "foo")
 mkIdentDec :: VarToDec
-mkIdentDec mn prefix str = do
-  let modNameStr = nameBase mn
-  -- Compute the hash
-  let q = ByModuleName (moduleNameFromString (fromString modNameStr))
-  let hashValue = toInteger (hashWithSalt 1 q `hashWithSalt` Ident (T.pack str))
-
+mkIdentDec mn prefix str =
   typedPatSyn (mkPrefixedName "I_" prefix str)
     [t| Qualified Ident |]
-    [p| Qualified (ByModuleName $(conP mn [])) (Ident $(litP $ stringL str)) $(litP $ IntegerL hashValue) |]
+    [p| Qualified (ByModuleName $(conP mn [])) (Ident $(litP $ stringL str)) |]
 
 -- M_Data_Foo -> "function" -> "foo" ->
 --   pattern P_functionFoo :: forall a. (Eq a, IsString a) => (ModuleName, a)

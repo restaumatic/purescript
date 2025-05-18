@@ -35,7 +35,7 @@ import Language.PureScript.Environment (DataDeclType(..), Environment(..), Funct
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, errorMessage, errorMessage', positionedError, rethrow, warnAndRethrow, MultipleErrors)
 import Language.PureScript.Linter (checkExhaustiveExpr)
 import Language.PureScript.Linter.Wildcards (ignoreWildcardsUnderCompleteTypeSignatures)
-import Language.PureScript.Names (Ident, ModuleName, ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, isPlainIdent, mkQualified, mkQualified_)
+import Language.PureScript.Names (Ident, ModuleName, ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), coerceProperName, disqualify, isPlainIdent, mkQualified, mkQualified_)
 import Language.PureScript.Roles (Role)
 import Language.PureScript.Sugar.Names.Env (Exports(..))
 import Language.PureScript.TypeChecker.Kinds as T
@@ -430,7 +430,7 @@ typeCheckAll moduleName = traverse go
     -> TypeClassData
     -> [SourceType]
     -> S.Set ModuleName
-  findNonOrphanModules (Qualified (ByModuleName mn') _ _) typeClass tys' = nonOrphanModules
+  findNonOrphanModules (Qualified (ByModuleName mn') _) typeClass tys' = nonOrphanModules
     where
     nonOrphanModules :: S.Set ModuleName
     nonOrphanModules = S.insert mn' nonOrphanModules'
@@ -439,8 +439,8 @@ typeCheckAll moduleName = traverse go
     typeModule (TypeVar _ _) = Nothing
     typeModule (TypeLevelString _ _) = Nothing
     typeModule (TypeLevelInt _ _) = Nothing
-    typeModule (TypeConstructor _ (Qualified (ByModuleName mn'') _ _)) = Just mn''
-    typeModule (TypeConstructor _ (Qualified (BySourcePos _) _ _)) = internalError "Unqualified type name in findNonOrphanModules"
+    typeModule (TypeConstructor _ (Qualified (ByModuleName mn'') _)) = Just mn''
+    typeModule (TypeConstructor _ (Qualified (BySourcePos _) _)) = internalError "Unqualified type name in findNonOrphanModules"
     typeModule (TypeApp _ t1 _) = typeModule t1
     typeModule (KindApp _ t1 _) = typeModule t1
     typeModule (KindedType _ t1 _) = typeModule t1
@@ -482,7 +482,7 @@ typeCheckAll moduleName = traverse go
     for_ nonOrphanModules $ \m -> do
       dicts <- HM.toList <$> lookupTypeClassDictionariesForClass (ByModuleName m) className
 
-      for_ dicts $ \(Qualified mn' ident _, dictNel) -> do
+      for_ dicts $ \(Qualified mn' ident, dictNel) -> do
         for_ dictNel $ \dict -> do
           -- ignore instances in the same instance chain
           if ch == tcdChain dict ||
@@ -609,14 +609,14 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
   toImportDecl (sa, moduleName, importDeclarationType, asModuleName, _) =
     ImportDeclaration sa moduleName importDeclarationType asModuleName
 
-  qualify' :: Hashable a => a -> Qualified a
+  qualify' :: Show a => Hashable a => a -> Qualified a
   qualify' = mkQualified_ (ByModuleName mn)
 
   getSuperClassExportCheck = do
     classesToSuperClasses <- gets
       ( M.map
         ( S.fromList
-        . filter (\(Qualified mn' _ _) -> mn' == ByModuleName mn)
+        . filter (\(Qualified mn' _) -> mn' == ByModuleName mn)
         . fmap constraintClass
         . typeClassSuperclasses
         )
@@ -712,7 +712,7 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
     findTcons :: SourceType -> [DeclarationRef]
     findTcons = everythingOnTypes (++) go
       where
-      go (TypeConstructor _ (Qualified (ByModuleName mn') name _)) | mn' == mn =
+      go (TypeConstructor _ (Qualified (ByModuleName mn') name)) | mn' == mn =
         [TypeRef (declRefSourceSpan ref) name (internalError "Data constructors unused in checkTypesAreExported")]
       go _ = []
 
@@ -727,7 +727,7 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
       go (ConstrainedType _ c _) = (fmap (TypeClassRef (declRefSourceSpan ref)) . extractCurrentModuleClass . constraintClass) c
       go _ = []
     extractCurrentModuleClass :: Qualified (ProperName 'ClassName) -> [ProperName 'ClassName]
-    extractCurrentModuleClass (Qualified (ByModuleName mn') name _) | mn == mn' = [name]
+    extractCurrentModuleClass (Qualified (ByModuleName mn') name) | mn == mn' = [name]
     extractCurrentModuleClass _ = []
 
   checkClassMembersAreExported :: DeclarationRef -> TypeCheckM ()

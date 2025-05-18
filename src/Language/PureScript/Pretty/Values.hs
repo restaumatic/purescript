@@ -18,7 +18,7 @@ import Data.Text qualified as T
 
 import Language.PureScript.AST (AssocList(..), Binder(..), CaseAlternative(..), Declaration(..), DoNotationElement(..), Expr(..), Guard(..), GuardedExpr(..), Literal(..), PathNode(..), PathTree(..), TypeDeclarationData(..), pattern ValueDecl, WhereProvenance(..))
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Names (OpName(..), Qualified(..), disqualify, runModuleName, showIdent, runProperName)
+import Language.PureScript.Names (OpName(..), pattern Qualified, disqualify, runModuleName, showIdent, runProperName)
 import Language.PureScript.Pretty.Common (before, beforeWithSpace, parensT)
 import Language.PureScript.Pretty.Types (typeAsBox, typeAtomAsBox, prettyPrintObjectKey)
 import Language.PureScript.Types (Constraint(..))
@@ -110,7 +110,7 @@ prettyPrintValueAtom _ (Var _ ident) = text $ T.unpack $ showIdent (disqualify i
 prettyPrintValueAtom d (BinaryNoParens op lhs rhs) =
   prettyPrintValue (d - 1) lhs `beforeWithSpace` printOp op `beforeWithSpace` prettyPrintValue (d - 1) rhs
   where
-  printOp (Op _ (Qualified _ name _)) = text $ T.unpack $ runOpName name
+  printOp (Op _ (Qualified _ name)) = text $ T.unpack $ runOpName name
   printOp expr = text "`" <> prettyPrintValue (d - 1) expr `before` text "`"
 prettyPrintValueAtom d (TypedValue _ val _) = prettyPrintValueAtom d val
 prettyPrintValueAtom d (PositionedValue _ _ val) = prettyPrintValueAtom d val

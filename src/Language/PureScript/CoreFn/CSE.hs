@@ -26,7 +26,7 @@ import Language.PureScript.CoreFn.Expr (Bind(..), CaseAlternative(..), Expr(..))
 import Language.PureScript.CoreFn.Meta (Meta(IsSyntheticApp))
 import Language.PureScript.CoreFn.Traversals (everywhereOnValues, traverseCoreFn)
 import Language.PureScript.Environment (dictTypeName)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Qualified(..), QualifiedBy(..), freshIdent, runIdent, toMaybeModuleName, properNameFromString, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, pattern Qualified, Qualified(..), QualifiedBy(..), freshIdent, runIdent, toMaybeModuleName, properNameFromString, mkQualified_)
 import Language.PureScript.PSString (decodeString)
 
 -- |
@@ -254,7 +254,7 @@ generateIdentFor d e = at d . non mempty . at e %%<~ \case
         -> decodedStr <> "IsSymbol"
       | otherwise
         -> nameHint v1
-    Var _ (Qualified _ ident _)
+    Var _ (Qualified _ ident)
       | Ident name             <- ident -> name
       | GenIdent (Just name) _ <- ident -> name
     Accessor _ prop _
@@ -270,7 +270,7 @@ nullAnn = (nullSourceSpan, [], Nothing)
 replaceLocals :: M.Map Ident (Expr Ann) -> [Bind Ann] -> [Bind Ann]
 replaceLocals m = if M.null m then identity else map f' where
   (f', g', _) = everywhereOnValues identity f identity
-  f e@(Var _ (Qualified _ ident _)) = maybe e g' $ ident `M.lookup` m
+  f e@(Var _ (Qualified _ ident)) = maybe e g' $ ident `M.lookup` m
   f e = e
 
 -- |
@@ -339,7 +339,7 @@ summarizeName
   => ModuleName
   -> Qualified Ident
   -> m ()
-summarizeName mn (Qualified mn' ident _) = do
+summarizeName mn (Qualified mn' ident) = do
   m <- view bound
   let (s, bt) =
         fromMaybe (0, NonRecursive) $

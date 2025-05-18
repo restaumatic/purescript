@@ -52,8 +52,11 @@ import Language.PureScript.Interner (Interned, uninternPSString, internPSString)
 -- and arrays of UTF-16 code units (integers) otherwise.
 --
 newtype PSString = PSString { unPSString :: Interned }
-  deriving (Eq, Ord, NFData, Generic)
+  deriving (Eq, NFData, Generic)
   deriving newtype Hashable
+
+instance Ord PSString where
+  compare (PSString a) (PSString b) = compare (uninternPSString a) (uninternPSString b)
 
 instance Show PSString where
   show = show . codePoints

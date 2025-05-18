@@ -20,7 +20,7 @@ import Language.PureScript.AST.SourcePos (SourcePos(..), SourceSpan(..), nullSou
 import Language.PureScript.Constants.Libs qualified as C
 import Language.PureScript.CoreFn (Ann, Bind, Expr(..), Literal(..), Meta(..), ssAnn, traverseCoreFn)
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), InternalIdentData(..), ModuleName, Qualified(..), QualifiedBy(..), runIdent, runModuleName, toMaybeModuleName, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), InternalIdentData(..), ModuleName, pattern Qualified, Qualified(..), QualifiedBy(..), runIdent, runModuleName, toMaybeModuleName, mkQualified_)
 import Language.PureScript.PSString (mkString)
 
 -- This module is responsible for ensuring that the bindings in recursive
@@ -432,7 +432,7 @@ applyLazinessTransform mn rawItems = let
   --                A           B (keys)           C (keys)           D
   findReferences :: Expr Ann -> IM.MonoidalIntMap (IM.MonoidalIntMap (Ap Maybe (Max Int)))
   findReferences = (getConst .) . onVarsWithDelayAndForce $ \delay force _ -> \case
-    Qualified qb ident _ | all (== mn) (toMaybeModuleName qb), Just i <- ident `S.lookupIndex` names
+    Qualified qb ident | all (== mn) (toMaybeModuleName qb), Just i <- ident `S.lookupIndex` names
       -> Const . IM.singleton delay . IM.singleton i $ coerceForce force
     _ -> Const IM.empty
 
@@ -516,7 +516,7 @@ applyLazinessTransform mn rawItems = let
     Nothing -> pair
     Just m -> let
       rewriteExpr = (runIdentity .) . onVarsWithDelayAndForce $ \delay _ ann -> pure . \case
-        Qualified qb ident' _ | all (== mn) (toMaybeModuleName qb), any (all (>= Max delay) . getAp) $ ident' `M.lookup` m
+        Qualified qb ident' | all (== mn) (toMaybeModuleName qb), any (all (>= Max delay) . getAp) $ ident' `M.lookup` m
           -> makeForceCall ann ident'
         q -> Var ann q
       in (ident, rewriteExpr <$> item)

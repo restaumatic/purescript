@@ -90,7 +90,7 @@ moduleName = \case
   go [] = Nothing
   go ns = Just $ N.moduleNameFromString $ Text.intercalate "." ns
 
-qualified :: Hashable a=> QualifiedName a -> N.Qualified a
+qualified :: (Show a, Hashable a) => QualifiedName a -> N.Qualified a
 qualified q = N.mkQualified_ qb (qualName q)
   where
   qb = maybe N.ByNullSourcePos N.ByModuleName $ qualModule q

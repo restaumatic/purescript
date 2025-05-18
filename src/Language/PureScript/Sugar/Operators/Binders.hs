@@ -6,7 +6,7 @@ import Control.Monad.Except (MonadError)
 
 import Language.PureScript.AST (Associativity, Binder(..), SourceSpan)
 import Language.PureScript.Errors (MultipleErrors)
-import Language.PureScript.Names (OpName(..), OpNameType(..), Qualified(..))
+import Language.PureScript.Names (OpName(..), OpNameType(..), pattern Qualified, Qualified(..))
 import Language.PureScript.Sugar.Operators.Common (matchOperators)
 
 matchBinderOperators
@@ -26,7 +26,7 @@ matchBinderOperators = matchOperators isBinOp extractOp fromOp reapply id
   extractOp _ = Nothing
 
   fromOp :: Binder -> Maybe (SourceSpan, Qualified (OpName 'ValueOpName))
-  fromOp (OpBinder ss q@(Qualified _ (OpName _) _)) = Just (ss, q)
+  fromOp (OpBinder ss q@(Qualified _ (OpName _))) = Just (ss, q)
   fromOp _ = Nothing
 
   reapply :: SourceSpan -> Qualified (OpName 'ValueOpName) -> Binder -> Binder -> Binder

@@ -273,13 +273,13 @@ isType Declaration{..} =
 isValueAlias :: Declaration -> Bool
 isValueAlias Declaration{..} =
   case declInfo of
-    AliasDeclaration _ (P.Qualified _ d _) -> isRight d
+    AliasDeclaration _ (P.Qualified _ d) -> isRight d
     _ -> False
 
 isTypeAlias :: Declaration -> Bool
 isTypeAlias Declaration{..} =
   case declInfo of
-    AliasDeclaration _ (P.Qualified _ d _) -> isLeft d
+    AliasDeclaration _ (P.Qualified _ d) -> isLeft d
     _ -> False
 
 -- | Discard any children which do not satisfy the given predicate.

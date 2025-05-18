@@ -23,11 +23,12 @@ import Language.PureScript.CoreFn.Module (Module(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), NameKind(..), isDictTypeName, lookupConstructor, lookupValue)
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), getQual, runProperName, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), getQual, runProperName, mkQualified_)
 import Language.PureScript.PSString (PSString)
 import Language.PureScript.Types (pattern REmptyKinded, SourceType, Type(..))
 import Language.PureScript.AST qualified as A
 import Language.PureScript.Constants.Prim qualified as C
+import Data.Hashable (Hashable)
 
 -- | Desugars a module from AST to CoreFn representation.
 moduleToCoreFn :: Environment -> A.Module -> Module Ann
@@ -113,7 +114,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     v1' = exprToCoreFn ss [] Nothing v1
     v2' = exprToCoreFn ss [] Nothing v2
     isDictCtor = \case
-      A.Constructor _ (Qualified _ name _) -> isDictTypeName name
+      A.Constructor _ (Qualified _ name) -> isDictTypeName name
       _ -> False
     isSynthetic = \case
       A.App v3 v4            -> isDictCtor v3 || isSynthetic v3 && isSynthetic v4
@@ -168,7 +169,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     NullBinder (ss, com, Nothing)
   binderToCoreFn _ com (A.VarBinder ss name) =
     VarBinder (ss, com, Nothing) name
-  binderToCoreFn _ com (A.ConstructorBinder ss dctor@(Qualified mn' _ _) bs) =
+  binderToCoreFn _ com (A.ConstructorBinder ss dctor@(Qualified mn' _) bs) =
     let (_, tctor, _, _) = lookupConstructor env dctor
     in ConstructorBinder (ss, com, Just $ getConstructorMeta dctor) (mkQualified_ mn' tctor) dctor (fmap (binderToCoreFn ss []) bs)
   binderToCoreFn _ com (A.NamedBinder ss name b) =
@@ -214,7 +215,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     typeConstructor
       :: (Qualified (ProperName 'ConstructorName), (DataDeclType, ProperName 'TypeName, SourceType, [Ident]))
       -> (ModuleName, ProperName 'TypeName)
-    typeConstructor (Qualified (ByModuleName mn') _ _, (_, tyCtor, _, _)) = (mn', tyCtor)
+    typeConstructor (Qualified (ByModuleName mn') _ , (_, tyCtor, _, _)) = (mn', tyCtor)
     typeConstructor _ = internalError "Invalid argument to typeConstructor"
 
 -- | Find module names from qualified references to values. This is used to
@@ -240,7 +241,7 @@ findQualModules decls =
   fqBinders (A.ConstructorBinder _ q _) = getQual' q
   fqBinders _ = []
 
-  getQual' :: Qualified a -> [ModuleName]
+  getQual' :: (Show a, Hashable a) => Qualified a -> [ModuleName]
   getQual' = maybe [] return . getQual
 
 -- | Desugars import declarations from AST to CoreFn representation.

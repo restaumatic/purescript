@@ -9,6 +9,7 @@ import Data.Text qualified as T
 import Data.Text (Text)
 import Language.PureScript qualified as P
 import Text.PrettyPrint.Boxes qualified as Box
+import Data.Hashable (Hashable)
 
 -- TODO (Christoph): Text version of boxes
 textT :: Text -> Box.Box
@@ -26,7 +27,7 @@ printModuleSignatures moduleName P.Environment{..} =
         moduleTypeClasses = byModuleName typeClasses
         moduleTypes = byModuleName types
 
-        byModuleName :: M.Map (P.Qualified a) b -> [P.Qualified a]
+        byModuleName :: Show a => Hashable a => M.Map (P.Qualified a) b -> [P.Qualified a]
         byModuleName = filter ((== Just moduleName) . P.getQual) . M.keys
 
   in
@@ -58,12 +59,12 @@ printModuleSignatures moduleName P.Environment{..} =
           :: (P.Qualified (P.ProperName 'P.ClassName), Maybe P.TypeClassData)
           -> Maybe Box.Box
         showTypeClass (_, Nothing) = Nothing
-        showTypeClass (P.Qualified _ name _, Just P.TypeClassData{..}) =
+        showTypeClass (P.Qualified _ name, Just P.TypeClassData{..}) =
             let constraints =
                     if null typeClassSuperclasses
                     then Box.text ""
                     else Box.text "("
-                         Box.<> Box.hcat Box.left (intersperse (Box.text ", ") $ map (\(P.Constraint _ (P.Qualified _ pn _) _ lt _) -> textT (P.runProperName pn) Box.<+> Box.hcat Box.left (map (P.typeAtomAsBox maxBound) lt)) typeClassSuperclasses)
+                         Box.<> Box.hcat Box.left (intersperse (Box.text ", ") $ map (\(P.Constraint _ (P.Qualified _ pn) _ lt _) -> textT (P.runProperName pn) Box.<+> Box.hcat Box.left (map (P.typeAtomAsBox maxBound) lt)) typeClassSuperclasses)
                          Box.<> Box.text ") <= "
                 className =
                     textT (P.runProperName name)
@@ -92,7 +93,7 @@ printModuleSignatures moduleName P.Environment{..} =
           -> M.Map (P.Qualified (P.ProperName 'P.TypeName)) ([(Text, Maybe P.SourceType)], P.SourceType)
           -> (P.Qualified (P.ProperName 'P.TypeName), Maybe (P.SourceType, P.TypeKind))
           -> Maybe Box.Box
-        showType typeClassesEnv dataConstructorsEnv typeSynonymsEnv (n@(P.Qualified modul name _), typ) =
+        showType typeClassesEnv dataConstructorsEnv typeSynonymsEnv (n@(P.Qualified modul name), typ) =
           case (typ, M.lookup n typeSynonymsEnv) of
             (Just (_, P.TypeSynonym), Just (typevars, dtType)) ->
                 if M.member (fmap P.coerceProperName n) typeClassesEnv

@@ -30,7 +30,7 @@ import Language.PureScript.Environment (DataDeclType(..), NameKind(..), TypeClas
 import Language.PureScript.Errors hiding (isExported, nonEmpty)
 import Language.PureScript.Externs (ExternsDeclaration(..), ExternsFile(..))
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify, runIdent, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify, runIdent, mkQualified_)
 import Language.PureScript.PSString (mkString)
 import Language.PureScript.Sugar.CaseDeclarations (desugarCases)
 import Language.PureScript.TypeClassDictionaries (superclassName)
@@ -250,7 +250,7 @@ desugarDecl mn exps = go
     :: (ProperName a -> [DeclarationRef] -> Bool)
     -> Qualified (ProperName a)
     -> Bool
-  isExported test (Qualified (ByModuleName mn') pn _) = mn /= mn' || test pn exps
+  isExported test (Qualified (ByModuleName mn') pn) = mn /= mn' || test pn exps
   isExported _ _ = internalError "Names should have been qualified in name desugaring"
 
   matchesTypeRef :: ProperName 'TypeName -> DeclarationRef -> Bool

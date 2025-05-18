@@ -50,7 +50,7 @@ import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage', escalateWarningWhen, internalCompilerError, onErrorMessages, onTypesInErrorMessage, parU)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, freshIdent, properNameFromString, runProperName, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified, QualifiedBy(..), byMaybeModuleName, coerceProperName, freshIdent, properNameFromString, runProperName, mkQualified_)
 import Language.PureScript.TypeChecker.Deriving (deriveInstance)
 import Language.PureScript.TypeChecker.Entailment (InstanceContext, newDictionaries, replaceTypeClassDictionaries)
 import Language.PureScript.TypeChecker.Kinds (checkConstraint, checkKind, checkTypeKind, kindOf, kindOfWithScopedVars, unifyKinds', unknownsWithKinds)
@@ -781,7 +781,7 @@ check' val (ForAll ann vis ident mbK ty _) = do
         | otherwise = val
   val' <- tvToExpr <$> check skVal sk
   return $ TypedValue' True val' (ForAll ann vis ident mbK ty (Just scope))
-check' val t@(ConstrainedType _ con@(Constraint _ cls@(Qualified _ className _) _ _ _) ty) = do
+check' val t@(ConstrainedType _ con@(Constraint _ cls@(Qualified _ className) _ _ _) ty) = do
   TypeClassData{ typeClassIsEmpty } <- lookupTypeClass cls
   -- An empty class dictionary is never used; see code in `TypeChecker.Entailment`
   -- that wraps empty dictionary solutions in `Unused`.
@@ -1021,7 +1021,7 @@ isInternal :: Expr -> Bool
 isInternal = \case
   PositionedValue _ _ v -> isInternal v
   TypedValue _ v _ -> isInternal v
-  Constructor _ (Qualified _ name _) -> isDictTypeName name
+  Constructor _ (Qualified _ name) -> isDictTypeName name
   DerivedInstancePlaceholder{} -> True
   _ -> False
 

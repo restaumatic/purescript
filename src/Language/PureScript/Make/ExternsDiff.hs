@@ -36,7 +36,9 @@ data Ref
   | ValueOpRef (P.OpName 'P.ValueOpName)
   | -- Instance ref points to the class and types defined in the same module.
     TypeInstanceRef P.Ident (ModuleName, P.ProperName 'P.ClassName) [P.ProperName 'P.TypeName]
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic)
+
+instance Hashable Ref
 
 data RefStatus = Removed | Updated
   deriving (Show)
@@ -372,12 +374,12 @@ splitRefs new old toRef =
 typeDeps :: P.Type a -> S.Set (ModuleName, Ref)
 typeDeps = P.everythingOnTypes (<>) $
   \case
-    P.TypeConstructor _ (P.Qualified (P.ByModuleName mn) tn _)
+    P.TypeConstructor _ (P.Qualified (P.ByModuleName mn) tn)
       | isPrimModule mn -> mempty
       | otherwise -> S.singleton (mn, TypeRef tn)
     P.TypeConstructor _ _ ->
       internalError "typeDeps: type is not qualified"
-    P.TypeOp _ (P.Qualified (P.ByModuleName mn) tn _)
+    P.TypeOp _ (P.Qualified (P.ByModuleName mn) tn)
       | isPrimModule mn -> mempty
       | otherwise -> S.singleton (mn, TypeOpRef tn)
     P.ConstrainedType _ c _ ->
@@ -386,8 +388,8 @@ typeDeps = P.everythingOnTypes (<>) $
       internalError "typeDeps: type is not qualified"
     _ -> mempty
 
-qualified :: P.Qualified b -> (ModuleName, b)
-qualified (P.Qualified (P.ByModuleName mn) v _) = (mn, v)
+qualified :: (Show b, Hashable b) => P.Qualified b -> (ModuleName, b)
+qualified (P.Qualified (P.ByModuleName mn) v) = (mn, v)
 qualified _ = internalError "ExternsDiff: type is not qualified"
 
 -- | To get fixity's data constructor dependency we should provide it with the
@@ -451,7 +453,7 @@ externsDeclarationToRef moduleName = \case
     typeKindDeps (P.DataType _ args _) = foldMap goDataTypeArg args
     typeKindDeps _ = mempty
 
-    myType (P.TypeConstructor _ (P.Qualified (P.ByModuleName mn) tn _))
+    myType (P.TypeConstructor _ (P.Qualified (P.ByModuleName mn) tn))
       | isPrimModule mn || moduleName /= mn = Nothing
       | otherwise = Just tn
     myType _ = Nothing

@@ -38,7 +38,7 @@ import Data.Set qualified as S
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), TypeKind(..), unapplyKinds)
 import Language.PureScript.Errors (DeclarationRef(..), ErrorMessageHint(..), ExportSource, ImportDeclarationType(..), MultipleErrors, SimpleErrorMessage(..), SourceAnn, errorMessage, UnknownsHint(..))
-import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), Qualified(..), byMaybeModuleName, toMaybeModuleName, mkQualified_)
+import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), pattern Qualified, Qualified(..), byMaybeModuleName, toMaybeModuleName, mkQualified_)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, freshKindWithKind, unifyKinds')
 import Language.PureScript.TypeChecker.Monad (CheckState(..), TypeCheckM)
 import Language.PureScript.TypeChecker.Roles (lookupRoles)
@@ -672,7 +672,7 @@ lookupNewtypeConstructorInScope
   -> Qualified (ProperName 'TypeName)
   -> [SourceType]
   -> Maybe (Bool, Maybe ModuleName, [Text], Qualified (ProperName 'ConstructorName), SourceType)
-lookupNewtypeConstructorInScope env currentModuleName currentModuleImports qualifiedNewtypeName@(Qualified newtypeModuleName newtypeName _) ks = do
+lookupNewtypeConstructorInScope env currentModuleName currentModuleImports qualifiedNewtypeName@(Qualified newtypeModuleName newtypeName) ks = do
   let fromModule = find isNewtypeCtorImported currentModuleImports
       fromModuleName = (\(_, n, _, _, _) -> n) <$> fromModule
       asModuleName = (\(_, _, _, n, _) -> n) =<< fromModule

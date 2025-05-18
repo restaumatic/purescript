@@ -25,10 +25,12 @@ import GHC.Generics (Generic)
 
 import Language.PureScript.AST.SourcePos (pattern NullSourceAnn, SourceAnn, SourceSpan)
 import Language.PureScript.Constants.Prim qualified as C
-import Language.PureScript.Names (OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, coerceProperName)
+import Language.PureScript.Names (OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, coerceProperName, showQualified)
 import Language.PureScript.Label (Label)
 import Language.PureScript.PSString (PSString)
-import Data.Hashable (Hashable (hashWithSalt))
+import Data.Hashable (Hashable (hashWithSalt, hash))
+import GHC.Stack (HasCallStack)
+import Debug.Trace (trace)
 
 type SourceType = Type SourceAnn
 type SourceConstraint = Constraint SourceAnn
@@ -849,10 +851,6 @@ hashType s =  \case
   (BinaryNoParensType _ a b c) -> s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c
   (ParensInType _ a) -> hashWithSalt s a
 
-infixl 0 `hashTypeMaybe`
-hashTypeMaybe :: Int -> Maybe (Type a) -> Int
-hashTypeMaybe s Nothing = s `hashWithSalt` (0 :: Int)
-hashTypeMaybe s (Just a) = s `hashType` a
 
 compareType :: Type a -> Type b -> Ordering
 compareType (TUnknown _ a) (TUnknown _ a') = compare a a'

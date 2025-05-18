@@ -126,7 +126,7 @@ typeSearch unsolved env st type' =
     matchingConstructors = runTypeSearch (Map.map (\(_, _, ty, _) -> ty) (P.dataConstructors env))
     (allLabels, matchingLabels) = accessorSearch unsolved env st type'
 
-    runPlainIdent (Qualified m (Ident k) h, v) = Just (Qualified m k h, v)
+    runPlainIdent (Qualified m (Ident k), v) = Just (Qualified m k, v)
     runPlainIdent _ = Nothing
   in
     ( (first (P.mkQualified_ P.ByNullSourcePos . ("_." <>) . P.prettyPrintLabel) <$> matchingLabels)

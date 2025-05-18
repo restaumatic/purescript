@@ -63,7 +63,7 @@ encodeRebuildErrors files = toJSON . map encodeRebuildError . P.runMultipleError
                  ]) value)
     insertTSCompletions _ _ _ v = v
 
-    identCompletion (P.Qualified mn i _, ty) =
+    identCompletion (P.Qualified mn i, ty) =
       Completion     
         { complModule = maybe "" P.runModuleName $ P.toMaybeModuleName mn
         , complIdentifier = i

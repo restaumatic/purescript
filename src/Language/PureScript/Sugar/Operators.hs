@@ -19,7 +19,7 @@ import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage, errorMessage', parU, rethrow, rethrowWithPosition)
 import Language.PureScript.Externs (ExternsFile(..), ExternsFixity(..), ExternsTypeFixity(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), freshIdent', mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), freshIdent', mkQualified_)
 import Language.PureScript.Sugar.Operators.Binders (matchBinderOperators)
 import Language.PureScript.Sugar.Operators.Expr (matchExprOperators)
 import Language.PureScript.Sugar.Operators.Types (matchTypeOperators)
@@ -39,6 +39,7 @@ import Data.List (groupBy, sortOn)
 import Data.Maybe (mapMaybe, listToMaybe)
 import Data.Map qualified as M
 import Data.Ord (Down(..))
+import Data.Hashable (Hashable)
 
 import Language.PureScript.Constants.Libs qualified as C
 
@@ -112,7 +113,7 @@ rebracketFiltered !caller pred_ externs m = do
   where
 
   ensureNoDuplicates'
-    :: Ord op
+    :: (Ord op, Hashable op, Show op)
     => (op -> SimpleErrorMessage)
     -> [FixityRecord op alias]
     -> m ()
@@ -150,9 +151,9 @@ rebracketFiltered !caller pred_ externs m = do
     goExpr _ e@(PositionedValue pos _ _) = return (pos, e)
     goExpr _ (Op pos op) =
       (pos,) <$> case op `M.lookup` valueAliased of
-        Just (Qualified mn' (Left alias) _) ->
+        Just (Qualified mn' (Left alias)) ->
           return $ Var pos (mkQualified_ mn' alias)
-        Just (Qualified mn' (Right alias) _) ->
+        Just (Qualified mn' (Right alias)) ->
           return $ Constructor pos (mkQualified_ mn' alias)
         Nothing ->
           throwError . errorMessage' pos . UnknownName $ fmap ValOpName op
@@ -162,9 +163,9 @@ rebracketFiltered !caller pred_ externs m = do
     goBinder _ b@(PositionedBinder pos _ _) = return (pos, b)
     goBinder _ (BinaryNoParensBinder (OpBinder pos op) lhs rhs) =
       case op `M.lookup` valueAliased of
-        Just (Qualified mn' (Left alias) _) ->
+        Just (Qualified mn' (Left alias)) ->
           throwError . errorMessage' pos $ InvalidOperatorInBinder op (mkQualified_ mn' alias)
-        Just (Qualified mn' (Right alias) _) ->
+        Just (Qualified mn' (Right alias)) ->
           return (pos, ConstructorBinder pos (mkQualified_ mn' alias) [lhs, rhs])
         Nothing ->
           throwError . errorMessage' pos . UnknownName $ fmap ValOpName op
@@ -331,7 +332,7 @@ collectFixities (Module _ _ moduleName ds _) = concatMap collect ds
   collect _ = []
 
 ensureNoDuplicates
-  :: (Ord a, MonadError MultipleErrors m)
+  :: (Hashable a, Ord a, Show a, MonadError MultipleErrors m)
   => (a -> SimpleErrorMessage)
   -> [(Qualified a, SourceSpan)]
   -> m ()
@@ -339,7 +340,7 @@ ensureNoDuplicates toError m = go $ sortOn fst m
   where
   go [] = return ()
   go [_] = return ()
-  go ((x@(Qualified (ByModuleName mn) op _), _) : (y, pos) : _) | x == y =
+  go ((x@(Qualified (ByModuleName mn) op), _) : (y, pos) : _) | x == y =
     rethrow (addHint (ErrorInModule mn)) $
       rethrowWithPosition pos $ throwError . errorMessage $ toError op
   go (_ : rest) = go rest
@@ -464,7 +465,7 @@ checkFixityExports m@(Module ss _ mn ds (Just exps)) =
   getTypeOpAlias op =
     listToMaybe (mapMaybe (either (const Nothing) go <=< getFixityDecl) ds)
     where
-    go (TypeFixity _ (Qualified (ByModuleName mn') ident _) op')
+    go (TypeFixity _ (Qualified (ByModuleName mn') ident) op')
       | mn == mn' && op == op' = Just ident
     go _ = Nothing
 
@@ -476,7 +477,7 @@ checkFixityExports m@(Module ss _ mn ds (Just exps)) =
   getValueOpAlias op =
     listToMaybe (mapMaybe (either go (const Nothing) <=< getFixityDecl) ds)
     where
-    go (ValueFixity _ (Qualified (ByModuleName mn') ident _) op')
+    go (ValueFixity _ (Qualified (ByModuleName mn') ident) op')
       | mn == mn' && op == op' = Just ident
     go _ = Nothing
 

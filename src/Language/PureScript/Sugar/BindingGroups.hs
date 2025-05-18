@@ -28,7 +28,7 @@ import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (NameKind)
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors(..), SimpleErrorMessage(..), errorMessage', parU, positionedError)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident, ModuleName, ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident, ModuleName, ProperName, ProperNameType(..), pattern Qualified, QualifiedBy(..), coerceProperName, mkQualified_)
 import Language.PureScript.Types (Constraint(..), SourceConstraint, SourceType, Type(..), everythingOnTypes)
 
 data VertexType
@@ -172,9 +172,9 @@ usedIdents moduleName = ordNub . usedIdents' S.empty . valdeclExpression
   (_, usedIdents', _, _, _) = everythingWithScope def usedNamesE def def def
 
   usedNamesE :: S.Set ScopedIdent -> Expr -> [Ident]
-  usedNamesE scope (Var _ (Qualified (BySourcePos _) name _))
+  usedNamesE scope (Var _ (Qualified (BySourcePos _) name))
     | LocalIdent name `S.notMember` scope = [name]
-  usedNamesE scope (Var _ (Qualified (ByModuleName moduleName') name _))
+  usedNamesE scope (Var _ (Qualified (ByModuleName moduleName') name))
     | moduleName == moduleName' && ToplevelIdent name `S.notMember` scope = [name]
   usedNamesE _ _ = []
 
@@ -186,8 +186,8 @@ usedImmediateIdents moduleName =
   def s _ = (s, [])
 
   usedNamesE :: Bool -> Expr -> (Bool, [Ident])
-  usedNamesE True (Var _ (Qualified (BySourcePos _) name _)) = (True, [name])
-  usedNamesE True (Var _ (Qualified (ByModuleName moduleName') name _))
+  usedNamesE True (Var _ (Qualified (BySourcePos _) name)) = (True, [name])
+  usedNamesE True (Var _ (Qualified (ByModuleName moduleName') name))
     | moduleName == moduleName' = (True, [name])
   usedNamesE True (Abs _ _) = (False, [])
   usedNamesE scope _ = (scope, [])
@@ -202,12 +202,12 @@ usedTypeNames moduleName = go
 
   usedNames :: SourceType -> [ProperName 'TypeName]
   usedNames (ConstrainedType _ con _) = usedConstraint con
-  usedNames (TypeConstructor _ (Qualified (ByModuleName moduleName') name _))
+  usedNames (TypeConstructor _ (Qualified (ByModuleName moduleName') name))
     | moduleName == moduleName' = [name]
   usedNames _ = []
 
   usedConstraint :: SourceConstraint -> [ProperName 'TypeName]
-  usedConstraint (Constraint _ (Qualified (ByModuleName moduleName') name _) _ _ _)
+  usedConstraint (Constraint _ (Qualified (ByModuleName moduleName') name) _ _ _)
     | moduleName == moduleName' = [coerceProperName name]
   usedConstraint _ = []
 

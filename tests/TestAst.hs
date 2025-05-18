@@ -10,7 +10,7 @@ import Test.Hspec (Spec, describe, it)
 import Test.QuickCheck (Arbitrary(..), Gen, Property, Testable, counterexample, forAllShrink, subterms, (===))
 
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, OpName(..), OpNameType(..), properNameFromString, ProperNameType(..), Qualified(..), mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, OpName(..), OpNameType(..), properNameFromString, ProperNameType(..), mkQualified_, Qualified)
 import Language.PureScript.PSString (PSString)
 import Language.PureScript.Types (Constraint, ConstraintData, SkolemScope(..), Type(..), TypeVarVisibility(..), WildcardData, annForType, everythingOnTypes, everythingWithContextOnTypes, everywhereOnTypes, everywhereOnTypesM, everywhereOnTypesTopDownM, getAnnForType)
 
@@ -73,7 +73,7 @@ genTypeAnnotatedWith genTypeAnn genConstraintAnn = genType where
   genConstraintData :: Gen ConstraintData
   genConstraintData = genericArbitraryUG generatorEnvironment
 
-  genQualified :: forall b. Hashable b => (Text -> b) -> Gen (Qualified b)
+  genQualified :: forall b. Hashable b => Show b => (Text -> b) -> Gen (Qualified b)
   genQualified ctor = mkQualified_ ByNullSourcePos . ctor <$> genText
 
   genSkolemScope :: Gen SkolemScope

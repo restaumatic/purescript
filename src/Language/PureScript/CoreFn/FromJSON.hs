@@ -111,7 +111,7 @@ identFromJSON = withText "Ident" $ \case
 properNameFromJSON :: Value -> Parser (ProperName a)
 properNameFromJSON = fmap properNameFromString . parseJSON
 
-qualifiedFromJSON :: Hashable a => (Text -> a) -> Value -> Parser (Qualified a)
+qualifiedFromJSON :: Show a => Hashable a => (Text -> a) -> Value -> Parser (Qualified a)
 qualifiedFromJSON f = withObject "Qualified" qualifiedFromObj
   where
   qualifiedFromObj o =
