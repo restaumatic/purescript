@@ -411,11 +411,6 @@ externsTypeFixityToRef (P.ExternsTypeFixity _ _ n alias) =
 externsDeclarationToRef :: ModuleName -> P.ExternsDeclaration -> Maybe RefWithDeps
 externsDeclarationToRef moduleName = \case
   P.EDType n t tk
-    | P.TypeSynonym <- tk ->
-        -- Type synonyms have two entries in externs: EDType and EDTypeSynonym. 
-        -- Ignore the EDType entry, because later in the code we can't handle duplicate entries with the same Ref.
-        -- (TODO: is this legit? Will EDTypeSynonym contain all the deps of edTypeKind?)
-        Nothing
     | P.isDictTypeName n -> Nothing
     | otherwise -> Just (TypeRef n, typeDeps t <> typeKindDeps tk)
   --
