@@ -94,8 +94,10 @@ instance Ord a => Ord (HashCons a) where
   {-# INLINE compare #-}
 
 instance Eq a => Hashable (HashCons a) where
+  hash (HashConsC h _) = h
   hashWithSalt salt (HashConsC h _) = hashWithSalt salt h
   {-# INLINE hashWithSalt #-}
+  {-# INLINE hash #-}
 
 -- Compare the values in the IORefs with the given comparator, and if the result
 -- indicates that they are equal, replace one with the other, preferring the one

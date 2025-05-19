@@ -24,7 +24,7 @@ import Data.Text qualified as T
 import Data.Int (Int64)
 import Language.PureScript.AST.SourcePos (SourcePos, pattern SourcePos)
 import Language.PureScript.Interner (HashCons, hashCons, unHashCons)
-import Data.Hashable (Hashable)
+import Data.Hashable (Hashable (..))
 
 -- | A sum of the possible name types, useful for error and lint messages.
 data Name
@@ -210,7 +210,6 @@ coerceProperName = properNameFromString . runProperName
 --
 newtype ModuleName = ModuleName (HashCons Text)
   deriving (Eq, Generic)
-  deriving newtype (Hashable)
 
 instance Show ModuleName where
   show (ModuleName i) = T.unpack $ unHashCons i
@@ -221,6 +220,10 @@ instance Ord ModuleName where
 instance Serialise ModuleName where
   encode (ModuleName i) = encode (unHashCons i)
   decode = ModuleName . hashCons <$> decode
+
+instance Hashable ModuleName where
+  hash (ModuleName i) = hash i
+  hashWithSalt s (ModuleName i) = hashWithSalt s i
 
 instance NFData ModuleName
 
@@ -268,13 +271,17 @@ instance (Serialise a) => Serialise (Qualified' a)
 
 newtype Qualified a = QualifiedCons (HashCons (Qualified' a))
   deriving (Show, Eq, Generic)
-  deriving newtype (Hashable, Ord) -- TODO: ORD? 
+  deriving newtype (Ord) -- TODO: ORD? 
 
 instance (NFData a) => NFData (Qualified a)
 
 instance (Serialise a, Hashable a) => Serialise (Qualified a) where
   encode (QualifiedCons q) = encode (unHashCons q)
   decode = QualifiedCons . hashCons <$> decode
+
+instance (Hashable a) => Hashable (Qualified a) where
+  hash (QualifiedCons q) = hash q
+  hashWithSalt s (QualifiedCons q) = hashWithSalt s q
 
 infixl 4 `mapQualified`
 

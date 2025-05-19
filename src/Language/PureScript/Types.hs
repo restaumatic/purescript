@@ -28,7 +28,7 @@ import Language.PureScript.Constants.Prim qualified as C
 import Language.PureScript.Names (OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, coerceProperName, mapQualified)
 import Language.PureScript.Label (Label)
 import Language.PureScript.PSString (PSString)
-import Data.Hashable (Hashable (hashWithSalt))
+import Data.Hashable (Hashable (hashWithSalt, hash))
 
 type SourceType = Type SourceAnn
 type SourceConstraint = Constraint SourceAnn
@@ -120,7 +120,10 @@ instance NFData a => NFData (Type a)
 instance Serialise a => Serialise (Type a)
 
 instance Hashable (Type a) where
-  hashWithSalt = hashType
+  hash = hashType
+  hashWithSalt = hashWithSaltType
+  {-# INLINE hash #-}
+  {-# INLINE hashWithSalt #-}
 
 srcTUnknown :: Int -> SourceType
 srcTUnknown = TUnknown NullSourceAnn
@@ -821,15 +824,16 @@ eqType (KindedType _ a b) (KindedType _ a' b') = eqType a a' && eqType b b'
 eqType (BinaryNoParensType _ a b c) (BinaryNoParensType _ a' b' c') = eqType a a' && eqType b b' && eqType c c'
 eqType (ParensInType _ a) (ParensInType _ a') = eqType a a'
 eqType _ _ = False
+{-# INLINE eqType #-}
 
 eqMaybeType :: Maybe (Type a) -> Maybe (Type b) -> Bool
 eqMaybeType (Just a) (Just b) = eqType a b
 eqMaybeType Nothing Nothing = True
 eqMaybeType _ _ = False
 
-infixl 0 `hashType`
-hashType :: Int -> Type a -> Int
-hashType s =  \case
+infixl 0 `hashWithSaltType`
+hashWithSaltType :: Int -> Type a -> Int
+hashWithSaltType s =  \case
   (TUnknown _ a) -> hashWithSalt s a
   (TypeVar _ a) -> hashWithSalt s a
   (TypeLevelString _ a) -> hashWithSalt s a
@@ -837,11 +841,11 @@ hashType s =  \case
   (TypeWildcard _ a) -> hashWithSalt s a
   (TypeConstructor _ a) -> hashWithSalt s a
   (TypeOp _ a) -> hashWithSalt s a
-  (TypeApp _ a b) -> s `hashType` a `hashType` b
-  (KindApp _ a b) -> s `hashType` a `hashType` b
+  (TypeApp _ a b) -> s `hashWithSalt` a `hashWithSalt` b
+  (KindApp _ a b) -> s `hashWithSalt` a `hashWithSalt` b
   (ForAll _ _ a b c d) -> 
     s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c `hashWithSalt` d
-  (ConstrainedType _ a b) -> s `hashWithSalt` a `hashType` b
+  (ConstrainedType _ a b) -> s `hashWithSalt` a `hashWithSalt` b
   (Skolem _ a b c d) -> s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c `hashWithSalt` d
   (REmpty _) -> hashWithSalt s ("REmpty" :: Text)
   (RCons _ a b c) -> s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c
@@ -849,6 +853,27 @@ hashType s =  \case
   (BinaryNoParensType _ a b c) -> s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c
   (ParensInType _ a) -> hashWithSalt s a
 
+hashType :: Type a -> Int
+hashType =  \case
+  (TUnknown _ a) -> hash a
+  (TypeVar _ a) -> hash a
+  (TypeLevelString _ a) -> hash a
+  (TypeLevelInt _ a) -> hash a
+  (TypeWildcard _ a) -> hash a
+  (TypeConstructor _ a) -> hash a
+  (TypeOp _ a) -> hash a
+  (TypeApp _ a b) -> hash (a, b)
+  (KindApp _ a b) -> hash (a, b)
+  (ForAll _ _ a b c d) -> 
+    hash (a, b, c, d)
+  (ConstrainedType _ a b) -> hash (a, b)
+  (Skolem _ a b c d) -> hash (a, b, c, d)
+  (REmpty _) -> hash ("REmpty" :: Text)
+  (RCons _ a b c) -> hash (a, b, c)
+  (KindedType _ a b) -> hash (a, b)
+  (BinaryNoParensType _ a b c) -> hash (a, b, c)
+  (ParensInType _ a) -> hash a
+{-# INLINE hashType #-}
 
 compareType :: Type a -> Type b -> Ordering
 compareType (TUnknown _ a) (TUnknown _ a') = compare a a'
@@ -890,6 +915,7 @@ compareType typ typ' =
       orderOf BinaryNoParensType{} = 15
       orderOf ParensInType{} = 16
 
+{-# INLINE compareType #-}
 
 compareMaybeType :: Maybe (Type a) -> Maybe (Type b) -> Ordering
 compareMaybeType (Just a) (Just b) = compareType a b

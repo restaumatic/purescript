@@ -38,6 +38,7 @@ import Data.HashMap.Strict qualified as HM
 import Data.HashSet qualified as HS
 import Control.Monad.Identity (Identity(runIdentity))
 import Control.Monad (forM_, when, join, (<=<), guard)
+import Data.IntSet (IntSet)
 
 newtype TypeCheckM a = TypeCheckM { unTypeCheckM :: StateT CheckState (SupplyT (ExceptT MultipleErrors (SW.Writer MultipleErrors))) a }
   deriving newtype (Functor, Applicative, Monad, MonadSupply, MonadState CheckState, MonadWriter MultipleErrors, MonadError MultipleErrors)
@@ -135,12 +136,12 @@ data CheckState = CheckState
   , checkConstructorImportsForCoercible :: S.Set (ModuleName, Qualified (ProperName 'ConstructorName))
   -- ^ Newtype constructors imports required to solve Coercible constraints.
   -- We have to keep track of them so that we don't emit unused import warnings.
-  , unificationCache :: HS.HashSet (SourceType, SourceType)
+  , unificationCache :: IntSet
   }
 
 -- | Create an empty @CheckState@
 emptyCheckState :: Environment -> CheckState
-emptyCheckState env = CheckState env 0 0 0 Nothing [] emptySubstitution [] mempty HS.empty
+emptyCheckState env = CheckState env 0 0 0 Nothing [] emptySubstitution [] mempty mempty
 
 -- | Unification variables
 type Unknown = Int
