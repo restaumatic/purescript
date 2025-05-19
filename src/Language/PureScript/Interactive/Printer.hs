@@ -10,6 +10,7 @@ import Data.Text (Text)
 import Language.PureScript qualified as P
 import Text.PrettyPrint.Boxes qualified as Box
 import Data.Hashable (Hashable)
+import Language.PureScript.Names (mapQualified)
 
 -- TODO (Christoph): Text version of boxes
 textT :: Text -> Box.Box
@@ -96,7 +97,7 @@ printModuleSignatures moduleName P.Environment{..} =
         showType typeClassesEnv dataConstructorsEnv typeSynonymsEnv (n@(P.Qualified modul name), typ) =
           case (typ, M.lookup n typeSynonymsEnv) of
             (Just (_, P.TypeSynonym), Just (typevars, dtType)) ->
-                if M.member (fmap P.coerceProperName n) typeClassesEnv
+                if M.member (mapQualified P.coerceProperName n) typeClassesEnv
                 then
                   Nothing
                 else

@@ -35,7 +35,6 @@ import System.IO.Unsafe (unsafePerformIO)
 import Data.Aeson qualified as A
 import Data.Aeson.Types qualified as A
 import Data.Hashable (Hashable)
-import Language.PureScript.Interner (Interned, uninternPSString, internPSString)
 
 -- |
 -- Strings in PureScript are sequences of UTF-16 code units, which do not
@@ -51,32 +50,32 @@ import Language.PureScript.Interner (Interned, uninternPSString, internPSString)
 -- strings where that would be safe (i.e. when there are no lone surrogates),
 -- and arrays of UTF-16 code units (integers) otherwise.
 --
-newtype PSString = PSString { unPSString :: Interned }
+newtype PSString = PSString { unPSString :: [Word16] }
   deriving (Eq, NFData, Generic)
   deriving newtype Hashable
 
 instance Ord PSString where
-  compare (PSString a) (PSString b) = compare (uninternPSString a) (uninternPSString b)
+  compare (PSString a) (PSString b) = compare a b
 
 instance Show PSString where
   show = show . codePoints
 
 toUTF16CodeUnits :: PSString -> [Word16]
-toUTF16CodeUnits (PSString ps) = uninternPSString ps
+toUTF16CodeUnits (PSString ps) = ps
 
 mkPSString :: [Word16] -> PSString
-mkPSString ps = PSString $ internPSString ps
+mkPSString = PSString
 
 
 instance Semigroup PSString where
-  PSString a <> PSString b = PSString $ internPSString (uninternPSString a <> uninternPSString b)
+  PSString a <> PSString b = PSString (a <> b)
 
 instance Monoid PSString where
-  mempty = PSString (internPSString [])
+  mempty = PSString []
   mappend = (<>)
 
 instance Codec.Serialise PSString where
-  encode (PSString s) = Codec.encode (uninternPSString s)
+  encode (PSString s) = Codec.encode s
   decode = mkPSString <$> Codec.decode
 
 
@@ -90,7 +89,7 @@ instance Codec.Serialise PSString where
 -- we do not export it.
 --
 codePoints :: PSString -> String
-codePoints = map (either (Char.chr . fromIntegral) id) . decodeStringEither 
+codePoints = map (either (Char.chr . fromIntegral) id) . decodeStringEither
 
 -- |
 -- Decode a PSString as UTF-16 text. Lone surrogates will be replaced with

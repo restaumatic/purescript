@@ -28,7 +28,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage, errorMessage'', nonEmpty, parU, warnAndRethrow, warnAndRethrowWithPosition)
 import Language.PureScript.Externs (ExternsDeclaration(..), ExternsFile(..), ExternsImport(..))
 import Language.PureScript.Linter.Imports (Name(..), UsedImports)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident, OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident, OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), mkQualified_, mapQualified)
 import Language.PureScript.Sugar.Names.Env (Env, Exports(..), ImportProvenance(..), ImportRecord(..), Imports(..), checkImportConflicts, nullImports, primEnv)
 import Language.PureScript.Sugar.Names.Exports (findExportable, resolveExports)
 import Language.PureScript.Sugar.Names.Imports (resolveImports, resolveModuleImport)
@@ -235,12 +235,12 @@ renameInModule imports (Module modSS coms mn decls exps) =
         <*> pure op
   updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Left alias)) op) =
     fmap (bound,) $
-      ValueFixityDeclaration sa fixity . fmap Left
+      ValueFixityDeclaration sa fixity . mapQualified Left
         <$> updateValueName (mkQualified_ mn' alias) ss
         <*> pure op
   updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Right alias)) op) =
     fmap (bound,) $
-      ValueFixityDeclaration sa fixity . fmap Right
+      ValueFixityDeclaration sa fixity . mapQualified Right
         <$> updateDataConstructorName (mkQualified_ mn' alias) ss
         <*> pure op
   updateDecl b d =
@@ -424,7 +424,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
       (Just options, _) -> do
         (mnNew, mnOrig) <- checkImportConflicts pos mn toName options
         modify $ \usedImports ->
-          M.insertWith (++) mnNew [fmap toName qname] usedImports
+          M.insertWith (++) mnNew [mapQualified toName qname] usedImports
         return $ mkQualified_ (ByModuleName mnOrig) name
 
       -- If the name wasn't found in our imports but was qualified then we need
@@ -441,4 +441,4 @@ renameInModule imports (Module modSS coms mn decls exps) =
       _ -> throwUnknown
 
     where
-    throwUnknown = throwError . errorMessage . UnknownName . fmap toName $ qname
+    throwUnknown = throwError . errorMessage . UnknownName . mapQualified toName $ qname

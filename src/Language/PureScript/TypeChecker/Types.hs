@@ -50,7 +50,7 @@ import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage', escalateWarningWhen, internalCompilerError, onErrorMessages, onTypesInErrorMessage, parU)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified, QualifiedBy(..), byMaybeModuleName, coerceProperName, freshIdent, properNameFromString, runProperName, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified, QualifiedBy(..), byMaybeModuleName, coerceProperName, freshIdent, properNameFromString, runProperName, mkQualified_, mapQualified)
 import Language.PureScript.TypeChecker.Deriving (deriveInstance)
 import Language.PureScript.TypeChecker.Entailment (InstanceContext, newDictionaries, replaceTypeClassDictionaries)
 import Language.PureScript.TypeChecker.Kinds (checkConstraint, checkKind, checkTypeKind, kindOf, kindOfWithScopedVars, unifyKinds', unknownsWithKinds)
@@ -490,7 +490,7 @@ infer' (Var ss var) = do
 infer' v@(Constructor _ c) = do
   env <- getEnv
   case M.lookup c (dataConstructors env) of
-    Nothing -> throwError . errorMessage . UnknownName . fmap DctorName $ c
+    Nothing -> throwError . errorMessage . UnknownName . mapQualified DctorName $ c
     Just (_, _, ty, _) -> TypedValue' True v <$> (introduceSkolemScope <=< replaceAllTypeSynonyms $ ty)
 infer' (Case vals binders) = do
   (vals', ts) <- instantiateForBinders vals binders
@@ -514,7 +514,7 @@ infer' (DeferredDictionary className tys) = do
   con <- checkConstraint (srcConstraint className [] tys Nothing)
   return $ TypedValue' False
              (TypeClassDictionary con dicts hints)
-             (foldl srcTypeApp (srcTypeConstructor (fmap coerceProperName className)) tys)
+             (foldl srcTypeApp (srcTypeConstructor (mapQualified coerceProperName className)) tys)
 infer' (TypedValue checkType val ty) = do
   moduleName <- unsafeCheckCurrentModule
   ((args, elabTy), kind) <- kindOfWithScopedVars ty
@@ -635,7 +635,7 @@ inferBinder val (ConstructorBinder ss ctor binders) = do
       unless (expected == actual) . throwError . errorMessage' ss $ IncorrectConstructorArity ctor expected actual
       unifyTypes ret val
       M.unions <$> zipWithM inferBinder (reverse args) binders
-    _ -> throwError . errorMessage' ss . UnknownName . fmap DctorName $ ctor
+    _ -> throwError . errorMessage' ss . UnknownName . mapQualified DctorName $ ctor
   where
   peelArgs :: Type a -> ([Type a], Type a)
   peelArgs = go []
@@ -886,7 +886,7 @@ check' (Accessor prop val) ty = withErrorMessageHint (ErrorCheckingAccessor val 
 check' v@(Constructor _ c) ty = do
   env <- getEnv
   case M.lookup c (dataConstructors env) of
-    Nothing -> throwError . errorMessage . UnknownName . fmap DctorName $ c
+    Nothing -> throwError . errorMessage . UnknownName . mapQualified DctorName $ c
     Just (_, _, ty1, _) -> do
       repl <- introduceSkolemScope <=< replaceAllTypeSynonyms $ ty1
       ty' <- introduceSkolemScope <=< replaceAllTypeSynonyms $ ty

@@ -15,6 +15,7 @@ import Language.PureScript qualified as P
 import Language.PureScript.Ide.State (getAllModules, getFileState)
 import Language.PureScript.Ide.Types
 import Language.PureScript.Ide.Util (identifierFromIdeDeclaration, namespaceForDeclaration)
+import Language.PureScript.Names (mapQualified, traverseQualified)
 
 -- |
 -- How we find usages, given an IdeDeclaration and the module it was defined in:
@@ -142,20 +143,20 @@ applySearch module_ search =
         | Just ideValue <- preview _IdeDeclValue (P.disqualify search)
         , P.isQualified search
           || not (P.LocalIdent (_ideValueIdent ideValue) `Set.member` scope) ->
-          [sp | map P.runIdent i == map identifierFromIdeDeclaration search]
+          [sp | mapQualified P.runIdent i == mapQualified identifierFromIdeDeclaration search]
       P.Constructor sp name
-        | Just ideDtor <- traverse (preview _IdeDeclDataConstructor) search ->
-          [sp | name == map _ideDtorName ideDtor]
+        | Just ideDtor <- traverseQualified (preview _IdeDeclDataConstructor) search ->
+          [sp | name == mapQualified _ideDtorName ideDtor]
       P.Op sp opName
-        | Just ideOp <- traverse (preview _IdeDeclValueOperator) search ->
-          [sp | opName == map _ideValueOpName ideOp]
+        | Just ideOp <- traverseQualified (preview _IdeDeclValueOperator) search ->
+          [sp | opName == mapQualified _ideValueOpName ideOp]
       _ -> []
 
     goBinder _ binder = case binder of
       P.ConstructorBinder sp ctorName _
-        | Just ideDtor <- traverse (preview _IdeDeclDataConstructor) search ->
-          [sp | ctorName == map _ideDtorName ideDtor]
+        | Just ideDtor <- traverseQualified (preview _IdeDeclDataConstructor) search ->
+          [sp | ctorName == mapQualified _ideDtorName ideDtor]
       P.OpBinder sp opName
-        | Just op <- traverse (preview _IdeDeclValueOperator) search ->
-          [sp | opName == map _ideValueOpName op]
+        | Just op <- traverseQualified (preview _IdeDeclValueOperator) search ->
+          [sp | opName == mapQualified _ideValueOpName op]
       _ -> []

@@ -19,7 +19,7 @@ import Text.Parsec.Expr qualified as P
 import Language.PureScript.AST (Associativity(..), ErrorMessageHint(..), SourceSpan)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors(..), SimpleErrorMessage(..))
-import Language.PureScript.Names (OpName, Qualified, eraseOpName)
+import Language.PureScript.Names (OpName, Qualified, eraseOpName, mapQualified)
 
 type Chain a = [Either a a]
 
@@ -126,12 +126,12 @@ matchOperators isBinOp extractOp fromOp reapply modOpTable ops = parseChains
           map
             (\grp ->
               mkPositionedError chainOpSpans grp
-                (MixedAssociativityError (fmap (\name -> (eraseOpName <$> name, opAssoc name)) grp)))
+                (MixedAssociativityError (fmap (\name -> (eraseOpName `mapQualified` name, opAssoc name)) grp)))
             mixedAssoc
           ++ map
             (\grp ->
               mkPositionedError chainOpSpans grp
-                (NonAssociativeError (fmap (fmap eraseOpName) grp)))
+                (NonAssociativeError (fmap (mapQualified eraseOpName) grp)))
             nonAssoc
 
   mkPositionedError

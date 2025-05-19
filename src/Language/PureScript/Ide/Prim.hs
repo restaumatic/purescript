@@ -8,6 +8,7 @@ import Language.PureScript qualified as P
 import Language.PureScript.Constants.Prim qualified as C
 import Language.PureScript.Environment qualified as PEnv
 import Language.PureScript.Ide.Types (IdeDeclaration(..), IdeDeclarationAnn(..), IdeType(..), IdeTypeClass(..), ModuleMap, emptyAnn)
+import Language.PureScript.Names (mapQualified)
 
 idePrimDeclarations :: ModuleMap [IdeDeclarationAnn]
 idePrimDeclarations = Map.fromList
@@ -50,7 +51,7 @@ idePrimDeclarations = Map.fromList
     -- type declaration for every class, but we filter the types out when we
     -- load the Externs, so we do the same here
     removeClasses types classes =
-      Map.difference types (Map.mapKeys (map P.coerceProperName) classes)
+      Map.difference types (Map.mapKeys (mapQualified P.coerceProperName) classes)
 
     primTypes = annType (removeClasses PEnv.primTypes PEnv.primClasses)
     primBooleanTypes = annType PEnv.primBooleanTypes

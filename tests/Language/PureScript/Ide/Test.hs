@@ -15,6 +15,7 @@ import System.FilePath ((</>))
 import System.Process (createProcess, getProcessExitCode, shell)
 
 import Language.PureScript qualified as P
+import Language.PureScript.Names (mapQualified)
 
 defConfig :: IdeConfiguration
 defConfig =
@@ -76,7 +77,7 @@ ideValueOp opName ident precedence assoc t =
   ida (IdeDeclValueOperator
        (IdeValueOperator
         (P.OpName opName)
-        (bimap P.Ident P.properNameFromString <$> ident)
+        (bimap P.Ident P.properNameFromString `mapQualified` ident)
         precedence
         (fromMaybe P.Infix assoc)
         t))
@@ -86,7 +87,7 @@ ideTypeOp opName ident precedence assoc k =
   ida (IdeDeclTypeOperator
        (IdeTypeOperator
         (P.OpName opName)
-        (P.properNameFromString <$> ident)
+        (P.properNameFromString `mapQualified` ident)
         precedence
         (fromMaybe P.Infix assoc)
         k))

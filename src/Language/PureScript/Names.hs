@@ -1,10 +1,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE InstanceSigs #-}
 
 -- |
 -- Data types for names
 --
-module Language.PureScript.Names (Name (..), getIdentName, getValOpName, getTypeName, getQual, disqualify, ModuleName (..), ProperName (..), runProperName, properNameFromString, OpName (..), ProperNameType (..), OpNameType (..), Qualified, mkQualified_, pattern Qualified, moduleNameFromString, InternalIdentData (..), Ident (..), coerceOpName, coerceProperName, QualifiedBy (..), runModuleName, unusedIdent, runIdent, toMaybeModuleName, pattern ByNullSourcePos, freshIdent, isQualifiedWith, isQualified, isBySourcePos, isPlainIdent, showIdent, byMaybeModuleName, disqualifyFor, getTypeOpName, getDctorName, getClassName, freshIdent', showOp, eraseOpName, isBuiltinModuleName, showQualified, qualify, mkQualified, isUnqualified) where
+module Language.PureScript.Names (Name (..), getIdentName, getValOpName, getTypeName, getQual, disqualify, ModuleName (..), ProperName (..), runProperName, properNameFromString, OpName (..), ProperNameType (..), OpNameType (..), Qualified, mkQualified_, pattern Qualified, moduleNameFromString, InternalIdentData (..), Ident (..), coerceOpName, coerceProperName, QualifiedBy (..), runModuleName, unusedIdent, runIdent, toMaybeModuleName, pattern ByNullSourcePos, freshIdent, isQualifiedWith, isQualified, isBySourcePos, isPlainIdent, showIdent, byMaybeModuleName, disqualifyFor, getTypeOpName, getDctorName, getClassName, freshIdent', showOp, eraseOpName, isBuiltinModuleName, showQualified, qualify, mkQualified, isUnqualified, mapQualified, mapQualifiedF, traverseQualified) where
 
 import Prelude
 
@@ -22,9 +23,8 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Int (Int64)
 import Language.PureScript.AST.SourcePos (SourcePos, pattern SourcePos)
-import Language.PureScript.Interner (Interned, uninternText, internText)
-import Data.Hashable (Hashable (hashWithSalt))
-import Debug.Trace (trace, traceStack)
+import Language.PureScript.Interner (HashCons, hashCons, unHashCons)
+import Data.Hashable (Hashable)
 
 -- | A sum of the possible name types, useful for error and lint messages.
 data Name
@@ -96,7 +96,7 @@ data Ident
   --
   | UnusedIdent
   -- |
-  -- A generated name used only for internTextal transformations
+  -- A generated name used only for hashConsal transformations
   --
   | InternalIdent !InternalIdentData
   deriving (Show, Eq, Ord, Generic, Hashable)
@@ -160,33 +160,33 @@ coerceOpName = OpName . runOpName
 -- |
 -- Proper names, i.e. capitalized names for e.g. module names, type//data constructors.
 --
-newtype ProperName (a :: ProperNameType) = ProperName { unProperName :: Interned }
+newtype ProperName (a :: ProperNameType) = ProperName { unProperName :: HashCons Text }
   deriving (Eq, Generic)
   deriving newtype (NFData)
 
 instance Hashable (ProperName a)
 
 properNameFromString :: Text -> ProperName a
-properNameFromString = ProperName . internText
+properNameFromString = ProperName . hashCons
 
 runProperName :: ProperName a -> Text
-runProperName (ProperName n) = uninternText n
+runProperName (ProperName n) = unHashCons n
 
 instance Show (ProperName a) where
-  show (ProperName i) = T.unpack $ uninternText i -- "<internTexted:" ++ show i ++ ">"
+  show (ProperName i) = T.unpack $ unHashCons i -- "<hashConsed:" ++ show i ++ ">"
 
 instance Serialise (ProperName a) where
-  encode (ProperName n) = encode (uninternText n)
-  decode = ProperName . internText <$> decode
+  encode (ProperName n) = encode (unHashCons n)
+  decode = ProperName . hashCons <$> decode
 
 instance Ord (ProperName a) where
-  compare (ProperName a) (ProperName b) = compare (uninternText a) (uninternText b)
+  compare (ProperName a) (ProperName b) = compare (unHashCons a) (unHashCons b)
 
 instance ToJSON (ProperName a) where
   toJSON = toJSON . runProperName
 
 instance FromJSON (ProperName a) where
-  parseJSON = fmap (ProperName . internText) . parseJSON
+  parseJSON = fmap (ProperName . hashCons) . parseJSON
 
 -- |
 -- The closed set of proper name types.
@@ -208,27 +208,27 @@ coerceProperName = properNameFromString . runProperName
 -- |
 -- Module names
 --
-newtype ModuleName = ModuleName Interned
+newtype ModuleName = ModuleName (HashCons Text)
   deriving (Eq, Generic)
   deriving newtype (Hashable)
 
 instance Show ModuleName where
-  show (ModuleName i) = T.unpack $ uninternText i
+  show (ModuleName i) = T.unpack $ unHashCons i
 
 instance Ord ModuleName where
-  compare (ModuleName a) (ModuleName b) = compare (uninternText a) (uninternText b)
+  compare (ModuleName a) (ModuleName b) = compare (unHashCons a) (unHashCons b)
 
 instance Serialise ModuleName where
-  encode (ModuleName i) = encode (uninternText i)
-  decode = ModuleName . internText <$> decode
+  encode (ModuleName i) = encode (unHashCons i)
+  decode = ModuleName . hashCons <$> decode
 
 instance NFData ModuleName
 
 runModuleName :: ModuleName -> Text
-runModuleName (ModuleName name) = uninternText name
+runModuleName (ModuleName name) = unHashCons name
 
 moduleNameFromString :: Text -> ModuleName
-moduleNameFromString = ModuleName . internText
+moduleNameFromString = ModuleName . hashCons
 
 isBuiltinModuleName :: ModuleName -> Bool
 isBuiltinModuleName mn' = let mn = runModuleName mn' in mn == "Prim" || "Prim." `T.isPrefixOf` mn
@@ -260,58 +260,40 @@ toMaybeModuleName (BySourcePos _) = Nothing
 -- |
 -- A qualified name, i.e. a name with an optional module name
 --
-data Qualified a = Qualified' QualifiedBy a Int
-  deriving (Functor, Foldable, Traversable, Generic, Show)
+data Qualified' a = Qualified' QualifiedBy a
+  deriving (Functor, Foldable, Traversable, Generic, Show, Eq, Ord, Hashable)
+
+instance (NFData a) => NFData (Qualified' a)
+instance (Serialise a) => Serialise (Qualified' a)
+
+newtype Qualified a = QualifiedCons (HashCons (Qualified' a))
+  deriving (Show, Eq, Generic)
+  deriving newtype (Hashable, Ord) -- TODO: ORD? 
+
+instance (NFData a) => NFData (Qualified a)
+
+instance (Serialise a, Hashable a) => Serialise (Qualified a) where
+  encode (QualifiedCons q) = encode (unHashCons q)
+  decode = QualifiedCons . hashCons <$> decode
+
+infixl 4 `mapQualified`
+
+mapQualified :: Hashable b => (a -> b) -> Qualified a -> Qualified b
+mapQualified f (QualifiedCons (unHashCons -> q)) = QualifiedCons (hashCons (fmap f q))
+
+infixl 4 `mapQualifiedF`
+
+mapQualifiedF:: Hashable b => Qualified a -> (a -> b) -> Qualified b
+mapQualifiedF (QualifiedCons (unHashCons -> q)) f = QualifiedCons (hashCons (fmap f q))
+
+traverseQualified :: (Applicative f, Hashable b) => (a -> f b) -> Qualified a -> f (Qualified b)
+traverseQualified f (QualifiedCons (unHashCons -> q)) = QualifiedCons . hashCons <$> traverse f q
+
 
 {-# COMPLETE Qualified #-}
 pattern Qualified :: (Show a, Hashable a) => QualifiedBy -> a -> Qualified a
-pattern Qualified qb a <- Qualified' qb a _ where
+pattern Qualified qb a <- QualifiedCons (unHashCons -> Qualified' qb a) where
   Qualified qb a = mkQualified_ qb a
-
-
--- instance Show a => Show (Qualified a) where
---   show (Qualified' qb a _) = case qb of
---     BySourcePos _ -> show a
---     ByModuleName mn -> T.unpack (runModuleName mn) <> "." <> show a
-
-instance NFData a => NFData (Qualified a)
--- instance Serialise a => Serialise (Qualified a)
-
-instance (Show a, Serialise a, Hashable a) => Serialise (Qualified a) where
-  encode (Qualified' qb a _) = encode $ QualifiedS qb a
-  decode = do
-    QualifiedS qb a <- decode
-    pure $ mkQualified_ qb a
-
-
-data QualifiedS a = QualifiedS QualifiedBy a
-  deriving (Generic)
-
-instance Serialise a => Serialise (QualifiedS a)
-instance NFData a => NFData (QualifiedS a)
-
---
--- instance Ord a => Ord (Qualified a) where
---   compare (Qualified' qb a1 _) (Qualified' qb' a2 _) = case compare qb qb' of
---                                                        EQ -> compare a1 a2
---                                                        other -> other
-
-instance Hashable a => Hashable (Qualified a) where
-  hashWithSalt s (Qualified' _ _ h) = hashWithSalt s h
-
--- instance Eq a => Eq (Qualified a) where
---   (Qualified' q a _) == (Qualified' q' a' _) = (q == q' && a == a')
-
-instance (Eq a) => Eq (Qualified a) where
-  (Qualified' q a h1) == (Qualified' q' a' h2) =
-    -- if q == q' && a == a' && h1 /= h2 then error "Hash mismatch when comparing"
-      (h1 == h2) || (q == q' && a == a')
---
-instance Ord a => Ord (Qualified a) where
-  compare (Qualified' qb a1 _) (Qualified' qb' a2 _) = case compare qb qb' of
-                                                       EQ -> compare a1 a2
-                                                       other -> other
-
 
 
 showQualified :: (Show a, Hashable a) => (a -> Text) -> Qualified a -> Text
@@ -331,21 +313,15 @@ qualify _ (Qualified (ByModuleName m) a) = (m, a)
 -- |
 -- Makes a qualified value from a name and module name.
 --
-mkQualified :: (Show a, Hashable a) => a -> ModuleName -> Qualified a
+mkQualified :: ( Hashable a) =>a -> ModuleName -> Qualified a
 mkQualified name mn =
   let
     qb = ByModuleName mn
-    h = (hashWithSalt 1 qb `hashWithSalt` name)
-   -- in if h == -8933003785015192445 || h == 126158207429918995
-   --    then traceStack ("mkQualified: " <> show qb <> " " <> show name <> " h:" <> show h) $ Qualified' qb name h
-     in Qualified' qb name h
+  in QualifiedCons (hashCons (Qualified' qb name))
 
-mkQualified_ :: (Show a, Hashable a) => QualifiedBy -> a -> Qualified a
+mkQualified_ :: (Hashable a) => QualifiedBy -> a -> Qualified a
 mkQualified_ qb name =
-  let h = (hashWithSalt 1 qb `hashWithSalt` name)
-   -- in if h == -8933003785015192445 || h == 126158207429918995
-   --    then traceStack ("mkQualified: " <> show qb <> " " <> show name <> " h:" <> show h) $ Qualified' qb name h
-   in Qualified' qb name h
+  QualifiedCons (hashCons (Qualified' qb name))
 
 
 -- | Remove the module name from a qualified name

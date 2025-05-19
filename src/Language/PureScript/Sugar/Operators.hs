@@ -19,7 +19,7 @@ import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage, errorMessage', parU, rethrow, rethrowWithPosition)
 import Language.PureScript.Externs (ExternsFile(..), ExternsFixity(..), ExternsTypeFixity(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), freshIdent', mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), freshIdent', mkQualified_, mapQualified)
 import Language.PureScript.Sugar.Operators.Binders (matchBinderOperators)
 import Language.PureScript.Sugar.Operators.Expr (matchExprOperators)
 import Language.PureScript.Sugar.Operators.Types (matchTypeOperators)
@@ -156,7 +156,7 @@ rebracketFiltered !caller pred_ externs m = do
         Just (Qualified mn' (Right alias)) ->
           return $ Constructor pos (mkQualified_ mn' alias)
         Nothing ->
-          throwError . errorMessage' pos . UnknownName $ fmap ValOpName op
+          throwError . errorMessage' pos . UnknownName $ mapQualified ValOpName op
     goExpr pos other = return (pos, other)
 
     goBinder :: SourceSpan -> Binder -> m (SourceSpan, Binder)
@@ -168,7 +168,7 @@ rebracketFiltered !caller pred_ externs m = do
         Just (Qualified mn' (Right alias)) ->
           return (pos, ConstructorBinder pos (mkQualified_ mn' alias) [lhs, rhs])
         Nothing ->
-          throwError . errorMessage' pos . UnknownName $ fmap ValOpName op
+          throwError . errorMessage' pos . UnknownName $ mapQualified ValOpName op
     goBinder _ BinaryNoParensBinder{} =
       internalError "BinaryNoParensBinder has no OpBinder"
     goBinder pos other = return (pos, other)
@@ -179,7 +179,7 @@ rebracketFiltered !caller pred_ externs m = do
         Just alias ->
           return $ TypeConstructor ann2 alias
         Nothing ->
-          throwError . errorMessage' pos $ UnknownName $ fmap TyOpName op
+          throwError . errorMessage' pos $ UnknownName $ mapQualified TyOpName op
     goType _ other = return other
 
 -- | Indicates whether the `rebracketModule`

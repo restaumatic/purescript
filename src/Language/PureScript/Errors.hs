@@ -56,8 +56,6 @@ import System.Console.ANSI qualified as ANSI
 import System.FilePath (makeRelative)
 import Text.PrettyPrint.Boxes qualified as Box
 import Witherable (wither)
-import Data.Hashable (hash)
-import Debug.Trace (trace)
 
 -- | A type of error messages
 data SimpleErrorMessage
@@ -476,7 +474,7 @@ onTypesInErrorMessageM f (ErrorMessage hints simple) = ErrorMessage <$> traverse
   gSimple (InvalidInstanceHead t) = InvalidInstanceHead <$> f t
   gSimple (NoInstanceFound con ambig unks) = NoInstanceFound <$> overConstraintArgs (traverse f) con <*> pure ambig <*> pure unks
   gSimple (AmbiguousTypeVariables t uis) = AmbiguousTypeVariables <$> f t <*> pure uis
-  gSimple (OverlappingInstances cl ts insts) = OverlappingInstances cl <$> traverse f ts <*> traverse (traverse $ bitraverse f pure) insts
+  gSimple (OverlappingInstances cl ts insts) = OverlappingInstances cl <$> traverse f ts <*> traverse (traverseQualified $ bitraverse f pure) insts
   gSimple (PossiblyInfiniteInstance cl ts) = PossiblyInfiniteInstance cl <$> traverse f ts
   gSimple (CannotDerive cl ts) = CannotDerive cl <$> traverse f ts
   gSimple (InvalidNewtypeInstance cl ts) = InvalidNewtypeInstance cl <$> traverse f ts
@@ -868,7 +866,6 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
                  , row1Box
                  , line "with type"
                  , row2Box
-                , line $ "Hashes are: " <> (T.pack $ show $ u1) <> " and " <> (T.pack $ show $ u2)
                  ]
 
     renderSimpleErrorMessage (KindsDoNotUnify k1 k2) =
@@ -876,7 +873,6 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
             , markCodeBox $ indent $ prettyType k1
             , line "with kind"
             , markCodeBox $ indent $ prettyType k2
-            , line $ "Hashes are: " <> (T.pack $ show $ hash k1) <> " and " <> (T.pack $ show $ hash k2)
             ]
     renderSimpleErrorMessage (ConstrainedTypeUnified t1 t2) =
       paras [ line "Could not match constrained type"

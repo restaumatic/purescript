@@ -51,7 +51,7 @@ import Data.Traversable (for)
 import Language.PureScript.Crash (HasCallStack, internalError)
 import Language.PureScript.Environment qualified as E
 import Language.PureScript.Errors
-import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, mkQualified, runProperName, properNameFromString, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, mkQualified, runProperName, properNameFromString, mkQualified_, mapQualified)
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, bindLocalTypeVariables, debugType, getEnv, lookupTypeVariable, unsafeCheckCurrentModule, withErrorMessageHint, withFreshSubstitution, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, newSkolemScope, skolemize)
 import Language.PureScript.TypeChecker.Synonyms (replaceAllTypeSynonyms)
@@ -168,7 +168,7 @@ inferKind = \tyToInfer ->
       env <- getEnv
       case M.lookup v (E.types env) of
         Nothing ->
-          throwError . errorMessage' (fst ann) . UnknownName . fmap TyName $ v
+          throwError . errorMessage' (fst ann) . UnknownName . mapQualified TyName $ v
         Just (kind, E.LocalTypeVariable) -> do
           kind' <- apply kind
           pure (ty, kind' $> ann)
@@ -176,9 +176,9 @@ inferKind = \tyToInfer ->
           pure (ty, kind $> ann)
     ConstrainedType ann' con@(Constraint ann v _ _ _) ty -> do
       env <- getEnv
-      con' <- case M.lookup (coerceProperName <$> v) (E.types env) of
+      con' <- case M.lookup (coerceProperName `mapQualified` v) (E.types env) of
         Nothing ->
-          throwError . errorMessage' (fst ann) . UnknownName . fmap TyClassName $ v
+          throwError . errorMessage' (fst ann) . UnknownName . mapQualified TyClassName $ v
         Just _ ->
           checkConstraint con
       ty' <- checkIsSaturatedType ty
@@ -524,7 +524,7 @@ elaborateKind = \case
     env <- getEnv
     case M.lookup v (E.types env) of
       Nothing ->
-        throwError . errorMessage' (fst ann) . UnknownName . fmap TyName $ v
+        throwError . errorMessage' (fst ann) . UnknownName . mapQualified TyName $ v
       Just (kind, _) ->
         ($> ann) <$> apply kind
   TypeVar ann a -> do
@@ -850,7 +850,7 @@ checkConstraint
   SourceConstraint
   -> TypeCheckM SourceConstraint
 checkConstraint (Constraint ann clsName kinds args dat) = do
-  let ty = foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (fmap coerceProperName clsName)) kinds) args
+  let ty = foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (mapQualified coerceProperName clsName)) kinds) args
   (_, kinds', args') <- unapplyTypes <$> checkKind ty E.kindConstraint
   pure $ Constraint ann clsName kinds' args' dat
 
@@ -859,7 +859,7 @@ applyConstraint
   SourceConstraint
   -> TypeCheckM SourceConstraint
 applyConstraint (Constraint ann clsName kinds args dat) = do
-  let ty = foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (fmap coerceProperName clsName)) kinds) args
+  let ty = foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (mapQualified coerceProperName clsName)) kinds) args
   (_, kinds', args') <- unapplyTypes <$> apply ty
   pure $ Constraint ann clsName kinds' args' dat
 
@@ -883,7 +883,7 @@ checkInstanceDeclaration
   -> InstanceDeclarationArgs
   -> TypeCheckM InstanceDeclarationResult
 checkInstanceDeclaration moduleName (ann, constraints, clsName, args) = do
-  let ty = foldl (TypeApp ann) (TypeConstructor ann (fmap coerceProperName clsName)) args
+  let ty = foldl (TypeApp ann) (TypeConstructor ann (mapQualified coerceProperName clsName)) args
       tyWithConstraints = foldr srcConstrainedType ty constraints
       freeVars = freeTypeVariables tyWithConstraints
   freeVarsDict <- for freeVars $ \v -> (properNameFromString v,) <$> freshKind (fst ann)

@@ -35,7 +35,7 @@ import Language.PureScript.Environment (DataDeclType(..), Environment(..), Funct
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, errorMessage, errorMessage', positionedError, rethrow, warnAndRethrow, MultipleErrors)
 import Language.PureScript.Linter (checkExhaustiveExpr)
 import Language.PureScript.Linter.Wildcards (ignoreWildcardsUnderCompleteTypeSignatures)
-import Language.PureScript.Names (Ident, ModuleName, ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), coerceProperName, disqualify, isPlainIdent, mkQualified, mkQualified_)
+import Language.PureScript.Names (Ident, ModuleName, ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), coerceProperName, disqualify, isPlainIdent, mkQualified, mkQualified_, mapQualified)
 import Language.PureScript.Roles (Role)
 import Language.PureScript.Sugar.Names.Env (Exports(..))
 import Language.PureScript.TypeChecker.Kinds as T
@@ -151,7 +151,7 @@ addTypeClass
 addTypeClass _ qualifiedClassName args implies dependencies ds kind = do
   env <- getEnv
   newClass <- mkNewClass
-  let qualName = fmap coerceProperName qualifiedClassName
+  let qualName = mapQualified coerceProperName qualifiedClassName
       hasSig = qualName `M.member` types env
   unless (hasSig || not (containsForAll kind)) $ do
     tell . errorMessage $ MissingKindDeclaration ClassSig (disqualify qualName) kind
@@ -609,7 +609,7 @@ typeCheckModule modulesExports (Module ss coms mn decls (Just exps)) =
   toImportDecl (sa, moduleName, importDeclarationType, asModuleName, _) =
     ImportDeclaration sa moduleName importDeclarationType asModuleName
 
-  qualify' :: Show a => Hashable a => a -> Qualified a
+  qualify' :: Hashable a => a -> Qualified a
   qualify' = mkQualified_ (ByModuleName mn)
 
   getSuperClassExportCheck = do

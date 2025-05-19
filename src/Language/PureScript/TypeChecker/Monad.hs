@@ -22,7 +22,7 @@ import Data.List.NonEmpty qualified as NEL
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (Environment(..), NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..))
 import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition)
-import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified, pattern Qualified, QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName, runProperName, properNameFromString, mkQualified_)
+import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified, pattern Qualified, QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName, runProperName, properNameFromString, mkQualified_, mapQualified)
 import Language.PureScript.Pretty.Types (prettyPrintType)
 import Language.PureScript.Pretty.Values (prettyPrintValue)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
@@ -402,7 +402,7 @@ debugType = init . prettyPrintType 100
 
 debugConstraint :: Constraint a -> String
 debugConstraint (Constraint ann clsName kinds args _) =
-  debugType $ foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (fmap coerceProperName clsName)) kinds) args
+  debugType $ foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (mapQualified coerceProperName clsName)) kinds) args
 
 debugTypes :: Environment -> [String]
 debugTypes = go <=< M.toList . types

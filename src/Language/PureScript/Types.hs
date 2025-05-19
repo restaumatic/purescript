@@ -25,12 +25,10 @@ import GHC.Generics (Generic)
 
 import Language.PureScript.AST.SourcePos (pattern NullSourceAnn, SourceAnn, SourceSpan)
 import Language.PureScript.Constants.Prim qualified as C
-import Language.PureScript.Names (OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, coerceProperName, showQualified)
+import Language.PureScript.Names (OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, coerceProperName, mapQualified)
 import Language.PureScript.Label (Label)
 import Language.PureScript.PSString (PSString)
-import Data.Hashable (Hashable (hashWithSalt, hash))
-import GHC.Stack (HasCallStack)
-import Debug.Trace (trace)
+import Data.Hashable (Hashable (hashWithSalt))
 
 type SourceType = Type SourceAnn
 type SourceConstraint = Constraint SourceAnn
@@ -699,7 +697,7 @@ srcInstanceType ss vars className tys
   = setAnnForType (ss, [])
   . flip (foldr $ \(tv, k) ty -> srcForAll TypeVarInvisible tv (Just k) ty Nothing) vars
   . flip (foldl' srcTypeApp) tys
-  $ srcTypeConstructor $ coerceProperName <$> className
+  $ srcTypeConstructor $ mapQualified coerceProperName className
 
 everywhereOnTypes :: (Type a -> Type a) -> Type a -> Type a
 everywhereOnTypes f = go where

@@ -23,7 +23,7 @@ import Control.PatternArrows as PA
 
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Label (Label)
-import Language.PureScript.Names (coerceProperName)
+import Language.PureScript.Names (coerceProperName, mapQualified)
 import Language.PureScript.Pretty.Types (PrettyPrintConstraint, PrettyPrintType(..), convertPrettyPrintType, prettyPrintLabel)
 import Language.PureScript.Roles (Role, displayRole)
 import Language.PureScript.Types (Type, TypeVarVisibility, typeVarVisibilityPrefix)
@@ -62,7 +62,7 @@ typeLiterals = mkPattern match
 
 renderConstraint :: PrettyPrintConstraint -> RenderedCode
 renderConstraint (pn, ks, tys) =
-  let instApp = foldl PPTypeApp (foldl (\a b -> PPTypeApp a (PPKindArg b)) (PPTypeConstructor (fmap coerceProperName pn)) ks) tys
+  let instApp = foldl PPTypeApp (foldl (\a b -> PPTypeApp a (PPKindArg b)) (PPTypeConstructor (mapQualified coerceProperName pn)) ks) tys
   in  renderType' instApp
 
 renderConstraints :: PrettyPrintConstraint -> RenderedCode -> RenderedCode

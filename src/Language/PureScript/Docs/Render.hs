@@ -23,6 +23,7 @@ import Language.PureScript.AST qualified as P
 import Language.PureScript.Environment qualified as P
 import Language.PureScript.Names qualified as P
 import Language.PureScript.Types qualified as P
+import Language.PureScript.Names (mapQualified)
 
 renderKindSig :: Text -> KindInfo -> RenderedCode
 renderKindSig declTitle KindInfo{..} =
@@ -108,7 +109,7 @@ renderChildDeclaration ChildDeclaration{..} =
 
 renderConstraint :: Constraint' -> RenderedCode
 renderConstraint (P.Constraint ann pn kinds tys _) =
-  renderType $ foldl (P.TypeApp ann) (foldl (P.KindApp ann) (P.TypeConstructor ann (fmap P.coerceProperName pn)) kinds) tys
+  renderType $ foldl (P.TypeApp ann) (foldl (P.KindApp ann) (P.TypeConstructor ann (mapQualified P.coerceProperName pn)) kinds) tys
 
 renderConstraints :: [Constraint'] -> Maybe RenderedCode
 renderConstraints constraints

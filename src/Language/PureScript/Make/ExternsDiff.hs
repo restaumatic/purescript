@@ -18,7 +18,7 @@ import Language.PureScript.Constants.Prim (primModules)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment qualified as P
 import Language.PureScript.Externs qualified as P
-import Language.PureScript.Names (ModuleName)
+import Language.PureScript.Names (ModuleName, mapQualified)
 import Language.PureScript.Names qualified as P
 import Language.PureScript.Types qualified as P
 
@@ -260,12 +260,12 @@ checkUsage searches decls = anyUsages
 
     check q = Any $ S.member (P.getQual q, P.disqualify q) searches'
 
-    checkType = check . map TypeRef
-    checkTypeOp = check . map TypeOpRef
-    checkValue = check . map ValueRef
-    checkValueOp = check . map ValueOpRef
-    checkCtor = check . map (ConstructorRef emptyName)
-    checkClass = check . map TypeClassRef
+    checkType = check . mapQualified TypeRef
+    checkTypeOp = check . mapQualified TypeOpRef
+    checkValue = check . mapQualified ValueRef
+    checkValueOp = check . mapQualified ValueOpRef
+    checkCtor = check . mapQualified (ConstructorRef emptyName)
+    checkClass = check . mapQualified TypeClassRef
 
     -- A nested traversal: pick up types in the module then traverse the structure of the types
     (checkUsageInTypes, _, _, _, _) =

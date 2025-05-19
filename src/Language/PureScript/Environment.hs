@@ -23,7 +23,7 @@ import Data.List.NonEmpty qualified as NEL
 
 import Language.PureScript.AST.SourcePos (nullSourceAnn)
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Names (Ident, ProperName(..), ProperNameType(..), Qualified, QualifiedBy, coerceProperName, runProperName, properNameFromString)
+import Language.PureScript.Names (Ident, ProperName(..), ProperNameType(..), Qualified, QualifiedBy, coerceProperName, runProperName, properNameFromString, mapQualified, mapQualifiedF)
 import Language.PureScript.Roles (Role(..))
 import Language.PureScript.TypeClassDictionaries (NamedDict)
 import Language.PureScript.Types (SourceConstraint, SourceType, Type(..), TypeVarVisibility(..), eqType, srcTypeConstructor, freeTypeVariables)
@@ -370,9 +370,9 @@ infixr 4 -:>
 primClass :: Qualified (ProperName 'ClassName) -> (SourceType -> SourceType) -> [(Qualified (ProperName 'TypeName), (SourceType, TypeKind))]
 primClass name mkKind =
   [ let k = mkKind kindConstraint
-    in (coerceProperName <$> name, (k, ExternData (nominalRolesForKind k)))
+    in (mapQualified coerceProperName name, (k, ExternData (nominalRolesForKind k)))
   , let k = mkKind kindType
-    in (dictTypeName . coerceProperName <$> name, (k, TypeSynonym))
+    in (mapQualified (dictTypeName . coerceProperName) name, (k, TypeSynonym))
   ]
 
 -- | The primitive types in the external environment with their
@@ -393,7 +393,7 @@ primTypes =
     , (C.Number,                       (kindType, ExternData []))
     , (C.Int,                          (kindType, ExternData []))
     , (C.Boolean,                      (kindType, ExternData []))
-    , (C.Partial <&> coerceProperName, (kindConstraint, ExternData []))
+    , (C.Partial `mapQualifiedF` coerceProperName, (kindConstraint, ExternData []))
     ]
 
 -- | This 'Map' contains all of the prim types from all Prim modules.
@@ -472,8 +472,8 @@ primTypeErrorTypes :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, Type
 primTypeErrorTypes =
   M.fromList $
     [ (C.Doc, (kindType, ExternData []))
-    , (C.Fail <&> coerceProperName, (kindDoc -:> kindConstraint, ExternData [Nominal]))
-    , (C.Warn <&> coerceProperName, (kindDoc -:> kindConstraint, ExternData [Nominal]))
+    , (C.Fail `mapQualifiedF` coerceProperName, (kindDoc -:> kindConstraint, ExternData [Nominal]))
+    , (C.Warn `mapQualifiedF` coerceProperName, (kindDoc -:> kindConstraint, ExternData [Nominal]))
     , (C.Text, (kindSymbol -:> kindDoc, ExternData [Phantom]))
     , (C.Quote, (tyForall "k" kindType $ tyVar "k" -:> kindDoc, ExternData [Phantom]))
     , (C.QuoteLabel, (kindSymbol -:> kindDoc, ExternData [Phantom]))

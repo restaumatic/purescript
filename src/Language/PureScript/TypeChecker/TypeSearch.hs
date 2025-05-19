@@ -131,5 +131,5 @@ typeSearch unsolved env st type' =
   in
     ( (first (P.mkQualified_ P.ByNullSourcePos . ("_." <>) . P.prettyPrintLabel) <$> matchingLabels)
       <> mapMaybe runPlainIdent (Map.toList matchingNames)
-      <> (first (map P.runProperName) <$> Map.toList matchingConstructors)
+      <> (first (mapQualified P.runProperName) <$> Map.toList matchingConstructors)
     , if null allLabels then Nothing else Just allLabels)

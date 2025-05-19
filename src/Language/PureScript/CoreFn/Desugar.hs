@@ -23,7 +23,7 @@ import Language.PureScript.CoreFn.Module (Module(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), NameKind(..), isDictTypeName, lookupConstructor, lookupValue)
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), getQual, runProperName, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), getQual, runProperName, mkQualified_, mapQualified)
 import Language.PureScript.PSString (PSString)
 import Language.PureScript.Types (pattern REmptyKinded, SourceType, Type(..))
 import Language.PureScript.AST qualified as A
@@ -133,7 +133,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
       , CaseAlternative [NullBinder (ssAnn ss)]
                         (Right $ exprToCoreFn ss [] Nothing v3) ]
   exprToCoreFn _ com _ (A.Constructor ss name) =
-    Var (ss, com, Just $ getConstructorMeta name) $ fmap properToIdent name
+    Var (ss, com, Just $ getConstructorMeta name) $ mapQualified properToIdent name
   exprToCoreFn ss com _ (A.Case vs alts) =
     Case (ss, com, Nothing) (fmap (exprToCoreFn ss [] Nothing) vs) (fmap (altToCoreFn ss) alts)
   exprToCoreFn ss com _ (A.TypedValue _ v ty) =

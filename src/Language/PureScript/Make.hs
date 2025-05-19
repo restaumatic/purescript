@@ -40,7 +40,7 @@ import Language.PureScript.Errors (MultipleErrors(..), SimpleErrorMessage(..), a
 import Language.PureScript.Externs (ExternsFile, applyExternsFileToEnvironment, moduleToExternsFile)
 import Language.PureScript.Linter (Name(..), lint, lintImports)
 import Language.PureScript.ModuleDependencies (DependencyDepth(..), moduleSignature, sortModules)
-import Language.PureScript.Names (ModuleName(..), isBuiltinModuleName, runModuleName)
+import Language.PureScript.Names (ModuleName(..), isBuiltinModuleName, runModuleName, mapQualified)
 import Language.PureScript.Renamer (renameInModule)
 import Language.PureScript.Sugar (Env, collapseBindingGroups, createBindingGroups, desugar, desugarCaseGuards, externsEnv, primEnv)
 import Language.PureScript.TypeChecker (CheckState(..), emptyCheckState, typeCheckModule)
@@ -117,7 +117,7 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
     let modulesExports = (\(_, _, exports) -> exports) <$> exEnv'
     (checked, CheckState{..}) <- runStateT (liftTypeCheckM $ typeCheckModule modulesExports desugared) $ emptyCheckState env
     let usedImports' = foldl' (flip $ \(fromModuleName, newtypeCtorName) ->
-          M.alter (Just . (fmap DctorName newtypeCtorName :) . fold) fromModuleName) usedImports checkConstructorImportsForCoercible
+          M.alter (Just . (mapQualified DctorName newtypeCtorName :) . fold) fromModuleName) usedImports checkConstructorImportsForCoercible
     -- Imports cannot be linted before type checking because we need to
     -- known which newtype constructors are used to solve Coercible
     -- constraints in order to not report them as unused.

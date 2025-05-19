@@ -40,7 +40,7 @@ import Language.PureScript.AST.Declarations (UnknownsHint(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (Environment(..), FunctionalDependency(..), TypeClassData(..), dictTypeName, kindRow, tyBoolean, tyInt, tyString)
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, addHints, errorMessage, rethrow)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual, runProperName, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual, runProperName, mkQualified_, mapQualified)
 import Language.PureScript.TypeChecker.Entailment.Coercible (GivenSolverState(..), WantedSolverState(..), initialGivenSolverState, initialWantedSolverState, insoluble, solveGivens, solveWanteds)
 import Language.PureScript.TypeChecker.Entailment.IntCompare (mkFacts, mkRelation, solveRelation)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, unifyKinds')
@@ -378,7 +378,7 @@ entails SolverOptions{..} constraint context hints =
               let nii = namedInstanceIdentifier tcdValue
               in case tcdDescription of
                 Just ty -> flip mkQualified_ (Left ty) <$> fmap (byMaybeModuleName . getQual) nii
-                Nothing -> fmap Right <$> nii
+                Nothing -> mapQualified Right <$> nii
 
             canBeGeneralized :: Type a -> Bool
             canBeGeneralized TUnknown{} = True
@@ -421,10 +421,10 @@ entails SolverOptions{..} constraint context hints =
               return (useEmptyDict args)
             mkDictionary (IsSymbolInstance sym) _ =
               let fields = [ ("reflectSymbol", Abs (VarBinder nullSourceSpan UnusedIdent) (Literal nullSourceSpan (StringLiteral sym))) ] in
-              return $ App (Constructor nullSourceSpan (coerceProperName . dictTypeName <$> C.IsSymbol)) (Literal nullSourceSpan (ObjectLiteral fields))
+              return $ App (Constructor nullSourceSpan (coerceProperName . dictTypeName `mapQualified` C.IsSymbol)) (Literal nullSourceSpan (ObjectLiteral fields))
             mkDictionary (ReflectableInstance ref) _ =
               let fields = [ ("reflectType", Abs (VarBinder nullSourceSpan UnusedIdent) (asExpression ref)) ] in
-              pure $ App (Constructor nullSourceSpan (coerceProperName . dictTypeName <$> C.Reflectable)) (Literal nullSourceSpan (ObjectLiteral fields))
+              pure $ App (Constructor nullSourceSpan (coerceProperName . dictTypeName `mapQualified` C.Reflectable)) (Literal nullSourceSpan (ObjectLiteral fields))
 
             unknownsInAllCoveringSets :: (Int -> Text) -> [(Ident, SourceType, Maybe (S.Set (NEL.NonEmpty Int)))] -> [SourceType] -> S.Set (S.Set Int) -> UnknownsHint
             unknownsInAllCoveringSets indexToArgText tyClassMembers tyArgs coveringSets = do

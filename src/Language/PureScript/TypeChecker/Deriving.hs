@@ -23,7 +23,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), FunctionalDependency(..), TypeClassData(..), TypeKind(..), kindType, (-:>))
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, errorMessage, internalCompilerError)
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify, properNameFromString, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify, properNameFromString, mkQualified_, mapQualified)
 import Language.PureScript.PSString (PSString, mkString)
 import Language.PureScript.Sugar.TypeClasses (superClassDictionaryNames)
 import Language.PureScript.TypeChecker.Entailment (InstanceContext, findDicts)
@@ -54,10 +54,10 @@ deriveInstance instType className strategy = do
   mn <- unsafeCheckCurrentModule
   env <- getEnv
   instUtc@UnwrappedTypeConstructor{ utcArgs = tys } <- maybe (internalCompilerError "invalid instance type") pure $ unwrapTypeConstructor instType
-  let ctorName = coerceProperName <$> utcQTyCon instUtc
+  let ctorName = coerceProperName `mapQualified` utcQTyCon instUtc
 
   TypeClassData{..} <-
-    note (errorMessage . UnknownName $ fmap TyClassName className) $
+    note (errorMessage . UnknownName $ mapQualified TyClassName className) $
       className `M.lookup` typeClasses env
 
   case strategy of

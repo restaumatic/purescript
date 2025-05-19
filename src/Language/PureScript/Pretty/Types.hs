@@ -28,7 +28,7 @@ import Data.Text qualified as T
 
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (tyFunction, tyRecord)
-import Language.PureScript.Names (OpName(..), OpNameType(..), ProperName(..), runProperName, ProperNameType(..), Qualified, coerceProperName, disqualify, showQualified)
+import Language.PureScript.Names (OpName(..), OpNameType(..), ProperName(..), runProperName, ProperNameType(..), Qualified, coerceProperName, disqualify, showQualified, mapQualified)
 import Language.PureScript.Pretty.Common (before, objectKeyRequiresQuoting)
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), Type(..), TypeVarVisibility(..), WildcardData(..), eqType, rowToSortedList, typeVarVisibilityPrefix)
 import Language.PureScript.PSString (PSString, prettyPrintString, decodeString)
@@ -112,7 +112,7 @@ constraintsAsBox tro con ty =
     doubleRightArrow = if troUnicode tro then "⇒" else "=>"
 
 constraintAsBox :: PrettyPrintConstraint -> Box
-constraintAsBox (pn, ks, tys) = typeAsBox' (foldl PPTypeApp (foldl (\a b -> PPTypeApp a (PPKindArg b)) (PPTypeConstructor (fmap coerceProperName pn)) ks) tys)
+constraintAsBox (pn, ks, tys) = typeAsBox' (foldl PPTypeApp (foldl (\a b -> PPTypeApp a (PPKindArg b)) (PPTypeConstructor (mapQualified coerceProperName pn)) ks) tys)
 
 -- |
 -- Generate a pretty-printed string representing a Row

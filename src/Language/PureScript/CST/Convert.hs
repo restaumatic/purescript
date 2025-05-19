@@ -38,6 +38,7 @@ import Language.PureScript.CST.Positions
 import Language.PureScript.CST.Print (printToken)
 import Language.PureScript.CST.Types
 import Data.Hashable (Hashable)
+import Language.PureScript.Names (mapQualified)
 
 comment :: Comment a -> Maybe C.Comment
 comment = \case
@@ -90,7 +91,7 @@ moduleName = \case
   go [] = Nothing
   go ns = Just $ N.moduleNameFromString $ Text.intercalate "." ns
 
-qualified :: (Show a, Hashable a) => QualifiedName a -> N.Qualified a
+qualified :: ( Hashable a) =>QualifiedName a -> N.Qualified a
 qualified q = N.mkQualified_ qb (qualName q)
   where
   qb = maybe N.ByNullSourcePos N.ByModuleName $ qualModule q
@@ -530,7 +531,7 @@ convertDeclaration fileName decl = case decl of
       fixity = AST.Fixity assoc prec
     pure $ AST.FixityDeclaration ann $ case fxop of
       FixityValue name _ op -> do
-        Left $ AST.ValueFixity fixity (first ident <$> qualified name) (nameValue op)
+        Left $ AST.ValueFixity fixity (first ident `mapQualified` qualified name) (nameValue op)
       FixityType _ name _ op ->
         Right $ AST.TypeFixity fixity (qualified name) (nameValue op)
   DeclForeign _ _ _ frn ->
