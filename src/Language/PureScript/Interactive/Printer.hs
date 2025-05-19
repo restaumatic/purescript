@@ -11,6 +11,7 @@ import Language.PureScript qualified as P
 import Text.PrettyPrint.Boxes qualified as Box
 import Data.Hashable (Hashable)
 import Language.PureScript.Names (mapQualified)
+import Data.HashMap.Strict qualified as HM
 
 -- TODO (Christoph): Text version of boxes
 textT :: Text -> Box.Box
@@ -28,8 +29,9 @@ printModuleSignatures moduleName P.Environment{..} =
         moduleTypeClasses = byModuleName typeClasses
         moduleTypes = byModuleName types
 
-        byModuleName :: Show a => Hashable a => M.Map (P.Qualified a) b -> [P.Qualified a]
-        byModuleName = filter ((== Just moduleName) . P.getQual) . M.keys
+
+        byModuleName :: Show a => Hashable a => HM.HashMap (P.Qualified a) b -> [P.Qualified a]
+        byModuleName = filter ((== Just moduleName) . P.getQual) . HM.keys
 
   in
     -- print each component
@@ -41,20 +43,20 @@ printModuleSignatures moduleName P.Environment{..} =
 
   where printModule's showF = Box.vsep 1 Box.left . showF
 
-        findNameType :: M.Map (P.Qualified P.Ident) (P.SourceType, P.NameKind, P.NameVisibility)
+        findNameType :: HM.HashMap (P.Qualified P.Ident) (P.SourceType, P.NameKind, P.NameVisibility)
                      -> P.Qualified P.Ident
                      -> (P.Ident, Maybe (P.SourceType, P.NameKind, P.NameVisibility))
-        findNameType envNames m = (P.disqualify m, M.lookup m envNames)
+        findNameType envNames m = (P.disqualify m, HM.lookup m envNames)
 
         showNameType :: (P.Ident, Maybe (P.SourceType, P.NameKind, P.NameVisibility)) -> Box.Box
         showNameType (mIdent, Just (mType, _, _)) = textT (P.showIdent mIdent <> " :: ") Box.<> P.typeAsBox maxBound mType
         showNameType _ = P.internalError "The impossible happened in printModuleSignatures."
 
         findTypeClass
-          :: M.Map (P.Qualified (P.ProperName 'P.ClassName)) P.TypeClassData
+          :: HM.HashMap (P.Qualified (P.ProperName 'P.ClassName)) P.TypeClassData
           -> P.Qualified (P.ProperName 'P.ClassName)
           -> (P.Qualified (P.ProperName 'P.ClassName), Maybe P.TypeClassData)
-        findTypeClass envTypeClasses name = (name, M.lookup name envTypeClasses)
+        findTypeClass envTypeClasses name = (name, HM.lookup name envTypeClasses)
 
         showTypeClass
           :: (P.Qualified (P.ProperName 'P.ClassName), Maybe P.TypeClassData)
@@ -83,21 +85,21 @@ printModuleSignatures moduleName P.Environment{..} =
 
 
         findType
-          :: M.Map (P.Qualified (P.ProperName 'P.TypeName)) (P.SourceType, P.TypeKind)
+          :: HM.HashMap (P.Qualified (P.ProperName 'P.TypeName)) (P.SourceType, P.TypeKind)
           -> P.Qualified (P.ProperName 'P.TypeName)
           -> (P.Qualified (P.ProperName 'P.TypeName), Maybe (P.SourceType, P.TypeKind))
-        findType envTypes name = (name, M.lookup name envTypes)
+        findType envTypes name = (name, HM.lookup name envTypes)
 
         showType
-          :: M.Map (P.Qualified (P.ProperName 'P.ClassName)) P.TypeClassData
-          -> M.Map (P.Qualified (P.ProperName 'P.ConstructorName)) (P.DataDeclType, P.ProperName 'P.TypeName, P.SourceType, [P.Ident])
-          -> M.Map (P.Qualified (P.ProperName 'P.TypeName)) ([(Text, Maybe P.SourceType)], P.SourceType)
+          :: HM.HashMap (P.Qualified (P.ProperName 'P.ClassName)) P.TypeClassData
+          -> HM.HashMap (P.Qualified (P.ProperName 'P.ConstructorName)) (P.DataDeclType, P.ProperName 'P.TypeName, P.SourceType, [P.Ident])
+          -> HM.HashMap (P.Qualified (P.ProperName 'P.TypeName)) ([(Text, Maybe P.SourceType)], P.SourceType)
           -> (P.Qualified (P.ProperName 'P.TypeName), Maybe (P.SourceType, P.TypeKind))
           -> Maybe Box.Box
         showType typeClassesEnv dataConstructorsEnv typeSynonymsEnv (n@(P.Qualified modul name), typ) =
-          case (typ, M.lookup n typeSynonymsEnv) of
+          case (typ, HM.lookup n typeSynonymsEnv) of
             (Just (_, P.TypeSynonym), Just (typevars, dtType)) ->
-                if M.member (mapQualified P.coerceProperName n) typeClassesEnv
+                if HM.member (mapQualified P.coerceProperName n) typeClassesEnv
                 then
                   Nothing
                 else
@@ -109,7 +111,7 @@ printModuleSignatures moduleName P.Environment{..} =
               let prefix =
                     case pt of
                       [(dtProperName,_)] ->
-                        case M.lookup (P.mkQualified_ modul dtProperName) dataConstructorsEnv of
+                        case HM.lookup (P.mkQualified_ modul dtProperName) dataConstructorsEnv of
                           Just (dataDeclType, _, _, _) -> P.showDataDeclType dataDeclType
                           _ -> "data"
                       _ -> "data"

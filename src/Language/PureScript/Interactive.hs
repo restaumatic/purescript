@@ -45,6 +45,7 @@ import System.Directory (getCurrentDirectory)
 import System.FilePath ((</>))
 import System.FilePath.Glob (glob)
 import Language.PureScript.TypeChecker.Monad (liftTypeCheckM)
+import Data.HashMap.Strict qualified as HM
 
 -- | Pretty-print errors
 printErrors :: MonadIO m => P.MultipleErrors -> m ()
@@ -276,7 +277,7 @@ handleTypeOf print' val = do
   case e of
     Left errs -> printErrors errs
     Right (_, env') ->
-      case M.lookup (P.mkQualified (P.Ident "it") (P.ModuleName "$PSCI")) (P.names env') of
+      case HM.lookup (P.mkQualified (P.Ident "it") (P.ModuleName "$PSCI")) (P.names env') of
         Just (ty, _, _) -> print' . P.prettyPrintType maxBound $ ty
         Nothing -> print' "Could not find type"
 
@@ -294,7 +295,7 @@ handleKindOf print' typ = do
   case e of
     Left errs -> printErrors errs
     Right (_, env') ->
-      case M.lookup (P.mkQualified_ (P.ByModuleName mName) $ P.ProperName "IT") (P.typeSynonyms env') of
+      case HM.lookup (P.mkQualified_ (P.ByModuleName mName) $ P.ProperName "IT") (P.typeSynonyms env') of
         Just (_, typ') -> do
           let chk = (P.emptyCheckState env') { P.checkCurrentModule = Just mName }
               k   = check (snd <$> liftTypeCheckM (P.kindOf typ')) chk

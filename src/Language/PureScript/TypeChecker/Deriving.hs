@@ -58,7 +58,7 @@ deriveInstance instType className strategy = do
 
   TypeClassData{..} <-
     note (errorMessage . UnknownName $ mapQualified TyClassName className) $
-      className `M.lookup` typeClasses env
+      className `HM.lookup` typeClasses env
 
   case strategy of
     KnownClassStrategy -> let
@@ -143,10 +143,10 @@ deriveNewtypeInstance className tys (UnwrappedTypeConstructor mn tyConNm dkargs 
     verifySuperclasses :: TypeCheckM ()
     verifySuperclasses = do
       env <- getEnv
-      for_ (M.lookup className (typeClasses env)) $ \TypeClassData{ typeClassArguments = args, typeClassSuperclasses = superclasses } ->
+      for_ (HM.lookup className (typeClasses env)) $ \TypeClassData{ typeClassArguments = args, typeClassSuperclasses = superclasses } ->
         for_ superclasses $ \Constraint{..} -> do
           let constraintClass' = qualify (internalError "verifySuperclasses: unknown class module") constraintClass
-          for_ (M.lookup constraintClass (typeClasses env)) $ \TypeClassData{ typeClassDependencies = deps } ->
+          for_ (HM.lookup constraintClass (typeClasses env)) $ \TypeClassData{ typeClassDependencies = deps } ->
             -- We need to check whether the newtype is mentioned, because of classes like MonadWriter
             -- with its Monoid superclass constraint.
             when (not (null args) && any ((fst (last args) `elem`) . usedTypeVariables) constraintArgs) $ do
@@ -340,11 +340,11 @@ lookupTypeDecl
 lookupTypeDecl mn typeName = do
   env <- getEnv
   note (errorMessage $ CannotFindDerivingType typeName) $ do
-    (kind, DataType _ args dctors) <- mkQualified_ (ByModuleName mn) typeName `M.lookup` types env
+    (kind, DataType _ args dctors) <- mkQualified_ (ByModuleName mn) typeName `HM.lookup` types env
     (kargs, _) <- completeBinderList kind
     let dtype = do
           (ctorName, _) <- headMay dctors
-          (a, _, _, _) <- mkQualified_ (ByModuleName mn) ctorName `M.lookup` dataConstructors env
+          (a, _, _, _) <- mkQualified_ (ByModuleName mn) ctorName `HM.lookup` dataConstructors env
           pure a
     pure (dtype, fst . snd <$> kargs, map (\(v, k, _) -> (v, k)) args, dctors)
 

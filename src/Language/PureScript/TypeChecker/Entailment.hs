@@ -256,7 +256,7 @@ entails SolverOptions{..} constraint context hints =
               , typeClassIsEmpty
               , typeClassCoveringSets
               , typeClassMembers 
-              } <- case M.lookup className' classesInScope of
+              } <- case HM.lookup className' classesInScope of
                 Nothing -> throwError . errorMessage $ UnknownClass className'
                 Just tcd -> pure tcd
 
@@ -871,7 +871,7 @@ newDictionaries
   -> m [NamedDict]
 newDictionaries path name (Constraint _ className instanceKinds instanceTy _) = do
     tcs <- gets (typeClasses . checkEnv)
-    let TypeClassData{..} = fromMaybe (internalError "newDictionaries: type class lookup failed") $ M.lookup className tcs
+    let TypeClassData{..} = fromMaybe (internalError "newDictionaries: type class lookup failed") $ HM.lookup className tcs
     supDicts <- join <$> zipWithM (\(Constraint ann supName supKinds supArgs _) index ->
                                       let sub = zip (map fst typeClassArguments) instanceTy in
                                       newDictionaries ((supName, index) : path)

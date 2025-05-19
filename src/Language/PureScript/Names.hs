@@ -323,7 +323,6 @@ mkQualified_ :: (Hashable a) => QualifiedBy -> a -> Qualified a
 mkQualified_ qb name =
   QualifiedCons (hashCons (Qualified' qb name))
 
-
 -- | Remove the module name from a qualified name
 disqualify :: (Show a, Hashable a) => Qualified a -> a
 disqualify (Qualified _ a) = a

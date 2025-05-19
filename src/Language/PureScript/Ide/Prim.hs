@@ -9,6 +9,7 @@ import Language.PureScript.Constants.Prim qualified as C
 import Language.PureScript.Environment qualified as PEnv
 import Language.PureScript.Ide.Types (IdeDeclaration(..), IdeDeclarationAnn(..), IdeType(..), IdeTypeClass(..), ModuleMap, emptyAnn)
 import Language.PureScript.Names (mapQualified)
+import Data.HashMap.Strict qualified as HM
 
 idePrimDeclarations :: ModuleMap [IdeDeclarationAnn]
 idePrimDeclarations = Map.fromList
@@ -38,20 +39,20 @@ idePrimDeclarations = Map.fromList
     )
   ]
   where
-    annType tys = flip mapMaybe (Map.toList tys) $ \(tn, (kind, _)) -> do
+    annType tys = flip mapMaybe (HM.toList tys) $ \(tn, (kind, _)) -> do
       let name = P.disqualify tn
       -- We need to remove the ClassName$Dict synonyms, because we
       -- don't want them to show up in completions
       guard (isNothing (T.find (== '$') (P.runProperName name)))
       Just (IdeDeclarationAnn emptyAnn (IdeDeclType (IdeType name kind [])))
-    annClass cls = foreach (Map.toList cls) $ \(cn, _) ->
+    annClass cls = foreach (HM.toList cls) $ \(cn, _) ->
       -- Dummy kind and instances here, but we primarily care about the name completion
       IdeDeclarationAnn emptyAnn (IdeDeclTypeClass (IdeTypeClass (P.disqualify cn) P.kindType []) )
     -- The Environment for typechecking holds both a type class as well as a
     -- type declaration for every class, but we filter the types out when we
     -- load the Externs, so we do the same here
     removeClasses types classes =
-      Map.difference types (Map.mapKeys (mapQualified P.coerceProperName) classes)
+      HM.difference types (HM.mapKeys (mapQualified P.coerceProperName) classes)
 
     primTypes = annType (removeClasses PEnv.primTypes PEnv.primClasses)
     primBooleanTypes = annType PEnv.primBooleanTypes

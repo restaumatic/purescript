@@ -1,0 +1,8 @@
+# HashCons
+
+stat A: min 15ms max 16ms mean 16ms median 16ms stddev 0ms n=14
+stat B: min 13ms max 14ms mean 14ms median 14ms stddev 0ms n=14
+mean diff -13.4%
+ttest detected diff? true p-value 0.000000
+stat ratios: min -14.90% max -10.91% mean -13.35% median -13.25% stddev 0.94% n=14
+ttest detected ratios diff? true p-value 0.000000

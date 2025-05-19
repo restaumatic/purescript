@@ -39,6 +39,7 @@ import Language.PureScript.Environment
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage')
 import Language.PureScript.Names (Ident, ModuleName, Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), coerceProperName, disqualify, getQual, mkQualified_)
 import Data.Hashable (Hashable)
+import Data.HashMap.Strict qualified as HM
 
 -- |
 -- The details for an import: the name of the thing that is being imported
@@ -221,13 +222,13 @@ primTypeErrorExports = mkPrimExports primTypeErrorTypes primTypeErrorClasses
 -- Create a set of exports for a Prim module.
 --
 mkPrimExports
-  :: M.Map (Qualified (ProperName 'TypeName)) a
-  -> M.Map (Qualified (ProperName 'ClassName)) b
+  :: HM.HashMap (Qualified (ProperName 'TypeName)) a
+  -> HM.HashMap (Qualified (ProperName 'ClassName)) b
   -> Exports
 mkPrimExports ts cs =
   nullExports
-    { exportedTypes = M.fromList $ mkTypeEntry `map` M.keys ts
-    , exportedTypeClasses = M.fromList $ mkClassEntry `map` M.keys cs
+    { exportedTypes = M.fromList $ mkTypeEntry `map` HM.keys ts
+    , exportedTypeClasses = M.fromList $ mkClassEntry `map` HM.keys cs
     }
   where
   mkTypeEntry (Qualified (ByModuleName mn) name) = (name, ([], primExportSource mn))

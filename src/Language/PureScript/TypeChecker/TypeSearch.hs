@@ -23,6 +23,7 @@ import Language.PureScript.TypeChecker.Synonyms    as P
 import Language.PureScript.Types                   as P
 import Control.Monad.Supply qualified as P
 import Language.PureScript.TypeChecker.Monad qualified as P
+import Data.HashMap.Strict qualified as HM.HashMap
 
 checkInEnvironment
   :: Environment
@@ -119,17 +120,17 @@ typeSearch
   -> ([(P.Qualified Text, P.SourceType)], Maybe [(Label, P.SourceType)])
 typeSearch unsolved env st type' =
   let
-    runTypeSearch :: Map k P.SourceType -> Map k P.SourceType
-    runTypeSearch = Map.mapMaybe (\ty -> checkSubsume unsolved env st type' ty $> ty)
+    runTypeSearch :: HM.HashMap k P.SourceType -> HM.HashMap k P.SourceType
+    runTypeSearch = HM.mapMaybe (\ty -> checkSubsume unsolved env st type' ty $> ty)
 
-    matchingNames = runTypeSearch (Map.map (\(ty, _, _) -> ty) (P.names env))
-    matchingConstructors = runTypeSearch (Map.map (\(_, _, ty, _) -> ty) (P.dataConstructors env))
+    matchingNames = runTypeSearch (HM.map (\(ty, _, _) -> ty) (P.names env))
+    matchingConstructors = runTypeSearch (HM.map (\(_, _, ty, _) -> ty) (P.dataConstructors env))
     (allLabels, matchingLabels) = accessorSearch unsolved env st type'
 
     runPlainIdent (Qualified m (Ident k), v) = Just (Qualified m k, v)
     runPlainIdent _ = Nothing
   in
     ( (first (P.mkQualified_ P.ByNullSourcePos . ("_." <>) . P.prettyPrintLabel) <$> matchingLabels)
-      <> mapMaybe runPlainIdent (Map.toList matchingNames)
-      <> (first (mapQualified P.runProperName) <$> Map.toList matchingConstructors)
+      <> mapMaybe runPlainIdent (HM.toList matchingNames)
+      <> (first (mapQualified P.runProperName) <$> HM.toList matchingConstructors)
     , if null allLabels then Nothing else Just allLabels)

@@ -29,6 +29,7 @@ import Language.PureScript.Sugar qualified as P
 import Language.PureScript.Types qualified as P
 import Language.PureScript.Constants.Prim qualified as Prim
 import Language.PureScript.Sugar (RebracketCaller(CalledByDocs))
+import Data.HashMap.Strict qualified as HM
 
 -- |
 -- Convert a single module to a Docs.Module, making use of a pre-existing
@@ -84,7 +85,7 @@ insertValueTypesAndAdjustKinds env m =
     inferredRoles :: [P.Role]
     inferredRoles = do
       let key = P.mkQualified_ (P.ByModuleName (modName m)) (P.properNameFromString (declTitle d))
-      case Map.lookup key (P.types env) of
+      case HM.lookup key (P.types env) of
         Just (_, tyKind) -> case tyKind of
           P.DataType _ tySourceTyRole _ ->
             map (\(_,_,r) -> r) tySourceTyRole
@@ -163,7 +164,7 @@ insertValueTypesAndAdjustKinds env m =
 
   lookupName name =
     let key = P.mkQualified_ (P.ByModuleName (modName m)) name
-    in case Map.lookup key (P.names env) of
+    in case HM.lookup key (P.names env) of
       Just (ty, _, _) ->
         ty
       Nothing ->
@@ -214,7 +215,7 @@ insertValueTypesAndAdjustKinds env m =
   insertInferredKind d name keyword =
     let
       key = P.mkQualified_ (P.ByModuleName (modName m)) (P.properNameFromString name)
-    in case Map.lookup key (P.types env) of
+    in case HM.lookup key (P.types env) of
       Just (inferredKind, _) ->
         if isUninteresting keyword inferredKind'
           then  d

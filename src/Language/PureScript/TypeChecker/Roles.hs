@@ -29,6 +29,7 @@ import Language.PureScript.Errors (DataConstructorDeclaration(..), MultipleError
 import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), Qualified, QualifiedBy(..), mkQualified_)
 import Language.PureScript.Roles (Role(..))
 import Language.PureScript.Types (Constraint(..), SourceType, Type(..), freeTypeVariables, unapplyTypes)
+import Data.HashMap.Strict qualified as HM
 
 -- |
 -- A map of a type's formal parameter names to their roles. This type's
@@ -46,7 +47,7 @@ instance Monoid RoleMap where
   mempty =
     RoleMap M.empty
 
-type RoleEnv = M.Map (Qualified (ProperName 'TypeName)) [Role]
+type RoleEnv = HM.HashMap (Qualified (ProperName 'TypeName)) [Role]
 
 typeKindRoles :: TypeKind -> Maybe [Role]
 typeKindRoles = \case
@@ -59,7 +60,7 @@ typeKindRoles = \case
 
 getRoleEnv :: Environment -> RoleEnv
 getRoleEnv env =
-  M.mapMaybe (typeKindRoles . snd) (types env)
+  HM.mapMaybe (typeKindRoles . snd) (types env)
 
 updateRoleEnv
   :: Qualified (ProperName 'TypeName)
@@ -67,10 +68,10 @@ updateRoleEnv
   -> RoleEnv
   -> (Any, RoleEnv)
 updateRoleEnv qualTyName roles' roleEnv =
-  let roles = fromMaybe (repeat Phantom) $ M.lookup qualTyName roleEnv
+  let roles = fromMaybe (repeat Phantom) $ HM.lookup qualTyName roleEnv
       mostRestrictiveRoles = zipWith min roles roles'
       didRolesChange = any (uncurry (<)) $ zip mostRestrictiveRoles roles
-  in (Any didRolesChange, M.insert qualTyName mostRestrictiveRoles roleEnv)
+  in (Any didRolesChange, HM.insert qualTyName mostRestrictiveRoles roleEnv)
 
 -- |
 -- Lookup the roles for a type in the environment. If the type does not have
@@ -82,7 +83,7 @@ lookupRoles
   -> Qualified (ProperName 'TypeName)
   -> [Role]
 lookupRoles env tyName =
-  fromMaybe [] $ M.lookup tyName (types env) >>= typeKindRoles . snd
+  fromMaybe [] $ HM.lookup tyName (types env) >>= typeKindRoles . snd
 
 -- |
 -- Compares the inferred roles to the explicitly declared roles and ensures
@@ -140,13 +141,13 @@ inferDataBindingGroupRoles
   -> [(Text, Maybe SourceType)]
   -> [Role]
 inferDataBindingGroupRoles env moduleName roleDeclarations group =
-  let declaredRoleEnv = M.fromList $ map (mkQualified_ (ByModuleName moduleName) . rdeclIdent &&& rdeclRoles) roleDeclarations
+  let declaredRoleEnv = HM.fromList $ map (mkQualified_ (ByModuleName moduleName) . rdeclIdent &&& rdeclRoles) roleDeclarations
       inferredRoleEnv = getRoleEnv env
-      initialRoleEnv = declaredRoleEnv `M.union` inferredRoleEnv
+      initialRoleEnv = declaredRoleEnv `HM.union` inferredRoleEnv
       inferredRoleEnv' = inferDataBindingGroupRoles' moduleName group initialRoleEnv
   in \tyName tyArgs ->
         let qualTyName = mkQualified_ (ByModuleName moduleName) tyName
-            inferredRoles = M.lookup qualTyName inferredRoleEnv'
+            inferredRoles = HM.lookup qualTyName inferredRoleEnv'
         in fromMaybe (Phantom <$ tyArgs) inferredRoles
 
 type DataDeclaration =
@@ -235,7 +236,7 @@ inferDataDeclarationRoles moduleName (tyName, tyArgs, ctors) roleEnv =
           -- our parameters is unimportant.
           TypeConstructor _ t1Name ->
             let
-              t1Roles = fromMaybe (repeat Phantom) $ M.lookup t1Name roleEnv
+              t1Roles = fromMaybe (repeat Phantom) $ HM.lookup t1Name roleEnv
               k role ti = case role of
                 Nominal ->
                   freeNominals btvs ti

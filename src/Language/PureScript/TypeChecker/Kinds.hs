@@ -57,6 +57,7 @@ import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, newSkolemScop
 import Language.PureScript.TypeChecker.Synonyms (replaceAllTypeSynonyms)
 import Language.PureScript.Types
 import Language.PureScript.Pretty.Types (prettyPrintType)
+import Data.HashMap.Strict qualified as HM
 
 generalizeUnknowns :: [(Unknown, SourceType)] -> SourceType -> SourceType
 generalizeUnknowns unks ty =
@@ -166,7 +167,7 @@ inferKind = \tyToInfer ->
   go = \case
     ty@(TypeConstructor ann v) -> do
       env <- getEnv
-      case M.lookup v (E.types env) of
+      case HM.lookup v (E.types env) of
         Nothing ->
           throwError . errorMessage' (fst ann) . UnknownName . mapQualified TyName $ v
         Just (kind, E.LocalTypeVariable) -> do
@@ -176,7 +177,7 @@ inferKind = \tyToInfer ->
           pure (ty, kind $> ann)
     ConstrainedType ann' con@(Constraint ann v _ _ _) ty -> do
       env <- getEnv
-      con' <- case M.lookup (coerceProperName `mapQualified` v) (E.types env) of
+      con' <- case HM.lookup (coerceProperName `mapQualified` v) (E.types env) of
         Nothing ->
           throwError . errorMessage' (fst ann) . UnknownName . mapQualified TyClassName $ v
         Just _ ->
@@ -270,7 +271,7 @@ inferAppKind ann (fn, fnKind) arg = case fnKind of
     cannotApplyTypeToType fn arg
   where
   requiresSynonymsToExpand = \case
-    TypeConstructor _ v -> M.notMember v . E.typeSynonyms <$> getEnv
+    TypeConstructor _ v -> not . HM.member v . E.typeSynonyms <$> getEnv
     TypeApp _ l _ -> requiresSynonymsToExpand l
     KindApp _ l _ -> requiresSynonymsToExpand l
     _ -> pure True
@@ -522,7 +523,7 @@ elaborateKind = \case
     pure $ E.tyInt $> ann
   TypeConstructor ann v -> do
     env <- getEnv
-    case M.lookup v (E.types env) of
+    case HM.lookup v (E.types env) of
       Nothing ->
         throwError . errorMessage' (fst ann) . UnknownName . mapQualified TyName $ v
       Just (kind, _) ->
@@ -941,7 +942,7 @@ existingSignatureOrFreshKind
   -> TypeCheckM SourceType
 existingSignatureOrFreshKind moduleName ss name = do
   env <- getEnv
-  case M.lookup (mkQualified_ (ByModuleName moduleName) name) (E.types env) of
+  case HM.lookup (mkQualified_ (ByModuleName moduleName) name) (E.types env) of
     Nothing -> freshKind ss
     Just (kind, _) -> pure kind
 

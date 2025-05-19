@@ -17,6 +17,7 @@ import Language.PureScript.Constants.Prim qualified as P
 import Language.PureScript.Crash qualified as P
 import Language.PureScript.Environment qualified as P
 import Language.PureScript.Names qualified as P
+import Data.HashMap.Strict qualified as HM
 
 primModules :: [Module]
 primModules =
@@ -161,13 +162,13 @@ primTypeErrorDocsModule = Module
 
 unsafeLookup
   :: forall v (a :: P.ProperNameType)
-  . Map.Map (P.Qualified (P.ProperName a)) v
+  . HM.HashMap (P.Qualified (P.ProperName a)) v
   -> String
   -> P.Qualified (P.ProperName a)
   -> v
 unsafeLookup m errorMsg name = go name
   where
-  go = fromJust' . flip Map.lookup m
+  go = fromJust' . flip HM.lookup m
 
   fromJust' (Just x) = x
   fromJust' _ = P.internalError $ errorMsg ++ show (P.runProperName $ P.disqualify name)

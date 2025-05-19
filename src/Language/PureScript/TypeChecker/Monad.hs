@@ -147,24 +147,24 @@ type Unknown = Int
 
 -- | Temporarily bind a collection of names to values
 bindNames
-  :: M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+  :: HM.HashMap (Qualified Ident) (SourceType, NameKind, NameVisibility)
   -> TypeCheckM a
   -> TypeCheckM a
 bindNames newNames action = do
   orig <- get
-  modify $ \st -> st { checkEnv = (checkEnv st) { names = newNames `M.union` (names . checkEnv $ st) } }
+  modify $ \st -> st { checkEnv = (checkEnv st) { names = newNames `HM.union` (names . checkEnv $ st) } }
   a <- action
   modify $ \st -> st { checkEnv = (checkEnv st) { names = names . checkEnv $ orig } }
   return a
 
 -- | Temporarily bind a collection of names to types
 bindTypes
-  :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+  :: HM.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
   -> TypeCheckM a
   -> TypeCheckM a
 bindTypes newNames action = do
   orig <- get
-  modify $ \st -> st { checkEnv = (checkEnv st) { types = newNames `M.union` (types . checkEnv $ st) } }
+  modify $ \st -> st { checkEnv = (checkEnv st) { types = newNames `HM.union` (types . checkEnv $ st) } }
   a <- action
   modify $ \st -> st { checkEnv = (checkEnv st) { types = types . checkEnv $ orig } }
   return a
@@ -178,9 +178,9 @@ withScopedTypeVars
 withScopedTypeVars mn ks ma = do
   orig <- get
   forM_ ks $ \(name, _) ->
-    when (mkQualified_ (ByModuleName mn) (properNameFromString name) `M.member` types (checkEnv orig)) $
+    when (mkQualified_ (ByModuleName mn) (properNameFromString name) `HM.member` types (checkEnv orig)) $
       tell . errorMessage $ ShadowedTypeVar name
-  bindTypes (M.fromList (map (\(name, k) -> (mkQualified_ (ByModuleName mn) (properNameFromString name), (k, ScopedTypeVar))) ks)) ma
+  bindTypes (HM.fromList (map (\(name, k) -> (mkQualified_ (ByModuleName mn) (properNameFromString name), (k, ScopedTypeVar))) ks)) ma
 
 withErrorMessageHint
   :: (MonadState CheckState m, MonadError MultipleErrors m)
@@ -256,7 +256,7 @@ bindLocalVariables
   -> TypeCheckM a
   -> TypeCheckM a
 bindLocalVariables bindings =
-  bindNames (M.fromList $ flip map bindings $ \(ss, name, ty, visibility) -> (mkQualified_ (BySourcePos $ spanStart ss) name, (ty, Private, visibility)))
+  bindNames (HM.fromList $ flip map bindings $ \(ss, name, ty, visibility) -> (mkQualified_ (BySourcePos $ spanStart ss) name, (ty, Private, visibility)))
 
 -- | Temporarily bind a collection of names to local type variables
 bindLocalTypeVariables
@@ -265,11 +265,11 @@ bindLocalTypeVariables
   -> TypeCheckM a
   -> TypeCheckM a
 bindLocalTypeVariables moduleName bindings =
-  bindTypes (M.fromList $ flip map bindings $ \(pn, kind) -> (mkQualified_ (ByModuleName moduleName) pn, (kind, LocalTypeVariable)))
+  bindTypes (HM.fromList $ flip map bindings $ \(pn, kind) -> (mkQualified_ (ByModuleName moduleName) pn, (kind, LocalTypeVariable)))
 
 -- | Update the visibility of all names to Defined
 makeBindingGroupVisible :: TypeCheckM ()
-makeBindingGroupVisible = modifyEnv $ \e -> e { names = M.map (\(ty, nk, _) -> (ty, nk, Defined)) (names e) }
+makeBindingGroupVisible = modifyEnv $ \e -> e { names = HM.map (\(ty, nk, _) -> (ty, nk, Defined)) (names e) }
 
 -- | Update the visibility of all names to Defined in the scope of the provided action
 withBindingGroupVisible :: TypeCheckM a -> TypeCheckM a
@@ -289,7 +289,7 @@ lookupVariable
   -> TypeCheckM SourceType
 lookupVariable qual = do
   env <- getEnv
-  case M.lookup qual (names env) of
+  case HM.lookup qual (names env) of
     Nothing -> throwError . errorMessage $ NameIsUndefined (disqualify qual)
     Just (ty, _, _) -> return ty
 
@@ -299,7 +299,7 @@ getVisibility
   -> TypeCheckM NameVisibility
 getVisibility qual = do
   env <- getEnv
-  case M.lookup qual (names env) of
+  case HM.lookup qual (names env) of
     Nothing -> throwError . errorMessage $ NameIsUndefined (disqualify qual)
     Just (_, _, vis) -> return vis
 
@@ -320,7 +320,7 @@ lookupTypeVariable
   -> TypeCheckM SourceType
 lookupTypeVariable currentModule (Qualified qb name) = do
   env <- getEnv
-  case M.lookup (mkQualified_ qb' name) (types env) of
+  case HM.lookup (mkQualified_ qb' name) (types env) of
     Nothing -> throwError . errorMessage $ UndefinedTypeVariable name
     Just (k, _) -> return k
   where
@@ -336,7 +336,7 @@ getEnv = gets checkEnv
 getLocalContext :: TypeCheckM Context
 getLocalContext = do
   env <- getEnv
-  return [ (ident, ty') | (Qualified (BySourcePos _) ident@Ident{}, (ty', _, Defined)) <- M.toList (names env) ]
+  return [ (ident, ty') | (Qualified (BySourcePos _) ident@Ident{}, (ty', _, Defined)) <- HM.toList (names env) ]
 
 -- | Update the @Environment@
 putEnv :: Environment -> TypeCheckM ()
@@ -405,7 +405,7 @@ debugConstraint (Constraint ann clsName kinds args _) =
   debugType $ foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (mapQualified coerceProperName clsName)) kinds) args
 
 debugTypes :: Environment -> [String]
-debugTypes = go <=< M.toList . types
+debugTypes = go <=< HM.toList . types
   where
   go (qual, (srcTy, which)) = do
     let
@@ -421,7 +421,7 @@ debugTypes = go <=< M.toList . types
     pure $ decl <> " " <> unpack name <> " :: " <> init ppTy
 
 debugNames :: Environment -> [String]
-debugNames = fmap go . M.toList . names
+debugNames = fmap go . HM.toList . names
   where
   go (qual, (srcTy, _, _)) = do
     let
@@ -430,7 +430,7 @@ debugNames = fmap go . M.toList . names
     unpack name <> " :: " <> init ppTy
 
 debugDataConstructors :: Environment -> [String]
-debugDataConstructors = fmap go . M.toList . dataConstructors
+debugDataConstructors = fmap go . HM.toList . dataConstructors
   where
   go (qual, (_, _, ty, _)) = do
     let
@@ -439,7 +439,7 @@ debugDataConstructors = fmap go . M.toList . dataConstructors
     unpack name <> " :: " <> init ppTy
 
 debugTypeSynonyms :: Environment -> [String]
-debugTypeSynonyms = fmap go . M.toList . typeSynonyms
+debugTypeSynonyms = fmap go . HM.toList . typeSynonyms
   where
   go (qual, (binders, subTy)) = do
     let
@@ -467,7 +467,7 @@ debugTypeClassDictionaries = go . typeClassDictionaries
     pure $ "dict " <> unpack moduleName <> unpack className' <> " " <> unpack ident' <> " (" <> show (length dicts) <> ")" <> " " <> kds <> " " <> tys
 
 debugTypeClasses :: Environment -> [String]
-debugTypeClasses = fmap go . M.toList . typeClasses
+debugTypeClasses = fmap go . HM.toList . typeClasses
   where
   go (className, tc) = do
     let

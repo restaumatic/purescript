@@ -29,6 +29,7 @@ import Language.PureScript.Types (pattern REmptyKinded, SourceType, Type(..))
 import Language.PureScript.AST qualified as A
 import Language.PureScript.Constants.Prim qualified as C
 import Data.Hashable (Hashable)
+import Data.HashMap.Strict qualified as HM
 
 -- | Desugars a module from AST to CoreFn representation.
 moduleToCoreFn :: Environment -> A.Module -> Module Ann
@@ -210,7 +211,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     numConstructors
       :: (Qualified (ProperName 'ConstructorName), (DataDeclType, ProperName 'TypeName, SourceType, [Ident]))
       -> Int
-    numConstructors ty = length $ filter (((==) `on` typeConstructor) ty) $ M.toList $ dataConstructors env
+    numConstructors ty = length $ filter (((==) `on` typeConstructor) ty) $ HM.toList $ dataConstructors env
 
     typeConstructor
       :: (Qualified (ProperName 'ConstructorName), (DataDeclType, ProperName 'TypeName, SourceType, [Ident]))

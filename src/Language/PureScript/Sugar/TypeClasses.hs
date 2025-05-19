@@ -35,8 +35,9 @@ import Language.PureScript.PSString (mkString)
 import Language.PureScript.Sugar.CaseDeclarations (desugarCases)
 import Language.PureScript.TypeClassDictionaries (superclassName)
 import Language.PureScript.Types
+import Data.HashMap.Strict qualified as HM
 
-type MemberMap = M.Map (ModuleName, ProperName 'ClassName) TypeClassData
+type MemberMap = HM.HashMap (ModuleName, ProperName 'ClassName) TypeClassData
 
 type Desugar = StateT MemberMap
 
@@ -54,14 +55,14 @@ desugarTypeClasses externs = flip evalStateT initialState . desugarModule
   initialState :: MemberMap
   initialState =
     mconcat
-      [ M.mapKeys (qualify C.M_Prim) primClasses
-      , M.mapKeys (qualify C.M_Prim_Coerce) primCoerceClasses
-      , M.mapKeys (qualify C.M_Prim_Row) primRowClasses
-      , M.mapKeys (qualify C.M_Prim_RowList) primRowListClasses
-      , M.mapKeys (qualify C.M_Prim_Symbol) primSymbolClasses
-      , M.mapKeys (qualify C.M_Prim_Int) primIntClasses
-      , M.mapKeys (qualify C.M_Prim_TypeError) primTypeErrorClasses
-      , M.fromList (externs >>= \ExternsFile{..} -> mapMaybe (fromExternsDecl efModuleName) efDeclarations)
+      [ HM.mapKeys (qualify C.M_Prim) primClasses
+      , HM.mapKeys (qualify C.M_Prim_Coerce) primCoerceClasses
+      , HM.mapKeys (qualify C.M_Prim_Row) primRowClasses
+      , HM.mapKeys (qualify C.M_Prim_RowList) primRowListClasses
+      , HM.mapKeys (qualify C.M_Prim_Symbol) primSymbolClasses
+      , HM.mapKeys (qualify C.M_Prim_Int) primIntClasses
+      , HM.mapKeys (qualify C.M_Prim_TypeError) primTypeErrorClasses
+      , HM.fromList (externs >>= \ExternsFile{..} -> mapMaybe (fromExternsDecl efModuleName) efDeclarations)
       ]
 
   fromExternsDecl
@@ -205,7 +206,7 @@ desugarDecl
 desugarDecl mn exps = go
   where
   go d@(TypeClassDeclaration sa name args implies deps members) = do
-    modify (M.insert (mn, name) (makeTypeClassData args (map memberToNameAndType members) implies deps False))
+    modify (HM.insert (mn, name) (makeTypeClassData args (map memberToNameAndType members) implies deps False))
     return (Nothing, d : typeClassDictionaryDeclaration sa name args implies members : map (typeClassMemberToDictionaryAccessor mn name args) members)
   go (TypeInstanceDeclaration sa na chainId idx name deps className tys body) = do
     name' <- desugarInstName name
@@ -330,7 +331,7 @@ typeInstanceDictionaryDeclaration sa@(ss, _) name mn deps className tys decls =
   -- Lookup the type arguments and member types for the type class
   TypeClassData{..} <-
     maybe (throwError . errorMessage' ss . UnknownName $ mapQualified TyClassName className) return $
-      M.lookup (qualify mn className) m
+      HM.lookup (qualify mn className) m
 
   -- Replace the type arguments with the appropriate types in the member types
   let memberTypes = map (second (replaceAllTypeVars (zip (map fst typeClassArguments) tys)) . tuple3To2) typeClassMembers
