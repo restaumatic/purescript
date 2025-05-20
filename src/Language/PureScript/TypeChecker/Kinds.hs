@@ -41,7 +41,6 @@ import Data.Function (on)
 import Data.Functor (($>))
 import Data.IntSet qualified as IS
 import Data.List (nubBy, sortOn, (\\))
-import Data.Map qualified as M
 import Data.IntMap.Lazy qualified as IM
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Text (Text)
@@ -51,7 +50,7 @@ import Data.Traversable (for)
 import Language.PureScript.Crash (HasCallStack, internalError)
 import Language.PureScript.Environment qualified as E
 import Language.PureScript.Errors
-import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, mkQualified, runProperName, properNameFromString, mkQualified_, mapQualified)
+import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified, QualifiedBy(..), coerceProperName, mkQualified, runProperName, properNameFromString, mkQualified_, mapQualified)
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, bindLocalTypeVariables, debugType, getEnv, lookupTypeVariable, unsafeCheckCurrentModule, withErrorMessageHint, withFreshSubstitution, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, newSkolemScope, skolemize)
 import Language.PureScript.TypeChecker.Synonyms (replaceAllTypeSynonyms)
@@ -629,7 +628,7 @@ type DataDeclarationResult =
   )
 
 kindOfData
-  :: 
+  ::
    ModuleName
   -> DataDeclarationArgs
   -> TypeCheckM DataDeclarationResult
@@ -637,7 +636,7 @@ kindOfData moduleName dataDecl =
   head . (^. _2) <$> kindsOfAll moduleName [] [dataDecl] []
 
 inferDataDeclaration
-  :: 
+  ::
   ModuleName
   -> DataDeclarationArgs
   -> TypeCheckM [(DataConstructorDeclaration, SourceType)]
@@ -657,7 +656,7 @@ inferDataDeclaration moduleName (ann, tyName, tyArgs, ctors) = do
         fmap (fmap (addVisibility visibility . mkForAll ctorBinders)) . inferDataConstructor tyCtor'
 
 inferDataConstructor
-  :: 
+  ::
    SourceType
   -> DataConstructorDeclaration
   -> TypeCheckM (DataConstructorDeclaration, SourceType)
@@ -681,7 +680,7 @@ type TypeDeclarationResult =
   )
 
 kindOfTypeSynonym
-  :: 
+  ::
    ModuleName
   -> TypeDeclarationArgs
   -> TypeCheckM TypeDeclarationResult
@@ -689,7 +688,7 @@ kindOfTypeSynonym moduleName typeDecl =
   head . (^. _1) <$> kindsOfAll moduleName [typeDecl] [] []
 
 inferTypeSynonym
-  :: 
+  ::
    ModuleName
   -> TypeDeclarationArgs
   -> TypeCheckM SourceType
@@ -711,7 +710,7 @@ inferTypeSynonym moduleName (ann, tyName, tyArgs, tyBody) = do
 -- | ill-scoped. We require that users explicitly generalize this kind
 -- | in such a case.
 checkQuantification
-  :: 
+  ::
   SourceType
   -> TypeCheckM ()
 checkQuantification =
@@ -738,7 +737,7 @@ checkQuantification =
       elem karg $ freeTypeVariables k
 
 checkVisibleTypeQuantification
-  :: 
+  ::
   SourceType
   -> TypeCheckM ()
 checkVisibleTypeQuantification =
@@ -755,7 +754,7 @@ checkVisibleTypeQuantification =
 -- | implicitly generalize unknowns, such as on the right-hand-side of
 -- | a type synonym, or in arguments to data constructors.
 checkTypeQuantification
-  :: 
+  ::
   SourceType
   -> TypeCheckM ()
 checkTypeQuantification =
@@ -798,7 +797,7 @@ type ClassDeclarationResult =
   )
 
 kindOfClass
-  :: 
+  ::
   ModuleName
   -> ClassDeclarationArgs
   -> TypeCheckM ClassDeclarationResult
@@ -806,7 +805,7 @@ kindOfClass moduleName clsDecl =
   head . (^. _3) <$> kindsOfAll moduleName [] [] [clsDecl]
 
 inferClassDeclaration
-  :: 
+  ::
   ModuleName
   -> ClassDeclarationArgs
   -> TypeCheckM ([(Text, SourceType)], [SourceConstraint], [Declaration])
@@ -822,7 +821,7 @@ inferClassDeclaration moduleName (ann, clsName, clsArgs, superClasses, decls) = 
         <*> for decls checkClassMemberDeclaration
 
 checkClassMemberDeclaration
-  :: 
+  ::
   Declaration
   -> TypeCheckM Declaration
 checkClassMemberDeclaration = \case
@@ -831,7 +830,7 @@ checkClassMemberDeclaration = \case
   _ -> internalError "Invalid class member declaration"
 
 applyClassMemberDeclaration
-  :: 
+  ::
   Declaration
   -> TypeCheckM Declaration
 applyClassMemberDeclaration = \case
@@ -847,7 +846,7 @@ mapTypeDeclaration f = \case
     other
 
 checkConstraint
-  :: 
+  ::
   SourceConstraint
   -> TypeCheckM SourceConstraint
 checkConstraint (Constraint ann clsName kinds args dat) = do
@@ -856,7 +855,7 @@ checkConstraint (Constraint ann clsName kinds args dat) = do
   pure $ Constraint ann clsName kinds' args' dat
 
 applyConstraint
-  :: 
+  ::
   SourceConstraint
   -> TypeCheckM SourceConstraint
 applyConstraint (Constraint ann clsName kinds args dat) = do
@@ -879,7 +878,7 @@ type InstanceDeclarationResult =
   )
 
 checkInstanceDeclaration
-  :: 
+  ::
   ModuleName
   -> InstanceDeclarationArgs
   -> TypeCheckM InstanceDeclarationResult
@@ -900,7 +899,7 @@ checkInstanceDeclaration moduleName (ann, constraints, clsName, args) = do
     pure (allConstraints, allKinds, allArgs, varKinds)
 
 checkKindDeclaration
-  :: 
+  ::
   ModuleName
   -> SourceType
   -> TypeCheckM SourceType
@@ -929,13 +928,18 @@ checkKindDeclaration _ ty = do
           pure $ ForAll a' vis v'' k' ty'' sc'
         other -> pure other
 
-  checkValidKind = everywhereOnTypesM $ \case
-    ty'@(ConstrainedType ann _ _) ->
-      throwError . errorMessage' (fst ann) $ UnsupportedTypeInKind ty'
-    other -> pure other
+  checkValidKind :: SourceType -> TypeCheckM SourceType
+  checkValidKind = (\case
+      Left err -> throwError err
+      Right v -> pure v
+    ) . everywhereOnTypesM (\case
+      ty'@(ConstrainedType ann _ _) ->
+        throwError . errorMessage' (fst ann) $ UnsupportedTypeInKind ty'
+      other -> pure other
+    )
 
 existingSignatureOrFreshKind
-  :: 
+  ::
   ModuleName
   -> SourceSpan
   -> ProperName 'TypeName
@@ -947,7 +951,7 @@ existingSignatureOrFreshKind moduleName ss name = do
     Just (kind, _) -> pure kind
 
 kindsOfAll
-  :: 
+  ::
    ModuleName
   -> [TypeDeclarationArgs]
   -> [DataDeclarationArgs]

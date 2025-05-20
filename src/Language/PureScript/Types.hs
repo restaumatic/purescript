@@ -121,8 +121,8 @@ instance Serialise a => Serialise (Type a)
 
 instance Hashable (Type a) where
   hash = hashType
-  hashWithSalt = hashWithSaltType
   {-# INLINE hash #-}
+  hashWithSalt s t = hashWithSalt s (hashType t)
   {-# INLINE hashWithSalt #-}
 
 srcTUnknown :: Int -> SourceType
@@ -729,6 +729,7 @@ everywhereOnTypesM f = go where
   go other = f other
 {-# INLINE everywhereOnTypesM #-}
 
+
 everywhereOnTypesTopDownM :: Monad m => (Type a -> m (Type a)) -> Type a -> m (Type a)
 everywhereOnTypesTopDownM f = go <=< f where
   go (TypeApp ann t1 t2) = TypeApp ann <$> (f t1 >>= go) <*> (f t2 >>= go)
@@ -830,28 +831,6 @@ eqMaybeType :: Maybe (Type a) -> Maybe (Type b) -> Bool
 eqMaybeType (Just a) (Just b) = eqType a b
 eqMaybeType Nothing Nothing = True
 eqMaybeType _ _ = False
-
-infixl 0 `hashWithSaltType`
-hashWithSaltType :: Int -> Type a -> Int
-hashWithSaltType s =  \case
-  (TUnknown _ a) -> hashWithSalt s a
-  (TypeVar _ a) -> hashWithSalt s a
-  (TypeLevelString _ a) -> hashWithSalt s a
-  (TypeLevelInt _ a) -> hashWithSalt s a
-  (TypeWildcard _ a) -> hashWithSalt s a
-  (TypeConstructor _ a) -> hashWithSalt s a
-  (TypeOp _ a) -> hashWithSalt s a
-  (TypeApp _ a b) -> s `hashWithSalt` a `hashWithSalt` b
-  (KindApp _ a b) -> s `hashWithSalt` a `hashWithSalt` b
-  (ForAll _ _ a b c d) -> 
-    s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c `hashWithSalt` d
-  (ConstrainedType _ a b) -> s `hashWithSalt` a `hashWithSalt` b
-  (Skolem _ a b c d) -> s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c `hashWithSalt` d
-  (REmpty _) -> hashWithSalt s ("REmpty" :: Text)
-  (RCons _ a b c) -> s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c
-  (KindedType _ a b) -> s `hashWithSalt` a `hashWithSalt` b
-  (BinaryNoParensType _ a b c) -> s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c
-  (ParensInType _ a) -> hashWithSalt s a
 
 hashType :: Type a -> Int
 hashType =  \case
