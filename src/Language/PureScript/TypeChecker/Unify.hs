@@ -36,6 +36,7 @@ import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListI
 import Data.HashSet qualified as HS
 import Data.IntSet qualified as IntSet
 import Data.Hashable (hash)
+import Debug.Trace (traceM)
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: TypeCheckM SourceType
@@ -123,7 +124,8 @@ unifyTypes t1 t2 = do
     let h1 = hash t1'
         h2 = hash t2'
         h3 = hash $ if h1 > h2 then (h1, h2) else (h2, h1)
-    unless (IntSet.member h3 cache) $ do
+        hit =  IntSet.member h3 cache
+    unless hit $ do
       modify $ \st -> st { unificationCache = IntSet.insert h3 cache }
       uf
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()

@@ -645,7 +645,7 @@ asDeclarationInfo = do
                        <*> key "alias" asFixityAlias
     -- Backwards compat: kinds are extern data
     "kind" ->
-      pure $ ExternDataDeclaration (P.kindType $> ()) []
+      pure $ ExternDataDeclaration (P.kindType `P.setAnn` ()) []
     other ->
       throwCustomError (InvalidDeclarationType other)
 

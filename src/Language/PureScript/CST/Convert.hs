@@ -20,7 +20,6 @@ import Prelude hiding (take)
 import Data.Bifunctor (bimap, first)
 import Data.Char (toLower)
 import Data.Foldable (foldl', toList)
-import Data.Functor (($>))
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (isJust, fromJust, mapMaybe)
 import Data.Text qualified as Text
@@ -141,7 +140,7 @@ convertType' withinVta fileName = go
       let
         ann = sourceAnnCommented fileName a b
         annRec = sourceAnn fileName a a
-      T.TypeApp ann (Env.tyRecord $> annRec) $ goRow row b
+      T.TypeApp ann (Env.tyRecord `T.setAnn` annRec) $ goRow row b
     TypeForall _ kw bindings _ ty -> do
       let
         mkForAll a b v t = do
@@ -183,11 +182,11 @@ convertType' withinVta fileName = go
       let
         a' = go a
         b' = go b
-        arr' = Env.tyFunction $> sourceAnnCommented fileName arr arr
+        arr' = Env.tyFunction `T.setAnn` sourceAnnCommented fileName arr arr
         ann = Pos.widenSourceAnn (T.getAnnForType a') (T.getAnnForType b')
       T.TypeApp ann (T.TypeApp ann arr' a') b'
     TypeArrName _ a ->
-      Env.tyFunction $> sourceAnnCommented fileName a a
+      Env.tyFunction `T.setAnn` sourceAnnCommented fileName a a
     TypeConstrained _ a _ b -> do
       let
         a' = convertConstraint withinVta fileName a

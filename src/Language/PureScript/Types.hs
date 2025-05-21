@@ -29,6 +29,7 @@ import Language.PureScript.Names (OpName, OpNameType(..), ProperName, ProperName
 import Language.PureScript.Label (Label)
 import Language.PureScript.PSString (PSString)
 import Data.Hashable (Hashable (hashWithSalt, hash))
+import Language.PureScript.Interner (HashCons, hashCons, unHashCons)
 
 type SourceType = Type SourceAnn
 type SourceConstraint = Constraint SourceAnn
@@ -114,7 +115,65 @@ data Type a
   -- Note: although it seems this constructor is not used, it _is_ useful,
   -- since it prevents certain traversals from matching.
   | ParensInType a (Type a)
-  deriving (Show, Generic, Functor, Foldable, Traversable)
+  deriving (Show, Generic) --, Functor, Foldable, Traversable)
+
+
+mapType :: (a -> b) -> Type a -> Type b
+mapType f ty = case ty of
+  TUnknown a i -> TUnknown (f a) i
+  TypeVar a v -> TypeVar (f a) v
+  TypeLevelString a s -> TypeLevelString (f a) s
+  TypeLevelInt a i -> TypeLevelInt (f a) i
+  TypeWildcard a w -> TypeWildcard (f a) w
+  TypeConstructor a c -> TypeConstructor (f a) c
+  TypeOp a op -> TypeOp (f a) op
+  TypeApp a t1 t2 -> TypeApp (f a) (mapType f t1) (mapType f t2)
+  KindApp a t1 t2 -> KindApp (f a) (mapType f t1) (mapType f t2)
+  ForAll a vis v mbK t sco ->
+    ForAll (f a) vis v (fmap (mapType f) mbK) (mapType f t) sco
+  ConstrainedType a c t ->
+    ConstrainedType (f a) (mapConstraint f c) (mapType f t)
+  Skolem a v mbK i sco ->
+    Skolem (f a) v (fmap (mapType f) mbK) i sco
+  REmpty a -> REmpty (f a)
+  RCons a l t1 t2 -> RCons (f a) l (mapType f t1) (mapType f t2)
+  KindedType a k t -> KindedType (f a) (mapType f k) (mapType f t)
+  BinaryNoParensType a op t1 t2 -> BinaryNoParensType (f a) (mapType f op) (mapType f t1) (mapType f t2)
+  ParensInType ann ty' -> ParensInType (f ann) (mapType f ty')
+
+foldMapType :: Monoid m => (a -> m) -> Type a -> m
+foldMapType f = go where
+  go (TUnknown a _) = f a
+  go (TypeVar a _) = f a
+  go (TypeLevelString a _) = f a
+  go (TypeLevelInt a _) = f a
+  go (TypeWildcard a _) = f a
+  go (TypeConstructor a _) = f a
+  go (TypeOp a _) = f a
+  go (TypeApp a t1 t2) = f a <> go t1 <> go t2
+  go (KindApp a t1 t2) = f a <> go t1 <> go t2
+  go (ForAll a _ _ mbK t _) =
+    f a <> foldMap (foldMapType f) mbK <> foldMapType f t
+  go (ConstrainedType a c t) =
+    f a <> foldMapConstraint f c <> foldMapType f t
+  go (Skolem a _ mbK _ _) =
+    f a <> foldMap (foldMapType f) mbK
+  go (REmpty a) = f a
+  go (RCons a _ t1 t2) =
+    f a <> foldMapType f t1 <> foldMapType f t2
+  go (KindedType a k t) =
+    f a <> foldMapType f k <> foldMapType f t
+  go (BinaryNoParensType ann op t1 t2) =
+    f ann <> foldMapType f op <> foldMapType f t1 <> foldMapType f t2
+  go (ParensInType ann ty') =
+    f ann <> foldMapType f ty'
+
+
+
+-- | Simulate $> 
+infixl 4 `setAnn`
+setAnn :: Type a -> b -> Type b
+setAnn t b = mapType (const b) t
 
 instance NFData a => NFData (Type a)
 instance Serialise a => Serialise (Type a)
@@ -124,6 +183,11 @@ instance Hashable (Type a) where
   {-# INLINE hash #-}
   hashWithSalt s t = hashWithSalt s (hashType t)
   {-# INLINE hashWithSalt #-}
+
+-- -- {-# COMPLETE RCons #-}
+-- pattern RCons :: a -> Label -> Type a -> Type a -> Type a
+-- pattern RCons a label t1 t2 <- RCons' a label (unHashCons -> t1) (unHashCons -> t2) where
+--   RCons a label t1 t2 = RCons' a label (hashCons t1) (hashCons t2)
 
 srcTUnknown :: Int -> SourceType
 srcTUnknown = TUnknown NullSourceAnn
@@ -201,10 +265,27 @@ data Constraint a = Constraint
   -- ^ type arguments
   , constraintData  :: Maybe ConstraintData
   -- ^ additional data relevant to this constraint
-  } deriving (Show, Generic, Functor, Foldable, Traversable)
+  } deriving (Show, Generic) -- Functor, Foldable, Traversable)
 
 instance NFData a => NFData (Constraint a)
 instance Serialise a => Serialise (Constraint a)
+
+mapConstraint :: (a -> b) -> Constraint a -> Constraint b
+mapConstraint f c = c
+  { constraintAnn = f (constraintAnn c)
+  , constraintKindArgs = mapType f <$> constraintKindArgs c
+  , constraintArgs = mapType f <$> constraintArgs c
+  }
+
+foldMapConstraint :: Monoid m => (a -> m) -> Constraint a -> m
+foldMapConstraint f = go where
+  go (Constraint a _ k args _) =
+    f a <> foldMap (foldMapType f) k <> foldMap (foldMapType f) args
+
+-- | Simulate $> 
+infixl 4 `setAnnC`
+setAnnC :: Constraint a -> b -> Constraint b
+setAnnC c b = mapConstraint (const b) c
 
 srcConstraint :: Qualified (ProperName 'ClassName) -> [SourceType] -> [SourceType] -> Maybe ConstraintData -> SourceConstraint
 srcConstraint = Constraint NullSourceAnn
@@ -472,7 +553,7 @@ data RowListItem a = RowListItem
   { rowListAnn :: a
   , rowListLabel :: Label
   , rowListType :: Type a
-  } deriving (Show, Generic, Functor, Foldable, Traversable)
+  } deriving (Show, Generic) --, Functor, Foldable, Traversable)
 
 srcRowListItem :: Label -> SourceType -> RowListItem SourceAnn
 srcRowListItem = RowListItem NullSourceAnn
@@ -510,7 +591,7 @@ alignRowsWith f ty1 ty2 = go s1 s2 where
 
   go [] r = ([], (([], tail1), (r, tail2)))
   go r [] = ([], ((r, tail1), ([], tail2)))
-  go lhs@(RowListItem a1 l1 t1 : r1) rhs@(RowListItem a2 l2 t2 : r2) = 
+  go lhs@(RowListItem a1 l1 t1 : r1) rhs@(RowListItem a2 l2 t2 : r2) =
     case compare l1 l2 of
       LT -> (second . first . first) (RowListItem a1 l1 t1 :) (go r1 rhs)
       GT -> (second . second . first) (RowListItem a2 l2 t2 :) (go lhs r2)
@@ -611,11 +692,11 @@ quantify ty = foldr (\arg t -> ForAll (getAnnForType ty) TypeVarInvisible arg No
 
 -- | Move all universal quantifiers to the front of a type
 moveQuantifiersToFront :: a -> Type a -> Type a
-moveQuantifiersToFront syntheticAnn = go [] [] 
+moveQuantifiersToFront syntheticAnn = go [] []
   where
   go qs cs = \case
     ForAll ann vis q mbK ty sco -> do
-      let 
+      let
         cArgs :: [Text] = cs >>= constraintArgs . snd >>= freeTypeVariables
         (q'', ty')
           | q `elem` cArgs = do
@@ -626,7 +707,7 @@ moveQuantifiersToFront syntheticAnn = go [] []
       go ((ann, q'', sco, mbK, vis) : qs) cs ty'
     ConstrainedType ann c ty ->
       go qs ((ann, c) : cs) ty
-    ty -> 
+    ty ->
       foldl (\ty' (ann, q, sco, mbK, vis) -> ForAll ann vis q mbK ty' sco) (foldl (\ty' (ann, c) -> ConstrainedType ann c ty') ty cs) qs
 
 -- | Check if a type contains `forall`
@@ -843,7 +924,7 @@ hashType =  \case
   (TypeOp _ a) -> hash a
   (TypeApp _ a b) -> hash (a, b)
   (KindApp _ a b) -> hash (a, b)
-  (ForAll _ _ a b c d) -> 
+  (ForAll _ _ a b c d) ->
     hash (a, b, c, d)
   (ConstrainedType _ a b) -> hash (a, b)
   (Skolem _ a b c d) -> hash (a, b, c, d)

@@ -30,7 +30,7 @@ import Language.PureScript.TypeChecker.Entailment (InstanceContext, findDicts)
 import Language.PureScript.TypeChecker.Monad (getEnv, getTypeClassDictionaries, unsafeCheckCurrentModule, TypeCheckM)
 import Language.PureScript.TypeChecker.Synonyms (replaceAllTypeSynonyms)
 import Language.PureScript.TypeClassDictionaries (TypeClassDictionaryInScope(..))
-import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, SourceType, Type(..), completeBinderList, eqType, everythingOnTypes, replaceAllTypeVars, srcTypeVar, usedTypeVariables)
+import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, SourceType, Type(..), completeBinderList, eqType, everythingOnTypes, replaceAllTypeVars, srcTypeVar, usedTypeVariables, setAnn)
 import Data.HashMap.Strict qualified as HM
 
 -- | Extract the name of the newtype appearing in the last type argument of
@@ -521,7 +521,7 @@ validateParamsInTypeConstructors derivingClass utc isBi CovariantClasses{..} con
     TypeVar _ nm -> mkQualified_ ByNullSourcePos (Left nm)
     Skolem _ nm _ _ _ -> mkQualified_ ByNullSourcePos (Left nm)
     TypeConstructor _ (Qualified qb nm) -> Qualified qb (Right nm)
-    ty -> internalError $ "headOfType missing a case: " <> show (void ty)
+    ty -> internalError $ "headOfType missing a case: " <> show (ty `setAnn` ())
 
 usingLamIdent :: (Expr -> TypeCheckM Expr) -> TypeCheckM Expr
 usingLamIdent cb = do

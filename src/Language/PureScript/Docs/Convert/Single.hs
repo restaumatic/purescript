@@ -158,34 +158,34 @@ basicDeclaration sa title = Just . Right . mkDeclaration sa title
 
 convertDeclaration :: P.Declaration -> Text -> Maybe IntermediateDeclaration
 convertDeclaration (P.ValueDecl sa _ _ _ [P.MkUnguarded (P.TypedValue _ _ ty)]) title =
-  basicDeclaration sa title (ValueDeclaration (ty $> ()))
+  basicDeclaration sa title (ValueDeclaration (ty `P.setAnn` ()))
 convertDeclaration (P.ValueDecl sa _ _ _ _) title =
   -- If no explicit type declaration was provided, insert a wildcard, so that
   -- the actual type will be added during type checking.
   basicDeclaration sa title (ValueDeclaration (P.TypeWildcard () P.UnnamedWildcard))
 convertDeclaration (P.ExternDeclaration sa _ ty) title =
-  basicDeclaration sa title (ValueDeclaration (ty $> ()))
+  basicDeclaration sa title (ValueDeclaration (ty `P.setAnn` ()))
 convertDeclaration (P.DataDeclaration sa dtype _ args ctors) title =
   Just (Right (mkDeclaration sa title info) { declChildren = children })
   where
-  info = DataDeclaration dtype (fmap (fmap (fmap ($> ()))) args) []
+  info = DataDeclaration dtype (fmap (fmap (fmap (`P.setAnn` ()))) args) []
   children = map convertCtor ctors
   convertCtor :: P.DataConstructorDeclaration -> ChildDeclaration
   convertCtor P.DataConstructorDeclaration{..} =
     let (sourceSpan, comments) = dataCtorAnn
-    in ChildDeclaration (P.runProperName dataCtorName) (convertComments comments) (Just sourceSpan) (ChildDataConstructor (fmap (($> ()) . snd) dataCtorFields))
+    in ChildDeclaration (P.runProperName dataCtorName) (convertComments comments) (Just sourceSpan) (ChildDataConstructor (fmap ((`P.setAnn` ()) . snd) dataCtorFields))
 convertDeclaration (P.ExternDataDeclaration sa _ kind') title =
-  basicDeclaration sa title (ExternDataDeclaration (kind' $> ()) [])
+  basicDeclaration sa title (ExternDataDeclaration (kind' `P.setAnn` ()) [])
 convertDeclaration (P.TypeSynonymDeclaration sa _ args ty) title =
-  basicDeclaration sa title (TypeSynonymDeclaration (fmap (fmap (fmap ($> ()))) args) (ty $> ()))
+  basicDeclaration sa title (TypeSynonymDeclaration (fmap (fmap (fmap (`P.setAnn` ()))) args) (ty `P.setAnn` ()))
 convertDeclaration (P.TypeClassDeclaration sa _ args implies fundeps ds) title =
   Just (Right (mkDeclaration sa title info) { declChildren = children })
   where
-  args' = fmap (fmap (fmap ($> ()))) args
-  info = TypeClassDeclaration args' (fmap ($> ()) implies) (convertFundepsToStrings args' fundeps)
+  args' = fmap (fmap (fmap (`P.setAnn` ()))) args
+  info = TypeClassDeclaration args' (fmap (`P.setAnnC` ()) implies) (convertFundepsToStrings args' fundeps)
   children = map convertClassMember ds
   convertClassMember (P.TypeDeclaration (P.TypeDeclarationData (ss, com) ident' ty)) =
-    ChildDeclaration (P.showIdent ident') (convertComments com) (Just ss) (ChildTypeClassMember (ty $> ()))
+    ChildDeclaration (P.showIdent ident') (convertComments com) (Just ss) (ChildTypeClassMember (ty `P.setAnn` ()))
   convertClassMember _ =
     P.internalError "convertDeclaration: Invalid argument to convertClassMember."
 convertDeclaration (P.TypeInstanceDeclaration (ss, com) _ _ _ _ constraints className tys _) title =
@@ -198,7 +198,7 @@ convertDeclaration (P.TypeInstanceDeclaration (ss, com) _ _ _ _ constraints clas
   extractProperNames (P.TypeConstructor _ n) = [unQual n]
   extractProperNames _ = []
 
-  childDecl = ChildDeclaration title (convertComments com) (Just ss) (ChildInstance (fmap ($> ()) constraints) (classApp $> ()))
+  childDecl = ChildDeclaration title (convertComments com) (Just ss) (ChildInstance (fmap (`P.setAnnC` ()) constraints) (classApp `P.setAnn` ()))
   classApp = foldl' P.srcTypeApp (P.srcTypeConstructor (mapQualified P.coerceProperName className)) tys
 convertDeclaration (P.ValueFixityDeclaration sa fixity (P.Qualified mn alias) _) title =
   Just . Right $ mkDeclaration sa title (AliasDeclaration fixity (P.mkQualified_ mn (Right alias)))
@@ -208,7 +208,7 @@ convertDeclaration (P.KindDeclaration sa keyword _ kind) title =
   Just $ Left ([(title, AugmentType), (title, AugmentClass)], AugmentKindSig ksi)
   where
     comms = convertComments $ snd sa
-    ksi = KindSignatureInfo { ksiComments = comms, ksiKeyword = keyword, ksiKind = kind $> () }
+    ksi = KindSignatureInfo { ksiComments = comms, ksiKeyword = keyword, ksiKind = kind `P.setAnn` () }
 convertDeclaration (P.RoleDeclaration P.RoleDeclarationData{..}) title =
   Just $ Left ([(title, AugmentType)], AugmentRole comms rdeclRoles)
   where

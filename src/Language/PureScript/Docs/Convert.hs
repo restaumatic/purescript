@@ -11,7 +11,6 @@ import Control.Category ((>>>))
 import Control.Monad.Writer.Strict (runWriterT)
 import Control.Monad.Supply (evalSupplyT)
 import Data.List.NonEmpty qualified as NE
-import Data.Map qualified as Map
 import Data.String (String)
 import Data.Text qualified as T
 
@@ -143,7 +142,7 @@ insertValueTypesAndAdjustKinds env m =
       ident = P.Ident . CST.getIdent . CST.nameValue . parseIdent $ declTitle d
       ty = lookupName ident
     in
-      d { declInfo = ValueDeclaration (ty $> ()) }
+      d { declInfo = ValueDeclaration (ty `P.setAnn` ()) }
 
   go d@Declaration{..} | Just keyword <- extractKeyword declInfo =
     case declKind of
@@ -225,7 +224,7 @@ insertValueTypesAndAdjustKinds env m =
                     }
                   }
         where
-          inferredKind' = inferredKind $> ()
+          inferredKind' = inferredKind `P.setAnn` ()
 
           -- Note: the below change to the final kind used is intentionally
           -- NOT being done for explicit kind signatures:

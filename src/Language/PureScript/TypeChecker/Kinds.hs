@@ -38,7 +38,6 @@ import Data.Bifunctor (first, second)
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (for_, traverse_)
 import Data.Function (on)
-import Data.Functor (($>))
 import Data.IntSet qualified as IS
 import Data.List (nubBy, sortOn, (\\))
 import Data.IntMap.Lazy qualified as IM
@@ -171,9 +170,9 @@ inferKind = \tyToInfer ->
           throwError . errorMessage' (fst ann) . UnknownName . mapQualified TyName $ v
         Just (kind, E.LocalTypeVariable) -> do
           kind' <- apply kind
-          pure (ty, kind' $> ann)
+          pure (ty, kind' `setAnn` ann)
         Just (kind, _) -> do
-          pure (ty, kind $> ann)
+          pure (ty, kind `setAnn` ann)
     ConstrainedType ann' con@(Constraint ann v _ _ _) ty -> do
       env <- getEnv
       con' <- case HM.lookup (coerceProperName `mapQualified` v) (E.types env) of
@@ -183,33 +182,33 @@ inferKind = \tyToInfer ->
           checkConstraint con
       ty' <- checkIsSaturatedType ty
       con'' <- applyConstraint con'
-      pure (ConstrainedType ann' con'' ty', E.kindType $> ann')
+      pure (ConstrainedType ann' con'' ty', E.kindType `setAnn` ann')
     ty@(TypeLevelString ann _) ->
-      pure (ty, E.kindSymbol $> ann)
+      pure (ty, E.kindSymbol `setAnn` ann)
     ty@(TypeLevelInt ann _) ->
-      pure (ty, E.tyInt $> ann)
+      pure (ty, E.tyInt `setAnn` ann)
     ty@(TypeVar ann v) -> do
       moduleName <- unsafeCheckCurrentModule
       kind <- apply =<< lookupTypeVariable moduleName (mkQualified_ ByNullSourcePos $ properNameFromString v)
-      pure (ty, kind $> ann)
+      pure (ty, kind `setAnn` ann)
     ty@(Skolem ann _ mbK _ _) -> do
       kind <- apply $ fromMaybe (internalError "Skolem has no kind") mbK
-      pure (ty, kind $> ann)
+      pure (ty, kind `setAnn` ann)
     ty@(TUnknown ann u) -> do
       kind <- apply . snd =<< lookupUnsolved u
-      pure (ty, kind $> ann)
+      pure (ty, kind `setAnn` ann)
     ty@(TypeWildcard ann _) -> do
       k <- freshKind (fst ann)
-      pure (ty, k $> ann)
+      pure (ty, k `setAnn` ann)
     ty@(REmpty ann) -> do
-      pure (ty, E.kindOfREmpty $> ann)
+      pure (ty, E.kindOfREmpty `setAnn` ann)
     ty@(RCons ann _ _ _) | (rowList, rowTail) <- rowToList ty -> do
       kr <- freshKind (fst ann)
       rowList' <- for rowList $ \(RowListItem a lbl t) ->
         RowListItem a lbl <$> checkKind t kr
       rowTail' <- checkKind rowTail $ E.kindRow kr
       kr' <- apply kr
-      pure (rowFromList (rowList', rowTail'), E.kindRow kr' $> ann)
+      pure (rowFromList (rowList', rowTail'), E.kindRow kr' `setAnn` ann)
     TypeApp ann t1 t2 -> do
       (t1', k1) <- go t1
       inferAppKind ann (t1', k1) t2
@@ -236,7 +235,7 @@ inferKind = \tyToInfer ->
         unks <- unknownsWithKinds . IS.toList $ unknowns ty'
         pure (ty', unks)
       for_ unks . uncurry $ addUnsolved Nothing
-      pure (ForAll ann vis arg (Just kind) ty' sc, E.kindType $> ann)
+      pure (ForAll ann vis arg (Just kind) ty' sc, E.kindType `setAnn` ann)
     ParensInType _ ty ->
       go ty
     ty ->
@@ -259,7 +258,7 @@ inferAppKind ann (fn, fnKind) arg = case fnKind of
     u2 <- freshUnknown
     addUnsolved (Just lvl) u1 E.kindType
     addUnsolved (Just lvl) u2 E.kindType
-    solve u $ (TUnknown ann u1 E.-:> TUnknown ann u2) $> ann
+    solve u $ (TUnknown ann u1 E.-:> TUnknown ann u2) `setAnn` ann
     arg' <- checkKind arg $ TUnknown ann u1
     pure (TypeApp ann fn arg', TUnknown ann u2)
   ForAll _ _ a (Just k) ty _ -> do
@@ -485,7 +484,7 @@ solveUnknownAsFunction ann u = do
   u2 <- freshUnknown
   addUnsolved (Just lvl) u1 E.kindType
   addUnsolved (Just lvl) u2 E.kindType
-  let uarr = (TUnknown ann u1 E.-:> TUnknown ann u2) $> ann
+  let uarr = (TUnknown ann u1 E.-:> TUnknown ann u2) `setAnn` ann
   solve u uarr
   pure uarr
 
@@ -517,36 +516,36 @@ elaborateKind
   -> TypeCheckM SourceType
 elaborateKind = \case
   TypeLevelString ann _ ->
-    pure $ E.kindSymbol $> ann
+    pure $ E.kindSymbol `setAnn` ann
   TypeLevelInt ann _ ->
-    pure $ E.tyInt $> ann
+    pure $ E.tyInt `setAnn` ann
   TypeConstructor ann v -> do
     env <- getEnv
     case HM.lookup v (E.types env) of
       Nothing ->
         throwError . errorMessage' (fst ann) . UnknownName . mapQualified TyName $ v
       Just (kind, _) ->
-        ($> ann) <$> apply kind
+        (`setAnn` ann) <$> apply kind
   TypeVar ann a -> do
     moduleName <- unsafeCheckCurrentModule
     kind <- apply =<< lookupTypeVariable moduleName (mkQualified_ ByNullSourcePos $ properNameFromString a)
-    pure (kind $> ann)
+    pure (kind `setAnn` ann)
   (Skolem ann _ mbK _ _) -> do
     kind <- apply $ fromMaybe (internalError "Skolem has no kind") mbK
-    pure $ kind $> ann
+    pure $ kind `setAnn` ann
   TUnknown ann a' -> do
     kind <- snd <$> lookupUnsolved a'
-    ($> ann) <$> apply kind
+    (`setAnn` ann) <$> apply kind
   REmpty ann -> do
-    pure $ E.kindOfREmpty $> ann
+    pure $ E.kindOfREmpty `setAnn` ann
   RCons ann _ t1 _ -> do
     k1 <- elaborateKind t1
-    pure $ E.kindRow k1 $> ann
+    pure $ E.kindRow k1 `setAnn` ann
   ty@(TypeApp ann t1 t2) -> do
     k1 <- elaborateKind t1
     case k1 of
       TypeApp _ (TypeApp _ k _) w2 | eqType k E.tyFunction -> do
-        pure $ w2 $> ann
+        pure $ w2 `setAnn` ann
       -- Normally we wouldn't unify in `elaborateKind`, since an unknown should
       -- always have a known kind. However, since type holes are fully inference
       -- driven, they are unknowns with unknown kinds, which may require some
@@ -560,15 +559,15 @@ elaborateKind = \case
     k1 <- elaborateKind t1
     case k1 of
       ForAll _ _ a _ n _ -> do
-        flip (replaceTypeVars a) n . ($> ann) <$> apply t2
+        flip (replaceTypeVars a) n . (`setAnn` ann) <$> apply t2
       _ ->
         cannotApplyKindToType t1 t2
   ForAll ann _ _ _ _ _ -> do
-    pure $ E.kindType $> ann
+    pure $ E.kindType `setAnn` ann
   ConstrainedType ann _ _ ->
-    pure $ E.kindType $> ann
+    pure $ E.kindType `setAnn` ann
   KindedType ann _ k ->
-    pure $ k $> ann
+    pure $ k `setAnn` ann
   ty ->
     throwError . errorMessage' (fst (getAnnForType ty)) $ UnsupportedTypeInKind ty
 

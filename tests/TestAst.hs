@@ -12,7 +12,7 @@ import Test.QuickCheck (Arbitrary(..), Gen, Property, Testable, counterexample, 
 import Language.PureScript.Label (Label(..))
 import Language.PureScript.Names (pattern ByNullSourcePos, OpName(..), OpNameType(..), properNameFromString, ProperNameType(..), mkQualified_, Qualified)
 import Language.PureScript.PSString (PSString)
-import Language.PureScript.Types (Constraint, ConstraintData, SkolemScope(..), Type(..), TypeVarVisibility(..), WildcardData, annForType, everythingOnTypes, everythingWithContextOnTypes, everywhereOnTypes, everywhereOnTypesM, everywhereOnTypesTopDownM, getAnnForType)
+import Language.PureScript.Types (Constraint, ConstraintData, SkolemScope(..), Type(..), TypeVarVisibility(..), WildcardData, annForType, everythingOnTypes, everythingWithContextOnTypes, everywhereOnTypes, everywhereOnTypesM, everywhereOnTypesTopDownM, getAnnForType, foldMapType)
 
 spec :: Spec
 spec = do
@@ -32,14 +32,14 @@ everywhereOnTypesSpec :: ((Type Int -> Type Int) -> Type Int -> Type Int) -> Spe
 everywhereOnTypesSpec everywhereOnTypesUnderTest = do
   it "should visit each type once" $
     forAllShrink (genTypeAnnotatedWith (pure 0) (pure 1)) subterms $ \t ->
-      all (== 1) `isSatisfiedBy` everywhereOnTypesUnderTest (annForType +~ 1) t
+      (getAll . foldMapType (All . (== 1))) `isSatisfiedBy` everywhereOnTypesUnderTest (annForType +~ 1) t
 
 everythingOnTypesSpec :: (([Int] -> [Int] -> [Int]) -> (Type Int -> [Int]) -> Type Int -> [Int]) -> Spec
 everythingOnTypesSpec everythingOnTypesUnderTest = do
   it "should visit each type once" $
     forAllShrink (genTypeAnnotatedWith (pure 1) (pure 0)) subterms $ \t ->
       everythingOnTypesUnderTest (++) (pure . getAnnForType) t ===
-        filter (== 1) (toList t)
+        filter (== 1) (foldMapType (\t -> [t]) t)
 
 
 infixr 0 `isSatisfiedBy`

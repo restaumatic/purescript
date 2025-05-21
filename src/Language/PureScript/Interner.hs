@@ -3,6 +3,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module Language.PureScript.Interner where
 
@@ -35,6 +36,8 @@ data HashCons a = HashConsC
   { _hashCons_hash :: {-# UNPACK #-} !Int       -- ^ Precomputed hash
   , _hashCons_ref  :: {-# UNPACK #-} !(IORef a) -- ^ Reference to the value
   }
+
+
 
 instance (Hashable a, Serialise a) => Serialise (HashCons a) where
   encode hc = encode (unHashCons hc)

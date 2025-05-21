@@ -7,7 +7,6 @@ module Language.PureScript.Docs.Prim
   ) where
 
 import Prelude hiding (fail)
-import Data.Functor (($>))
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Map qualified as Map
@@ -18,6 +17,7 @@ import Language.PureScript.Crash qualified as P
 import Language.PureScript.Environment qualified as P
 import Language.PureScript.Names qualified as P
 import Data.HashMap.Strict qualified as HM
+import Language.PureScript.Types (setAnn, setAnnC)
 
 primModules :: [Module]
 primModules =
@@ -176,7 +176,7 @@ unsafeLookup m errorMsg name = go name
 lookupPrimTypeKind
   :: P.Qualified (P.ProperName 'P.TypeName)
   -> Type'
-lookupPrimTypeKind = ($> ()) . fst . unsafeLookup
+lookupPrimTypeKind = (`setAnn` ()) . fst . unsafeLookup
   ( P.primTypes <>
     P.primBooleanTypes <>
     P.primOrderingTypes <>
@@ -217,8 +217,8 @@ primClass cn comments = Declaration
   , declInfo =
       let
         tcd = lookupPrimClass cn
-        args = fmap (fmap ($> ())) <$> P.typeClassArguments tcd
-        superclasses = ($> ()) <$> P.typeClassSuperclasses tcd
+        args = fmap (fmap (`setAnn` ())) <$> P.typeClassArguments tcd
+        superclasses = (`setAnnC` ()) <$> P.typeClassSuperclasses tcd
         fundeps = convertFundepsToStrings args (P.typeClassDependencies tcd)
       in
         TypeClassDeclaration args superclasses fundeps
