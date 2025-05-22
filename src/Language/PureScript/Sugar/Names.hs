@@ -33,7 +33,7 @@ import Language.PureScript.Sugar.Names.Env (Env, Exports(..), ImportProvenance(.
 import Language.PureScript.Sugar.Names.Exports (findExportable, resolveExports)
 import Language.PureScript.Sugar.Names.Imports (resolveImports, resolveModuleImport)
 import Language.PureScript.Traversals (defS, sndM)
-import Language.PureScript.Types (Constraint(..), SourceConstraint, SourceType, Type(..), everywhereOnTypesM)
+import Language.PureScript.Types (Constraint(..), SourceConstraint, SourceType, Type(..), everywhereOnTypesM, pattern ConstrainedType)
 import Data.Hashable (Hashable)
 
 -- |

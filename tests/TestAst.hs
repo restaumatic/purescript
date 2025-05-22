@@ -69,6 +69,7 @@ genTypeAnnotatedWith genTypeAnn genConstraintAnn = genType where
     :+ genWildcardData
     :+ genVisibility
     :+ genHashCons genType
+    :+ genHashCons genConstraint
 
   genConstraint :: Gen (Constraint a)
   genConstraint = genericArbitraryUG (genConstraintAnn :+ generatorEnvironment)

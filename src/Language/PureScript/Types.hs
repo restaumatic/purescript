@@ -98,7 +98,7 @@ data Type a
   -- | Forall quantifier
   | ForAll a TypeVarVisibility Text (Maybe (Type a)) (Type a) (Maybe SkolemScope)
   -- | A type with a set of type class constraints
-  | ConstrainedType a (Constraint a) (Type a)
+  | ConstrainedType' a (HashCons (Constraint a)) (HashCons (Type a))
   -- | A skolem constant
   | Skolem a Text (Maybe (Type a)) Int SkolemScope
   -- | An empty row
@@ -117,6 +117,16 @@ data Type a
   -- since it prevents certain traversals from matching.
   | ParensInType a (Type a)
   deriving (Show, Generic) --, Functor, Foldable, Traversable)
+
+{-# COMPLETE TUnknown, TypeVar, TypeLevelString, TypeLevelInt, TypeWildcard, TypeConstructor, TypeOp, TypeApp, KindApp,
+   ForAll, ConstrainedType, Skolem, REmpty, RCons, KindedType, BinaryNoParensType, ParensInType #-}
+pattern RCons :: a -> Label -> Type a -> Type a -> Type a
+pattern RCons a label t1 t2 <- RCons' a label (unHashCons -> t1) (unHashCons -> t2) where
+  RCons a label t1 t2 = RCons' a label (hashCons t1) (hashCons t2)
+
+pattern ConstrainedType :: a -> Constraint a -> Type a -> Type a
+pattern ConstrainedType a c t <- ConstrainedType' a (unHashCons -> c) (unHashCons -> t) where
+  ConstrainedType a c t = ConstrainedType' a (hashCons c) (hashCons t)
 
 
 mapType :: (a -> b) -> Type a -> Type b
@@ -185,10 +195,6 @@ instance Hashable (Type a) where
   hashWithSalt s t = hashWithSalt s (hashType t)
   {-# INLINE hashWithSalt #-}
 
-{-# COMPLETE RCons #-}
-pattern RCons :: a -> Label -> Type a -> Type a -> Type a
-pattern RCons a label t1 t2 <- RCons' a label (unHashCons -> t1) (unHashCons -> t2) where
-  RCons a label t1 t2 = RCons' a label (hashCons t1) (hashCons t2)
 
 srcTUnknown :: Int -> SourceType
 srcTUnknown = TUnknown NullSourceAnn
@@ -899,7 +905,7 @@ eqType (TypeOp _ a) (TypeOp _ a') = a == a'
 eqType (TypeApp _ a b) (TypeApp _ a' b') = eqType a a' && eqType b b'
 eqType (KindApp _ a b) (KindApp _ a' b') = eqType a a' && eqType b b'
 eqType (ForAll _ _ a b c d) (ForAll _ _ a' b' c' d') = a == a' && eqMaybeType b b' && eqType c c' && d == d'
-eqType (ConstrainedType _ a b) (ConstrainedType _ a' b') = eqConstraint a a' && eqType b b'
+eqType (ConstrainedType' _ a b) (ConstrainedType' _ a' b') = a == unsafeCoerce a' && b == unsafeCoerce b'
 eqType (Skolem _ a b c d) (Skolem _ a' b' c' d') = a == a' && eqMaybeType b b' && c == c' && d == d'
 eqType (REmpty _) (REmpty _) = True
 eqType (RCons' _ a th1 th2) (RCons' _ a' th1' th2') = a == a' && th1 == unsafeCoerce th1' && th2 == unsafeCoerce th2'
@@ -927,7 +933,7 @@ hashType =  \case
   (KindApp _ a b) -> hash (a, b)
   (ForAll _ _ a b c d) ->
     hash (a, b, c, d)
-  (ConstrainedType _ a b) -> hash (a, b)
+  (ConstrainedType' _ a b) -> hash (a, b)
   (Skolem _ a b c d) -> hash (a, b, c, d)
   (REmpty _) -> hash ("REmpty" :: Text)
   (RCons' _ a b c) -> hash (a, b, c)
@@ -947,7 +953,7 @@ compareType (TypeOp _ a) (TypeOp _ a') = compare a a'
 compareType (TypeApp _ a b) (TypeApp _ a' b') = compareType a a' <> compareType b b'
 compareType (KindApp _ a b) (KindApp _ a' b') = compareType a a' <> compareType b b'
 compareType (ForAll _ _ a b c d) (ForAll _ _ a' b' c' d') = compare a a' <> compareMaybeType b b' <> compareType c c' <> compare d d'
-compareType (ConstrainedType _ a b) (ConstrainedType _ a' b') = compareConstraint a a' <> compareType b b'
+compareType (ConstrainedType' _ a b) (ConstrainedType' _ a' b') = compare a (unsafeCoerce a') <> compare b (unsafeCoerce b')
 compareType (Skolem _ a b c d) (Skolem _ a' b' c' d') = compare a a' <> compareMaybeType b b' <> compare c c' <> compare d d'
 compareType (REmpty _) (REmpty _) = EQ
 compareType (RCons' _ a b c) (RCons' _ a' b' c') = compare a a' <> compare b (unsafeCoerce b') <> compare c (unsafeCoerce c')

@@ -30,7 +30,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (tyFunction, tyRecord)
 import Language.PureScript.Names (OpName(..), OpNameType(..), ProperName(..), runProperName, ProperNameType(..), Qualified, coerceProperName, disqualify, showQualified, mapQualified)
 import Language.PureScript.Pretty.Common (before, objectKeyRequiresQuoting)
-import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), Type(..), TypeVarVisibility(..), WildcardData(..), eqType, rowToSortedList, typeVarVisibilityPrefix, pattern RCons)
+import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), Type(..), TypeVarVisibility(..), WildcardData(..), eqType, rowToSortedList, typeVarVisibilityPrefix, pattern RCons, pattern ConstrainedType)
 import Language.PureScript.PSString (PSString, prettyPrintString, decodeString)
 import Language.PureScript.Label (Label(..))
 

@@ -18,7 +18,7 @@ import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHi
 import Language.PureScript.Linter.Exhaustive as L
 import Language.PureScript.Linter.Imports as L
 import Language.PureScript.Names (Ident(..), pattern Qualified, QualifiedBy(..), getIdentName, runIdent)
-import Language.PureScript.Types (Constraint(..), SourceType, Type(..), everythingWithContextOnTypes, pattern RCons)
+import Language.PureScript.Types (Constraint(..), SourceType, Type(..), everythingWithContextOnTypes, pattern RCons, pattern ConstrainedType)
 import Language.PureScript.Constants.Libs qualified as C
 
 -- | Lint the PureScript AST.

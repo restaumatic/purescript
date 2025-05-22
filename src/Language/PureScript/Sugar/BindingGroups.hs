@@ -29,7 +29,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (NameKind)
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors(..), SimpleErrorMessage(..), errorMessage', parU, positionedError)
 import Language.PureScript.Names (pattern ByNullSourcePos, Ident, ModuleName, ProperName, ProperNameType(..), pattern Qualified, QualifiedBy(..), coerceProperName, mkQualified_)
-import Language.PureScript.Types (Constraint(..), SourceConstraint, SourceType, Type(..), everythingOnTypes)
+import Language.PureScript.Types (Constraint(..), SourceConstraint, SourceType, Type(..), everythingOnTypes, pattern ConstrainedType)
 
 data VertexType
   = VertexDefinition

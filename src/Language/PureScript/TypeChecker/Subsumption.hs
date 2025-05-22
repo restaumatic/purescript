@@ -22,7 +22,7 @@ import Language.PureScript.Errors (SimpleErrorMessage(..), errorMessage, interna
 import Language.PureScript.TypeChecker.Monad (getHints, getTypeClassDictionaries, withErrorMessageHint, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
 import Language.PureScript.TypeChecker.Unify (alignRowsWith, freshTypeWithKind, unifyTypes)
-import Language.PureScript.Types (RowListItem(..), SourceType, Type(..), eqType, isREmpty, replaceTypeVars, rowFromList)
+import Language.PureScript.Types (RowListItem(..), SourceType, Type(..), eqType, isREmpty, replaceTypeVars, rowFromList, pattern ConstrainedType)
 
 -- | Subsumption can operate in two modes:
 --
