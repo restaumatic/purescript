@@ -45,7 +45,7 @@ import Language.PureScript.TypeChecker.Roles (lookupRoles)
 import Language.PureScript.TypeChecker.Synonyms (replaceAllTypeSynonyms)
 import Language.PureScript.TypeChecker.Unify (alignRowsWith, freshTypeWithKind, substituteType)
 import Language.PureScript.Roles (Role(..))
-import Language.PureScript.Types (Constraint(..), SourceType, Type(..), completeBinderList, containsUnknowns, everythingOnTypes, isMonoType, replaceAllTypeVars, rowFromList, srcConstraint, srcTypeApp, unapplyTypes)
+import Language.PureScript.Types (Constraint(..), SourceType, Type(..), completeBinderList, containsUnknowns, everythingOnTypes, isMonoType, replaceAllTypeVars, rowFromList, srcConstraint, srcTypeApp, unapplyTypes, pattern RCons)
 import Language.PureScript.Constants.Prim qualified as Prim
 import Data.HashMap.Strict qualified as HM
 

@@ -12,6 +12,7 @@ import Test.QuickCheck (Arbitrary(..), Gen, Property, Testable, counterexample, 
 import Language.PureScript.Label (Label(..))
 import Language.PureScript.Names (pattern ByNullSourcePos, OpName(..), OpNameType(..), properNameFromString, ProperNameType(..), mkQualified_, Qualified)
 import Language.PureScript.PSString (PSString)
+import Language.PureScript.Interner (HashCons(..), hashCons, unHashCons)
 import Language.PureScript.Types (Constraint, ConstraintData, SkolemScope(..), Type(..), TypeVarVisibility(..), WildcardData, annForType, everythingOnTypes, everythingWithContextOnTypes, everywhereOnTypes, everywhereOnTypesM, everywhereOnTypesTopDownM, getAnnForType, foldMapType)
 
 spec :: Spec
@@ -46,7 +47,8 @@ infixr 0 `isSatisfiedBy`
 isSatisfiedBy :: forall a p. Show a => Testable p => (a -> p) -> a -> Property
 isSatisfiedBy = liftA2 counterexample show
 
-genTypeAnnotatedWith :: forall a. Gen a -> Gen a -> Gen (Type a)
+
+genTypeAnnotatedWith :: forall a. Hashable a => Gen a -> Gen a -> Gen (Type a)
 genTypeAnnotatedWith genTypeAnn genConstraintAnn = genType where
   generatorEnvironment
     =  genConstraint
@@ -66,6 +68,7 @@ genTypeAnnotatedWith genTypeAnn genConstraintAnn = genType where
     :+ maybeOf genType
     :+ genWildcardData
     :+ genVisibility
+    :+ genHashCons genType
 
   genConstraint :: Gen (Constraint a)
   genConstraint = genericArbitraryUG (genConstraintAnn :+ generatorEnvironment)
@@ -96,3 +99,6 @@ genTypeAnnotatedWith genTypeAnn genConstraintAnn = genType where
 
   genVisibility :: Gen TypeVarVisibility
   genVisibility = pure TypeVarInvisible
+
+  genHashCons :: forall a. (Hashable a) => Gen a -> Gen (HashCons a)
+  genHashCons g = hashCons <$> g

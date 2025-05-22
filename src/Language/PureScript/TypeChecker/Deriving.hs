@@ -30,7 +30,7 @@ import Language.PureScript.TypeChecker.Entailment (InstanceContext, findDicts)
 import Language.PureScript.TypeChecker.Monad (getEnv, getTypeClassDictionaries, unsafeCheckCurrentModule, TypeCheckM)
 import Language.PureScript.TypeChecker.Synonyms (replaceAllTypeSynonyms)
 import Language.PureScript.TypeClassDictionaries (TypeClassDictionaryInScope(..))
-import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, SourceType, Type(..), completeBinderList, eqType, everythingOnTypes, replaceAllTypeVars, srcTypeVar, usedTypeVariables, setAnn)
+import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, SourceType, Type(..), completeBinderList, eqType, everythingOnTypes, replaceAllTypeVars, srcTypeVar, usedTypeVariables, setAnn, pattern RCons)
 import Data.HashMap.Strict qualified as HM
 
 -- | Extract the name of the newtype appearing in the last type argument of

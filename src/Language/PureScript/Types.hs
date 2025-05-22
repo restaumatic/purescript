@@ -30,6 +30,7 @@ import Language.PureScript.Label (Label)
 import Language.PureScript.PSString (PSString)
 import Data.Hashable (Hashable (hashWithSalt, hash))
 import Language.PureScript.Interner (HashCons, hashCons, unHashCons)
+import Unsafe.Coerce (unsafeCoerce)
 
 type SourceType = Type SourceAnn
 type SourceConstraint = Constraint SourceAnn
@@ -103,7 +104,7 @@ data Type a
   -- | An empty row
   | REmpty a
   -- | A non-empty row
-  | RCons a Label (Type a) (Type a)
+  | RCons' a Label (HashCons (Type a)) (HashCons (Type a))
   -- | A type with a kind annotation
   | KindedType a (Type a) (Type a)
   -- | Binary operator application. During the rebracketing phase of desugaring,
@@ -184,10 +185,10 @@ instance Hashable (Type a) where
   hashWithSalt s t = hashWithSalt s (hashType t)
   {-# INLINE hashWithSalt #-}
 
--- -- {-# COMPLETE RCons #-}
--- pattern RCons :: a -> Label -> Type a -> Type a -> Type a
--- pattern RCons a label t1 t2 <- RCons' a label (unHashCons -> t1) (unHashCons -> t2) where
---   RCons a label t1 t2 = RCons' a label (hashCons t1) (hashCons t2)
+{-# COMPLETE RCons #-}
+pattern RCons :: a -> Label -> Type a -> Type a -> Type a
+pattern RCons a label t1 t2 <- RCons' a label (unHashCons -> t1) (unHashCons -> t2) where
+  RCons a label t1 t2 = RCons' a label (hashCons t1) (hashCons t2)
 
 srcTUnknown :: Int -> SourceType
 srcTUnknown = TUnknown NullSourceAnn
@@ -901,7 +902,7 @@ eqType (ForAll _ _ a b c d) (ForAll _ _ a' b' c' d') = a == a' && eqMaybeType b 
 eqType (ConstrainedType _ a b) (ConstrainedType _ a' b') = eqConstraint a a' && eqType b b'
 eqType (Skolem _ a b c d) (Skolem _ a' b' c' d') = a == a' && eqMaybeType b b' && c == c' && d == d'
 eqType (REmpty _) (REmpty _) = True
-eqType (RCons _ a b c) (RCons _ a' b' c') = a == a' && eqType b b' && eqType c c'
+eqType (RCons' _ a th1 th2) (RCons' _ a' th1' th2') = a == a' && th1 == unsafeCoerce th1' && th2 == unsafeCoerce th2'
 eqType (KindedType _ a b) (KindedType _ a' b') = eqType a a' && eqType b b'
 eqType (BinaryNoParensType _ a b c) (BinaryNoParensType _ a' b' c') = eqType a a' && eqType b b' && eqType c c'
 eqType (ParensInType _ a) (ParensInType _ a') = eqType a a'
@@ -929,7 +930,7 @@ hashType =  \case
   (ConstrainedType _ a b) -> hash (a, b)
   (Skolem _ a b c d) -> hash (a, b, c, d)
   (REmpty _) -> hash ("REmpty" :: Text)
-  (RCons _ a b c) -> hash (a, b, c)
+  (RCons' _ a b c) -> hash (a, b, c)
   (KindedType _ a b) -> hash (a, b)
   (BinaryNoParensType _ a b c) -> hash (a, b, c)
   (ParensInType _ a) -> hash a
@@ -949,7 +950,7 @@ compareType (ForAll _ _ a b c d) (ForAll _ _ a' b' c' d') = compare a a' <> comp
 compareType (ConstrainedType _ a b) (ConstrainedType _ a' b') = compareConstraint a a' <> compareType b b'
 compareType (Skolem _ a b c d) (Skolem _ a' b' c' d') = compare a a' <> compareMaybeType b b' <> compare c c' <> compare d d'
 compareType (REmpty _) (REmpty _) = EQ
-compareType (RCons _ a b c) (RCons _ a' b' c') = compare a a' <> compareType b b' <> compareType c c'
+compareType (RCons' _ a b c) (RCons' _ a' b' c') = compare a a' <> compare b (unsafeCoerce b') <> compare c (unsafeCoerce c')
 compareType (KindedType _ a b) (KindedType _ a' b') = compareType a a' <> compareType b b'
 compareType (BinaryNoParensType _ a b c) (BinaryNoParensType _ a' b' c') = compareType a a' <> compareType b b' <> compareType c c'
 compareType (ParensInType _ a) (ParensInType _ a') = compareType a a'

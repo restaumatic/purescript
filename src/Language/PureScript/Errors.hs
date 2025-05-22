@@ -50,7 +50,7 @@ import Language.PureScript.Pretty.Common (endWith)
 import Language.PureScript.PSString (decodeStringWithReplacement)
 import Language.PureScript.Roles (Role, displayRole)
 import Language.PureScript.Traversals (sndM)
-import Language.PureScript.Types (Constraint(..), ConstraintData(..), RowListItem(..), SourceConstraint, SourceType, Type(..), eraseForAllKindAnnotations, eraseKindApps, everywhereOnTypesTopDownM, getAnnForType, isMonoType, overConstraintArgs, rowFromList, rowToList, srcTUnknown)
+import Language.PureScript.Types (Constraint(..), ConstraintData(..), RowListItem(..), SourceConstraint, SourceType, Type(..), eraseForAllKindAnnotations, eraseKindApps, everywhereOnTypesTopDownM, getAnnForType, isMonoType, overConstraintArgs, rowFromList, rowToList, srcTUnknown, pattern RCons)
 import Language.PureScript.Publish.BoxesHelpers qualified as BoxHelpers
 import System.Console.ANSI qualified as ANSI
 import System.FilePath (makeRelative)

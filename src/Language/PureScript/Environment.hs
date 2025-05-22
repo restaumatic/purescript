@@ -679,7 +679,7 @@ nominalRolesForKind k = replicate (kindArity k) Nominal
 kindArity :: Type a -> Int
 kindArity = length . fst . unapplyKinds
 
-unapplyKinds :: Type a -> ([Type a], Type a)
+unapplyKinds :: forall a. Type a -> ([Type a], Type a)
 unapplyKinds = go [] where
   go kinds (TypeApp _ (TypeApp _ fn k1) k2)
     | eqType fn tyFunction = go (k1 : kinds) k2
