@@ -185,7 +185,6 @@ lintImports (Module _ _ mn mdecls (Just mexports)) env usedImps = do
 
   extractByQual
     :: Hashable a
-    => Show a
     => ModuleName
     -> M.Map (Qualified a) [ImportRecord a]
     -> (a -> Name)

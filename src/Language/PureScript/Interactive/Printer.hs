@@ -3,7 +3,7 @@ module Language.PureScript.Interactive.Printer where
 import Prelude
 
 import Data.List (intersperse)
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as HM
 import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
 import Data.Text (Text)
@@ -11,7 +11,6 @@ import Language.PureScript qualified as P
 import Text.PrettyPrint.Boxes qualified as Box
 import Data.Hashable (Hashable)
 import Language.PureScript.Names (mapQualified)
-import Data.HashMap.Strict qualified as HM
 
 -- TODO (Christoph): Text version of boxes
 textT :: Text -> Box.Box
@@ -30,7 +29,7 @@ printModuleSignatures moduleName P.Environment{..} =
         moduleTypes = byModuleName types
 
 
-        byModuleName :: Show a => Hashable a => HM.HashMap (P.Qualified a) b -> [P.Qualified a]
+        byModuleName :: Hashable a => HM.HashMap (P.Qualified a) b -> [P.Qualified a]
         byModuleName = filter ((== Just moduleName) . P.getQual) . HM.keys
 
   in

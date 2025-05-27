@@ -90,7 +90,7 @@ filterInstances mn (Just exps) =
     | otherwise = either (Left . disqualify) (Right . disqualify) q `elem` refs
 
   -- Check that a qualified name is qualified for a different module
-  checkQual :: (Show a, Hashable a) => Qualified a -> Bool
+  checkQual :: (Hashable a) => Qualified a -> Bool
   checkQual q = isQualified q && not (isQualifiedWith mn q)
 
   typeName :: DeclarationRef -> Maybe (ProperName 'TypeName)

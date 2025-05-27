@@ -37,7 +37,7 @@ import Language.PureScript.AST (ExportSource(..), SourceSpan, internalModuleSour
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage')
-import Language.PureScript.Names (Ident, ModuleName, Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), coerceProperName, disqualify, getQual, mkQualified_)
+import Language.PureScript.Names (Ident, ModuleName, Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, QualifiedBy(..), coerceProperName, disqualify, getQual, Qualified)
 import Data.Hashable (Hashable)
 import Data.HashMap.Strict qualified as HM
 
@@ -465,7 +465,7 @@ throwExportConflict'
   -> m a
 throwExportConflict' ss new existing newName existingName =
   throwError . errorMessage' ss $
-    ExportConflict (mkQualified_ (ByModuleName new) newName) (mkQualified_ (ByModuleName existing) existingName)
+    ExportConflict (Qualified (ByModuleName new) newName) (Qualified (ByModuleName existing) existingName)
 
 -- |
 -- When reading a value from the imports, check that there are no conflicts in
@@ -473,7 +473,7 @@ throwExportConflict' ss new existing newName existingName =
 --
 checkImportConflicts
   :: forall m a
-   . (Hashable a, Show a, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
+   . (Hashable a, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
   => SourceSpan
   -> ModuleName
   -> (a -> Name)

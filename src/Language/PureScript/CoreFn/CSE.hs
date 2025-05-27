@@ -26,7 +26,7 @@ import Language.PureScript.CoreFn.Expr (Bind(..), CaseAlternative(..), Expr(..))
 import Language.PureScript.CoreFn.Meta (Meta(IsSyntheticApp))
 import Language.PureScript.CoreFn.Traversals (everywhereOnValues, traverseCoreFn)
 import Language.PureScript.Environment (dictTypeName)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, pattern Qualified, Qualified(..), QualifiedBy(..), freshIdent, runIdent, toMaybeModuleName, properNameFromString, mkQualified_, mapQualified)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, pattern Qualified, QualifiedBy(..), freshIdent, runIdent, toMaybeModuleName, properNameFromString, Qualified, mapQualified)
 import Language.PureScript.PSString (decodeString)
 
 -- |
@@ -292,7 +292,7 @@ floatExpr topLevelQB = \case
     let w' = w
           & (if isNew then newBindings %~ addToScope deepestScope [(ident, (_plurality, e))] else identity)
           & plurality .~ PluralityMap (M.singleton ident False)
-    pure (Var nullAnn (mkQualified_ qb ident), w')
+    pure (Var nullAnn (Qualified qb ident), w')
   (e, w) -> pure (e, w)
 
 -- |

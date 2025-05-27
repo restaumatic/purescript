@@ -13,7 +13,6 @@ import Prelude
 
 import Control.Monad.Error.Class (MonadError(..))
 import Data.Maybe (fromMaybe)
-import Data.Map qualified as M
 import Data.HashMap.Strict qualified as HM
 import Data.Text (Text)
 import Language.PureScript.Environment (Environment(..), TypeKind)

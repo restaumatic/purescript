@@ -28,7 +28,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage, errorMessage'', nonEmpty, parU, warnAndRethrow, warnAndRethrowWithPosition)
 import Language.PureScript.Externs (ExternsDeclaration(..), ExternsFile(..), ExternsImport(..))
 import Language.PureScript.Linter.Imports (Name(..), UsedImports)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident, OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), mkQualified_, mapQualified)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident, OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, QualifiedBy(..), Qualified, mapQualified)
 import Language.PureScript.Sugar.Names.Env (Env, Exports(..), ImportProvenance(..), ImportRecord(..), Imports(..), checkImportConflicts, nullImports, primEnv)
 import Language.PureScript.Sugar.Names.Exports (findExportable, resolveExports)
 import Language.PureScript.Sugar.Names.Imports (resolveImports, resolveModuleImport)
@@ -236,12 +236,12 @@ renameInModule imports (Module modSS coms mn decls exps) =
   updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Left alias)) op) =
     fmap (bound,) $
       ValueFixityDeclaration sa fixity . mapQualified Left
-        <$> updateValueName (mkQualified_ mn' alias) ss
+        <$> updateValueName (Qualified mn' alias) ss
         <*> pure op
   updateDecl bound (ValueFixityDeclaration sa@(ss, _) fixity (Qualified mn' (Right alias)) op) =
     fmap (bound,) $
       ValueFixityDeclaration sa fixity . mapQualified Right
-        <$> updateDataConstructorName (mkQualified_ mn' alias) ss
+        <$> updateDataConstructorName (Qualified mn' alias) ss
         <*> pure op
   updateDecl b d =
     return (b, d)
@@ -269,7 +269,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
     ((ss, bound), ) <$> case (M.lookup ident bound, qualifiedBy) of
       -- bound idents that have yet to be locally qualified.
       (Just sourcePos, ByNullSourcePos) ->
-        pure $ Var ss (mkQualified_ (BySourcePos sourcePos) ident)
+        pure $ Var ss (Qualified (BySourcePos sourcePos) ident)
       -- unbound idents are likely import unqualified imports, so we
       -- handle them through updateValueName if they don't exist as a
       -- local binding.
@@ -407,7 +407,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
   -- qualified references are replaced with their canonical qualified names
   -- (e.g. M.Map -> Data.Map.Map).
   update
-    :: (Ord a, Hashable a, Show a)
+    :: (Ord a, Hashable a)
     => M.Map (Qualified a) [ImportRecord a]
     -> (a -> Name)
     -> Qualified a
@@ -425,7 +425,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
         (mnNew, mnOrig) <- checkImportConflicts pos mn toName options
         modify $ \usedImports ->
           M.insertWith (++) mnNew [mapQualified toName qname] usedImports
-        return $ mkQualified_ (ByModuleName mnOrig) name
+        return $ Qualified (ByModuleName mnOrig) name
 
       -- If the name wasn't found in our imports but was qualified then we need
       -- to check whether it's a failed import from a "pseudo" module (created
@@ -434,7 +434,7 @@ renameInModule imports (Module modSS coms mn decls exps) =
       (Nothing, ByModuleName mn'') ->
         if mn'' `S.member` importedQualModules imports || mn'' `S.member` importedModules imports
         then throwUnknown
-        else throwError . errorMessage . UnknownName . mkQualified_ ByNullSourcePos $ ModName mn''
+        else throwError . errorMessage . UnknownName . Qualified ByNullSourcePos $ ModName mn''
 
       -- If neither of the above cases are true then it's an undefined or
       -- unimported symbol.

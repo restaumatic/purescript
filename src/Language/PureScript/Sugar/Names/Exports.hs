@@ -18,7 +18,7 @@ import Data.Map qualified as M
 import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage', rethrow, rethrowWithPosition, warnAndRethrow)
-import Language.PureScript.Names (Ident, ModuleName, Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), disqualifyFor, isQualifiedWith, isUnqualified)
+import Language.PureScript.Names (Ident, ModuleName, Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified, QualifiedBy(..), disqualifyFor, isQualifiedWith, isUnqualified)
 import Language.PureScript.Sugar.Names.Env (Env, ExportMode(..), Exports(..), ImportRecord(..), Imports(..), checkImportConflicts, envModuleExports, exportType, exportTypeClass, exportTypeOp, exportValue, exportValueOp, nullExports)
 import Language.PureScript.Sugar.Names.Common (warnDuplicateRefs)
 import Data.Hashable (Hashable)
@@ -123,7 +123,6 @@ resolveExports env ss mn imps exps refs =
   -- boolean is true the values are filtered by the qualification
   extract
     :: Hashable a
-    => Show a
     => SourceSpan
     -> Bool
     -> ModuleName
@@ -213,7 +212,7 @@ resolveExports env ss mn imps exps refs =
     $ resolve exportedValueOps op
 
   resolve
-    :: (Ord a, Hashable a, Show a)
+    :: (Ord a, Hashable a)
     => (Exports -> M.Map a ExportSource)
     -> Qualified a
     -> Maybe (a, ExportSource)

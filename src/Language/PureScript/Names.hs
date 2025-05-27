@@ -298,29 +298,29 @@ traverseQualified f (QualifiedCons (unHashCons -> q)) = QualifiedCons . hashCons
 
 
 {-# COMPLETE Qualified #-}
-pattern Qualified :: (Show a, Hashable a) => QualifiedBy -> a -> Qualified a
+pattern Qualified :: (Hashable a) => QualifiedBy -> a -> Qualified a
 pattern Qualified qb a <- QualifiedCons (unHashCons -> Qualified' qb a) where
   Qualified qb a = mkQualified_ qb a
 
 
-showQualified :: (Show a, Hashable a) => (a -> Text) -> Qualified a -> Text
+showQualified :: (Hashable a) => (a -> Text) -> Qualified a -> Text
 showQualified f (Qualified (BySourcePos  _) a) = f a
 showQualified f (Qualified (ByModuleName name) a) = runModuleName name <> "." <> f a
 
-getQual :: (Show a, Hashable a) => Qualified a -> Maybe ModuleName
+getQual :: (Hashable a) => Qualified a -> Maybe ModuleName
 getQual (Qualified qb _) = toMaybeModuleName qb
 
 -- |
 -- Provide a default module name, if a name is unqualified
 --
-qualify :: (Show a, Hashable a) => ModuleName -> Qualified a -> (ModuleName, a)
+qualify :: (Hashable a) => ModuleName -> Qualified a -> (ModuleName, a)
 qualify m (Qualified (BySourcePos _) a) = (m, a)
 qualify _ (Qualified (ByModuleName m) a) = (m, a)
 
 -- |
 -- Makes a qualified value from a name and module name.
 --
-mkQualified :: ( Hashable a) =>a -> ModuleName -> Qualified a
+mkQualified :: (Hashable a) =>a -> ModuleName -> Qualified a
 mkQualified name mn =
   let
     qb = ByModuleName mn
@@ -331,43 +331,43 @@ mkQualified_ qb name =
   QualifiedCons (hashCons (Qualified' qb name))
 
 -- | Remove the module name from a qualified name
-disqualify :: (Show a, Hashable a) => Qualified a -> a
+disqualify :: (Hashable a) => Qualified a -> a
 disqualify (Qualified _ a) = a
 
 -- |
 -- Remove the qualification from a value when it is qualified with a particular
 -- module name.
 --
-disqualifyFor :: (Show a, Hashable a) => Maybe ModuleName -> Qualified a -> Maybe a
+disqualifyFor :: (Hashable a) => Maybe ModuleName -> Qualified a -> Maybe a
 disqualifyFor mn (Qualified qb a) | mn == toMaybeModuleName qb = Just a
 disqualifyFor _ _ = Nothing
 
 -- |
 -- Checks whether a qualified value is actually qualified with a module reference
 --
-isQualified :: (Show a, Hashable a) => Qualified a -> Bool
+isQualified :: (Hashable a) => Qualified a -> Bool
 isQualified (Qualified (BySourcePos  _) _) = False
 isQualified _ = True
 
 -- |
 -- Checks whether a qualified value is not actually qualified with a module reference
 --
-isUnqualified :: (Show a, Hashable a) => Qualified a -> Bool
+isUnqualified :: (Hashable a) => Qualified a -> Bool
 isUnqualified = not . isQualified
 
 -- |
 -- Checks whether a qualified value is qualified with a particular module
 --
-isQualifiedWith :: (Show a, Hashable a) => ModuleName -> Qualified a -> Bool
+isQualifiedWith :: (Hashable a) => ModuleName -> Qualified a -> Bool
 isQualifiedWith mn (Qualified (ByModuleName mn') _) = mn == mn'
 isQualifiedWith _ _ = False
 
-instance (Show a, Hashable a, ToJSON a) => ToJSON (Qualified a) where
+instance (Hashable a, ToJSON a) => ToJSON (Qualified a) where
   toJSON (Qualified qb a) = case qb of
     ByModuleName mn -> toJSON2 (mn, a)
     BySourcePos ss -> toJSON2 (ss, a)
 
-instance (Show a, FromJSON a, Hashable a) => FromJSON (Qualified a) where
+instance (FromJSON a, Hashable a) => FromJSON (Qualified a) where
   parseJSON v = byModule <|> bySourcePos <|> byMaybeModuleName'
     where
     byModule = do

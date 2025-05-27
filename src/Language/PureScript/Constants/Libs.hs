@@ -9,7 +9,7 @@ import Protolude qualified as P
 import Data.String (IsString)
 import Language.PureScript.Constants.TH qualified as TH
 import Language.PureScript.PSString (PSString)
-import Language.PureScript.Names (Ident (..), Qualified (..), QualifiedBy (..), pattern Qualified, Qualified(..))
+import Language.PureScript.Names (Ident (..), Qualified, QualifiedBy (..), pattern Qualified)
 
 -- Core lib values
 

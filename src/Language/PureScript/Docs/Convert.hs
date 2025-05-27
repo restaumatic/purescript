@@ -11,9 +11,9 @@ import Control.Category ((>>>))
 import Control.Monad.Writer.Strict (runWriterT)
 import Control.Monad.Supply (evalSupplyT)
 import Data.List.NonEmpty qualified as NE
-import Data.Map qualified as Map
 import Data.String (String)
 import Data.Text qualified as T
+import Data.HashMap.Strict qualified as HM
 
 import Language.PureScript.Docs.Convert.Single (convertSingleModule)
 import Language.PureScript.Docs.Types (Declaration(..), DeclarationInfo(..), KindInfo(..), Module(..), Type')
@@ -29,7 +29,6 @@ import Language.PureScript.Sugar qualified as P
 import Language.PureScript.Types qualified as P
 import Language.PureScript.Constants.Prim qualified as Prim
 import Language.PureScript.Sugar (RebracketCaller(CalledByDocs))
-import Data.HashMap.Strict qualified as HM
 
 -- |
 -- Convert a single module to a Docs.Module, making use of a pre-existing

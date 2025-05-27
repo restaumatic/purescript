@@ -9,7 +9,7 @@ import Text.Parsec qualified as P
 import Text.Parsec.Expr qualified as P
 
 import Language.PureScript.AST (Associativity, Expr(..), SourceSpan)
-import Language.PureScript.Names (OpName(..), OpNameType(..), pattern Qualified, Qualified(..))
+import Language.PureScript.Names (OpName(..), OpNameType(..), pattern Qualified, Qualified)
 import Language.PureScript.Sugar.Operators.Common (Chain, matchOperators, token)
 import Language.PureScript.Errors (MultipleErrors)
 

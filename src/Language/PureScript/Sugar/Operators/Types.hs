@@ -5,7 +5,7 @@ import Prelude
 import Control.Monad.Except (MonadError)
 import Language.PureScript.AST (Associativity, SourceSpan)
 import Language.PureScript.Errors (MultipleErrors)
-import Language.PureScript.Names (OpName(..), OpNameType(..), pattern Qualified, Qualified(..))
+import Language.PureScript.Names (OpName(..), OpNameType(..), pattern Qualified, Qualified)
 import Language.PureScript.Sugar.Operators.Common (matchOperators)
 import Language.PureScript.Types (SourceType, Type(..), srcTypeApp)
 

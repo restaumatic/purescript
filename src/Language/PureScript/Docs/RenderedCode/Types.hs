@@ -45,7 +45,7 @@ import Data.Text qualified as T
 import Data.ByteString.Lazy qualified as BS
 import Data.Text.Encoding qualified as TE
 
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, OpName(..), OpNameType(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), moduleNameFromString, runIdent, runModuleName, runProperName, properNameFromString, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, OpName(..), OpNameType(..), ProperName(..), ProperNameType(..), pattern Qualified, QualifiedBy(..), moduleNameFromString, runIdent, runModuleName, runProperName, properNameFromString, Qualified)
 import Language.PureScript.AST (Associativity(..))
 import Data.Hashable (Hashable)
 
@@ -117,7 +117,7 @@ maybeToContainingModule :: Maybe ModuleName -> ContainingModule
 maybeToContainingModule Nothing = ThisModule
 maybeToContainingModule (Just mn) = OtherModule mn
 
-fromQualified :: Show a => Hashable a => Qualified a -> (ContainingModule, a)
+fromQualified :: Hashable a => Qualified a -> (ContainingModule, a)
 fromQualified (Qualified (ByModuleName mn) x) = (OtherModule mn, x)
 fromQualified (Qualified _ x) = (ThisModule, x)
 
@@ -297,9 +297,9 @@ aliasName for name' =
   in
     case ns of
       ValueLevel ->
-        ident (mkQualified_ ByNullSourcePos (Ident name))
+        ident (Qualified ByNullSourcePos (Ident name))
       TypeLevel ->
-        typeCtor (mkQualified_ ByNullSourcePos (properNameFromString name))
+        typeCtor (Qualified ByNullSourcePos (properNameFromString name))
 
 -- | Converts a FixityAlias into a different representation which is more
 -- useful to other functions in this module.

@@ -5,7 +5,6 @@ module Language.PureScript.TypeChecker.TypeSearch
 import Protolude
 
 import Control.Monad.Writer (WriterT, runWriterT)
-import Data.Map qualified as Map
 import Data.HashMap.Strict qualified as HM
 import Language.PureScript.TypeChecker.Entailment qualified as Entailment
 
@@ -23,7 +22,6 @@ import Language.PureScript.TypeChecker.Synonyms    as P
 import Language.PureScript.Types                   as P
 import Control.Monad.Supply qualified as P
 import Language.PureScript.TypeChecker.Monad qualified as P
-import Data.HashMap.Strict qualified as HM.HashMap
 
 checkInEnvironment
   :: Environment

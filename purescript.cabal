@@ -169,7 +169,6 @@ common defaults
     containers >=0.6.5.1 && <0.7,
     unordered-containers,
     hashable,
-    random,
     cryptonite ==0.30.*,
     data-ordlist >=0.4.7.0 && <0.5,
     deepseq >=1.4.6.1 && <1.5,

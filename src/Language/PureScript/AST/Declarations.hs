@@ -26,7 +26,7 @@ import Language.PureScript.AST.Declarations.ChainId (ChainId)
 import Language.PureScript.Types (SourceConstraint, SourceType)
 import Language.PureScript.PSString (PSString)
 import Language.PureScript.Label (Label)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), toMaybeModuleName, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, pattern Qualified, QualifiedBy(..), toMaybeModuleName)
 import Language.PureScript.Roles (Role)
 import Language.PureScript.TypeClassDictionaries (NamedDict)
 import Language.PureScript.Comments (Comment)
@@ -161,8 +161,8 @@ importPrim =
   let
     primModName = C.M_Prim
   in
-    addDefaultImport (mkQualified_ (ByModuleName primModName) primModName)
-      . addDefaultImport (mkQualified_ ByNullSourcePos primModName)
+    addDefaultImport (Qualified (ByModuleName primModName) primModName)
+      . addDefaultImport (Qualified ByNullSourcePos primModName)
 
 data NameSource = UserNamed | CompilerNamed
   deriving (Eq, Show, Generic, NFData, Serialise)

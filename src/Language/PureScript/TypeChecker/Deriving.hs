@@ -12,7 +12,6 @@ import Control.Monad.Writer.Class (MonadWriter(..))
 import Data.Align (align, unalign)
 import Data.Foldable (foldl1, foldr1)
 import Data.List (init, last, zipWith3, (!!))
-import Data.Map qualified as M
 import Data.These (These(..), mergeTheseWith, these)
 
 import Language.PureScript.AST (Binder(..), CaseAlternative(..), ErrorMessageHint(..), Expr(..), InstanceDerivationStrategy(..), Literal(..), SourceSpan, nullSourceSpan)
@@ -23,7 +22,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), FunctionalDependency(..), TypeClassData(..), TypeKind(..), kindType, (-:>))
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, errorMessage, internalCompilerError)
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify, properNameFromString, mkQualified_, mapQualified)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), pattern Qualified, QualifiedBy(..), coerceProperName, freshIdent, qualify, properNameFromString, Qualified, mapQualified)
 import Language.PureScript.PSString (PSString, mkString)
 import Language.PureScript.Sugar.TypeClasses (superClassDictionaryNames)
 import Language.PureScript.TypeChecker.Entailment (InstanceContext, findDicts)
@@ -170,7 +169,7 @@ deriveNewtypeInstance className tys (UnwrappedTypeConstructor mn tyConNm dkargs 
     -- newtype-derived; see #3168. The whole verifySuperclasses feature
     -- is pretty sketchy, and could use a thorough review and probably rewrite.
     hasNewtypeSuperclassInstance (suModule, suClass) nt@(newtypeModule, _) dicts =
-      let su = mkQualified_ (ByModuleName suModule) suClass
+      let su = Qualified (ByModuleName suModule) suClass
           lookIn mn'
             = elem nt
             . (toList . extractNewtypeName mn' . tcdInstanceTypes
@@ -340,11 +339,11 @@ lookupTypeDecl
 lookupTypeDecl mn typeName = do
   env <- getEnv
   note (errorMessage $ CannotFindDerivingType typeName) $ do
-    (kind, DataType _ args dctors) <- mkQualified_ (ByModuleName mn) typeName `HM.lookup` types env
+    (kind, DataType _ args dctors) <- Qualified (ByModuleName mn) typeName `HM.lookup` types env
     (kargs, _) <- completeBinderList kind
     let dtype = do
           (ctorName, _) <- headMay dctors
-          (a, _, _, _) <- mkQualified_ (ByModuleName mn) ctorName `HM.lookup` dataConstructors env
+          (a, _, _, _) <- Qualified (ByModuleName mn) ctorName `HM.lookup` dataConstructors env
           pure a
     pure (dtype, fst . snd <$> kargs, map (\(v, k, _) -> (v, k)) args, dctors)
 
@@ -518,8 +517,8 @@ validateParamsInTypeConstructors derivingClass utc isBi CovariantClasses{..} con
   headOfType = fix $ \go -> \case
     TypeApp _ ty _ -> go ty
     KindApp _ ty _ -> go ty
-    TypeVar _ nm -> mkQualified_ ByNullSourcePos (Left nm)
-    Skolem _ nm _ _ _ -> mkQualified_ ByNullSourcePos (Left nm)
+    TypeVar _ nm -> Qualified ByNullSourcePos (Left nm)
+    Skolem _ nm _ _ _ -> Qualified ByNullSourcePos (Left nm)
     TypeConstructor _ (Qualified qb nm) -> Qualified qb (Right nm)
     ty -> internalError $ "headOfType missing a case: " <> show (void ty)
 

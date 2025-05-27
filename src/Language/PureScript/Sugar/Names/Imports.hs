@@ -211,7 +211,7 @@ resolveImport importModule exps imps impQual = resolveByType
 
   -- Add something to an import resolution list
   updateImports
-    :: (Ord a, Hashable a, Show a)
+    :: (Ord a, Hashable a)
     => M.Map (Qualified a) [ImportRecord a]
     -> M.Map a b
     -> (b -> ExportSource)

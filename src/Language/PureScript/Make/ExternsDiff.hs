@@ -388,7 +388,7 @@ typeDeps = P.everythingOnTypes (<>) $
       internalError "typeDeps: type is not qualified"
     _ -> mempty
 
-qualified :: (Show b, Hashable b) => P.Qualified b -> (ModuleName, b)
+qualified :: (Hashable b) => P.Qualified b -> (ModuleName, b)
 qualified (P.Qualified (P.ByModuleName mn) v) = (mn, v)
 qualified _ = internalError "ExternsDiff: type is not qualified"
 

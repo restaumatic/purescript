@@ -20,7 +20,7 @@ import Language.PureScript.AST.SourcePos (SourcePos(..), SourceSpan(..), nullSou
 import Language.PureScript.Constants.Libs qualified as C
 import Language.PureScript.CoreFn (Ann, Bind, Expr(..), Literal(..), Meta(..), ssAnn, traverseCoreFn)
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), InternalIdentData(..), ModuleName, pattern Qualified, Qualified(..), QualifiedBy(..), runIdent, runModuleName, toMaybeModuleName, mkQualified_)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), InternalIdentData(..), ModuleName, pattern Qualified, QualifiedBy(..), runIdent, runModuleName, toMaybeModuleName, Qualified)
 import Language.PureScript.PSString (mkString)
 
 -- This module is responsible for ensuring that the bindings in recursive
@@ -531,8 +531,8 @@ applyLazinessTransform mn rawItems = let
   where
 
   nullAnn = ssAnn nullSourceSpan
-  runtimeLazy = Var nullAnn . mkQualified_ ByNullSourcePos $ InternalIdent RuntimeLazyFactory
-  runFn3 = Var nullAnn . mkQualified_ (ByModuleName C.M_Data_Function_Uncurried) . Ident $ C.S_runFn <> "3"
+  runtimeLazy = Var nullAnn . Qualified ByNullSourcePos $ InternalIdent RuntimeLazyFactory
+  runFn3 = Var nullAnn . Qualified (ByModuleName C.M_Data_Function_Uncurried) . Ident $ C.S_runFn <> "3"
   strLit = Literal nullAnn . StringLiteral . mkString
 
   lazifyIdent = \case
@@ -545,7 +545,7 @@ applyLazinessTransform mn rawItems = let
     -- argument: the line number on which this reference is made. The runtime
     -- code uses this number to generate a message that identifies where the
     -- evaluation looped.
-    = App nullAnn (Var nullAnn . mkQualified_ ByNullSourcePos $ lazifyIdent ident)
+    = App nullAnn (Var nullAnn . Qualified ByNullSourcePos $ lazifyIdent ident)
     . Literal nullAnn . NumericLiteral . Left . toInteger . sourcePosLine
     $ spanStart ss
 

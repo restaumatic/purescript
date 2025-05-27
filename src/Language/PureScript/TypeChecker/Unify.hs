@@ -25,6 +25,8 @@ import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe)
 import Data.IntMap.Lazy qualified as IM
 import Data.Text qualified as T
+import Data.HashSet qualified as HS
+import Data.Hashable (hash)
 
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment qualified as E
@@ -33,9 +35,6 @@ import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, un
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, mkForAll, rowFromList, srcTUnknown, Hashed(..))
-import Data.HashSet qualified as HS
-import Data.IntSet qualified as IntSet
-import Data.Hashable (hash)
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: TypeCheckM SourceType

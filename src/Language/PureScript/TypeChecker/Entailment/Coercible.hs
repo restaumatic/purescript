@@ -34,11 +34,12 @@ import Data.Text (Text)
 
 import Data.Map qualified as M
 import Data.Set qualified as S
+import Data.HashMap.Strict qualified as HM
 
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), TypeKind(..), unapplyKinds)
 import Language.PureScript.Errors (DeclarationRef(..), ErrorMessageHint(..), ExportSource, ImportDeclarationType(..), MultipleErrors, SimpleErrorMessage(..), SourceAnn, errorMessage, UnknownsHint(..))
-import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), pattern Qualified, Qualified(..), byMaybeModuleName, toMaybeModuleName, mkQualified_)
+import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), pattern Qualified, byMaybeModuleName, toMaybeModuleName, Qualified)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, freshKindWithKind, unifyKinds')
 import Language.PureScript.TypeChecker.Monad (CheckState(..), TypeCheckM)
 import Language.PureScript.TypeChecker.Roles (lookupRoles)
@@ -47,7 +48,6 @@ import Language.PureScript.TypeChecker.Unify (alignRowsWith, freshTypeWithKind, 
 import Language.PureScript.Roles (Role(..))
 import Language.PureScript.Types (Constraint(..), SourceType, Type(..), completeBinderList, containsUnknowns, everythingOnTypes, isMonoType, replaceAllTypeVars, rowFromList, srcConstraint, srcTypeApp, unapplyTypes)
 import Language.PureScript.Constants.Prim qualified as Prim
-import Data.HashMap.Strict qualified as HM
 
 -- | State of the given constraints solver.
 data GivenSolverState =
@@ -681,7 +681,7 @@ lookupNewtypeConstructorInScope env currentModuleName currentModuleImports quali
       isImported = isJust fromModule
       inScope = isDefinedInCurrentModule || isImported
   (tvs, ctorName, wrappedTy) <- lookupNewtypeConstructor env qualifiedNewtypeName ks
-  pure (inScope, fromModuleName, tvs, mkQualified_ (byMaybeModuleName asModuleName) ctorName, wrappedTy)
+  pure (inScope, fromModuleName, tvs, Qualified (byMaybeModuleName asModuleName) ctorName, wrappedTy)
   where
   isNewtypeCtorImported (_, _, importDeclType, _, exportedTypes) =
     case M.lookup newtypeName exportedTypes of

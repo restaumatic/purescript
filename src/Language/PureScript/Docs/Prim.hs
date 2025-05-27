@@ -8,16 +8,15 @@ module Language.PureScript.Docs.Prim
 
 import Prelude hiding (fail)
 import Data.Functor (($>))
+import Data.HashMap.Strict qualified as HM
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Map qualified as Map
 import Language.PureScript.Docs.Types (Declaration(..), DeclarationInfo(..), Module(..), Type', convertFundepsToStrings)
 
 import Language.PureScript.Constants.Prim qualified as P
 import Language.PureScript.Crash qualified as P
 import Language.PureScript.Environment qualified as P
 import Language.PureScript.Names qualified as P
-import Data.HashMap.Strict qualified as HM
 
 primModules :: [Module]
 primModules =

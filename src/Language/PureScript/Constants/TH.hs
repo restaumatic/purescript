@@ -75,7 +75,7 @@ import Control.Monad.Trans.Writer (Writer, execWriter)
 import Control.Monad.Writer.Class (tell)
 import Data.String (String)
 import Language.Haskell.TH (Dec, Name, Pat, Q, Type, conP, implBidir, litP, mkName, patSynD, patSynSigD, prefixPatSyn, stringL)
-import Language.PureScript.Names (Ident(..), ModuleName(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), Qualified (..))
+import Language.PureScript.Names (Ident(..), ModuleName(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified, QualifiedBy(..))
 
 -- | Generate pattern synonyms corresponding to the provided PureScript
 -- declarations.

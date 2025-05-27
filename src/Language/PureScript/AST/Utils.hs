@@ -3,7 +3,7 @@ module Language.PureScript.AST.Utils where
 import Protolude
 
 import Language.PureScript.AST (Binder(..), CaseAlternative, Expr(..), GuardedExpr, Literal, pattern MkUnguarded, nullSourceSpan)
-import Language.PureScript.Names (Ident, ModuleName, ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), byMaybeModuleName, mkQualified_)
+import Language.PureScript.Names (Ident, ModuleName, ProperName, ProperNameType(..), pattern Qualified, QualifiedBy(..), byMaybeModuleName, Qualified)
 import Language.PureScript.Types (SourceType, Type(..))
 
 lam :: Ident -> Expr -> Expr
@@ -19,7 +19,7 @@ mkRef :: Qualified Ident -> Expr
 mkRef = Var nullSourceSpan
 
 mkVarMn :: Maybe ModuleName -> Ident -> Expr
-mkVarMn mn = mkRef . mkQualified_ (byMaybeModuleName mn)
+mkVarMn mn = mkRef . Qualified (byMaybeModuleName mn)
 
 mkVar :: Ident -> Expr
 mkVar = mkVarMn Nothing
@@ -31,10 +31,10 @@ mkLit :: Literal Expr -> Expr
 mkLit = Literal nullSourceSpan
 
 mkCtor :: ModuleName -> ProperName 'ConstructorName -> Expr
-mkCtor mn name = Constructor nullSourceSpan (mkQualified_ (ByModuleName mn) name)
+mkCtor mn name = Constructor nullSourceSpan (Qualified (ByModuleName mn) name)
 
 mkCtorBinder :: ModuleName -> ProperName 'ConstructorName -> [Binder] -> Binder
-mkCtorBinder mn name = ConstructorBinder nullSourceSpan (mkQualified_ (ByModuleName mn) name)
+mkCtorBinder mn name = ConstructorBinder nullSourceSpan (Qualified (ByModuleName mn) name)
 
 unguarded :: Expr -> [GuardedExpr]
 unguarded e = [MkUnguarded e]
@@ -47,7 +47,7 @@ data UnwrappedTypeConstructor = UnwrappedTypeConstructor
   }
 
 utcQTyCon :: UnwrappedTypeConstructor -> Qualified (ProperName 'TypeName)
-utcQTyCon UnwrappedTypeConstructor{..} = mkQualified_ (ByModuleName utcModuleName) utcTyCon
+utcQTyCon UnwrappedTypeConstructor{..} = Qualified (ByModuleName utcModuleName) utcTyCon
 
 unwrapTypeConstructor :: SourceType -> Maybe UnwrappedTypeConstructor
 unwrapTypeConstructor = go [] []

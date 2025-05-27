@@ -23,7 +23,7 @@ import Language.PureScript.CoreFn.Module (Module(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), NameKind(..), isDictTypeName, lookupConstructor, lookupValue)
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), getQual, runProperName, mkQualified_, mapQualified)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, QualifiedBy(..), getQual, runProperName, Qualified, mapQualified)
 import Language.PureScript.PSString (PSString)
 import Language.PureScript.Types (pattern REmptyKinded, SourceType, Type(..))
 import Language.PureScript.AST qualified as A
@@ -67,7 +67,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
   declToCoreFn :: A.Declaration -> [Bind Ann]
   declToCoreFn (A.DataDeclaration (ss, com) Newtype _ _ [ctor]) =
     [NonRec (ss, [], declMeta) (properToIdent $ A.dataCtorName ctor) $
-      Abs (ss, com, Just IsNewtype) (Ident "x") (Var (ssAnn ss) $ mkQualified_ ByNullSourcePos (Ident "x"))]
+      Abs (ss, com, Just IsNewtype) (Ident "x") (Var (ssAnn ss) $ Qualified ByNullSourcePos (Ident "x"))]
     where
     declMeta = isDictTypeName (A.dataCtorName ctor) `orEmpty` IsTypeClassConstructor
   declToCoreFn d@(A.DataDeclaration _ Newtype _ _ _) =
@@ -76,7 +76,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     flip fmap ctors $ \ctorDecl ->
       let
         ctor = A.dataCtorName ctorDecl
-        (_, _, _, fields) = lookupConstructor env (mkQualified_ (ByModuleName mn) ctor)
+        (_, _, _, fields) = lookupConstructor env (Qualified (ByModuleName mn) ctor)
       in NonRec (ssA ss) (properToIdent ctor) $ Constructor (ss, com, Nothing) tyName ctor fields
   declToCoreFn (A.DataBindingGroupDeclaration ds) =
     concatMap declToCoreFn ds
@@ -172,7 +172,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     VarBinder (ss, com, Nothing) name
   binderToCoreFn _ com (A.ConstructorBinder ss dctor@(Qualified mn' _) bs) =
     let (_, tctor, _, _) = lookupConstructor env dctor
-    in ConstructorBinder (ss, com, Just $ getConstructorMeta dctor) (mkQualified_ mn' tctor) dctor (fmap (binderToCoreFn ss []) bs)
+    in ConstructorBinder (ss, com, Just $ getConstructorMeta dctor) (Qualified mn' tctor) dctor (fmap (binderToCoreFn ss []) bs)
   binderToCoreFn _ com (A.NamedBinder ss name b) =
     NamedBinder (ss, com, Nothing) name (binderToCoreFn ss [] b)
   binderToCoreFn _ com (A.PositionedBinder ss com1 b) =
@@ -242,7 +242,7 @@ findQualModules decls =
   fqBinders (A.ConstructorBinder _ q _) = getQual' q
   fqBinders _ = []
 
-  getQual' :: (Show a, Hashable a) => Qualified a -> [ModuleName]
+  getQual' :: (Hashable a) => Qualified a -> [ModuleName]
   getQual' = maybe [] return . getQual
 
 -- | Desugars import declarations from AST to CoreFn representation.

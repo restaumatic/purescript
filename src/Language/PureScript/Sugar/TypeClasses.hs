@@ -18,7 +18,6 @@ import Control.Monad.Supply.Class (MonadSupply)
 import Data.Graph (SCC(..), stronglyConnComp)
 import Data.List (find, partition)
 import Data.List.NonEmpty (nonEmpty)
-import Data.Map qualified as M
 import Data.Maybe (catMaybes, mapMaybe, isJust)
 import Data.List.NonEmpty qualified as NEL
 import Data.Set qualified as S
@@ -30,7 +29,7 @@ import Language.PureScript.Environment (DataDeclType(..), NameKind(..), TypeClas
 import Language.PureScript.Errors hiding (isExported, nonEmpty)
 import Language.PureScript.Externs (ExternsDeclaration(..), ExternsFile(..))
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName, ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify, runIdent, mkQualified_, mapQualified)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName, ProperNameType(..), pattern Qualified, QualifiedBy(..), coerceProperName, freshIdent, qualify, runIdent, Qualified, mapQualified)
 import Language.PureScript.PSString (mkString)
 import Language.PureScript.Sugar.CaseDeclarations (desugarCases)
 import Language.PureScript.TypeClassDictionaries (superclassName)
@@ -102,7 +101,7 @@ desugarModule (Module ss coms name decls (Just exps)) = do
   constraintName (Constraint _ cName _ _ _) = cName
 
   classDeclName :: Declaration -> Qualified (ProperName 'ClassName)
-  classDeclName (TypeClassDeclaration _ pn _ _ _ _) = mkQualified_ (ByModuleName name) pn
+  classDeclName (TypeClassDeclaration _ pn _ _ _ _) = Qualified (ByModuleName name) pn
   classDeclName _ = internalError "Expected TypeClassDeclaration"
 
 desugarModule _ = internalError "Exports should have been elaborated in name desugaring"
@@ -297,15 +296,15 @@ typeClassMemberToDictionaryAccessor
   -> Declaration
   -> Declaration
 typeClassMemberToDictionaryAccessor mn name args (TypeDeclaration (TypeDeclarationData sa@(ss, _) ident ty)) =
-  let className = mkQualified_ (ByModuleName mn) name
+  let className = Qualified (ByModuleName mn) name
       dictIdent = Ident "dict"
       dictObjIdent = Ident "v"
       ctor = ConstructorBinder ss (coerceProperName . dictTypeName `mapQualified` className) [VarBinder ss dictObjIdent]
-      acsr = Accessor (mkString $ runIdent ident) (Var ss (mkQualified_ ByNullSourcePos dictObjIdent))
+      acsr = Accessor (mkString $ runIdent ident) (Var ss (Qualified ByNullSourcePos dictObjIdent))
       visibility = second (const TypeVarVisible) <$> args
   in ValueDecl sa ident Private []
     [MkUnguarded (
-     TypedValue False (Abs (VarBinder ss dictIdent) (Case [Var ss $ mkQualified_ ByNullSourcePos dictIdent] [CaseAlternative [ctor] [MkUnguarded acsr]])) $
+     TypedValue False (Abs (VarBinder ss dictIdent) (Case [Var ss $ Qualified ByNullSourcePos dictIdent] [CaseAlternative [ctor] [MkUnguarded acsr]])) $
        addVisibility visibility (moveQuantifiersToFront NullSourceAnn (quantify (srcConstrainedType (srcConstraint className [] (map (srcTypeVar . fst) args) Nothing) ty)))
     )]
 typeClassMemberToDictionaryAccessor _ _ _ _ = internalError "Invalid declaration in type class definition"

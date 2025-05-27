@@ -17,7 +17,6 @@ import Control.Monad.Writer.Class (MonadWriter(..))
 
 import Data.List (foldl', sortOn)
 import Data.Maybe (fromMaybe)
-import Data.Map qualified as M
 import Data.Text qualified as T
 
 import Language.PureScript.AST.Binders (Binder(..))
@@ -49,7 +48,7 @@ qualifyName
   -> ModuleName
   -> Qualified (ProperName b)
   -> Qualified (ProperName a)
-qualifyName n defmn qn = mkQualified_ (ByModuleName mn) n
+qualifyName n defmn qn = Qualified (ByModuleName mn) n
   where
   (mn, _) = qualify defmn qn
 

@@ -23,7 +23,7 @@ import Language.PureScript.AST.SourcePos (SourceSpan(..))
 import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.CoreFn.Ann (Ann)
 import Language.PureScript.CoreFn (Bind(..), Binder(..), CaseAlternative(..), ConstructorType(..), Expr(..), Guard, Meta(..), Module(..))
-import Language.PureScript.Names (Ident(..), ModuleName(..), properNameFromString, Qualified(..), QualifiedBy(..), unusedIdent, moduleNameFromString, ProperName, mkQualified_)
+import Language.PureScript.Names (Ident(..), ModuleName(..), properNameFromString, pattern Qualified, QualifiedBy(..), unusedIdent, moduleNameFromString, ProperName, Qualified)
 import Language.PureScript.PSString (PSString)
 
 import Text.ParserCombinators.ReadP (readP_to_S)
@@ -111,7 +111,7 @@ identFromJSON = withText "Ident" $ \case
 properNameFromJSON :: Value -> Parser (ProperName a)
 properNameFromJSON = fmap properNameFromString . parseJSON
 
-qualifiedFromJSON :: Show a => Hashable a => (Text -> a) -> Value -> Parser (Qualified a)
+qualifiedFromJSON :: Hashable a => (Text -> a) -> Value -> Parser (Qualified a)
 qualifiedFromJSON f = withObject "Qualified" qualifiedFromObj
   where
   qualifiedFromObj o =
@@ -119,11 +119,11 @@ qualifiedFromJSON f = withObject "Qualified" qualifiedFromObj
   qualifiedByModuleFromObj o = do
     mn <- o .: "moduleName" >>= moduleNameFromJSON
     i  <- o .: "identifier" >>= withText "Ident" (return . f)
-    pure $ mkQualified_ (ByModuleName mn) i
+    pure $ Qualified (ByModuleName mn) i
   qualifiedBySourcePosFromObj o = do
     ss <- o .: "sourcePos"
     i  <- o .: "identifier" >>= withText "Ident" (return . f)
-    pure $ mkQualified_ (BySourcePos ss) i
+    pure $ Qualified (BySourcePos ss) i
 
 moduleNameFromJSON :: Value -> Parser ModuleName
 moduleNameFromJSON v = moduleNameFromString . T.intercalate "." <$> listParser parseJSON v

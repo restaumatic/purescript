@@ -12,8 +12,8 @@ import Control.Exception
 import Control.Monad (when)
 import Data.Hashable (Hashable, hash, hashWithSalt)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import GHC.Base (compareInt#, Int#, IO (..), anyToAddr#, addr2Int#)
-import GHC.Exts (Any, Addr#, unsafeCoerce#)
+import GHC.Base (compareInt#, IO (..), anyToAddr#, addr2Int#)
+import GHC.Exts (Any, unsafeCoerce#)
 import System.IO.Unsafe (unsafeDupablePerformIO)
 import Text.ParserCombinators.ReadPrec (step)
 import Text.Read (Read(..), lexP, parens, prec)
@@ -126,8 +126,8 @@ compareAndSubstitute cmp eq ref1 ref2  = unsafeDupablePerformIO $ do
     -- that they are not (i.e. because (==) on their type unconditionally
     -- returns True), we need to ensure they are not thunks, according to the
     -- documentation of anyToAddr#
-    evaluate a1
-    evaluate a2
+    _ <- evaluate a1
+    _ <- evaluate a2
     -- NOTE: There is a race condition here: the addresses could change in
     -- between when they are read.  However, since either (or neither) swap is
     -- fine, we are OK with this only working "most" of the time (which we

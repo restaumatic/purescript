@@ -6,7 +6,7 @@ import Control.Monad.Except (MonadError)
 
 import Language.PureScript.AST (Associativity, Binder(..), SourceSpan)
 import Language.PureScript.Errors (MultipleErrors)
-import Language.PureScript.Names (OpName(..), OpNameType(..), pattern Qualified, Qualified(..))
+import Language.PureScript.Names (OpName(..), OpNameType(..), pattern Qualified, Qualified)
 import Language.PureScript.Sugar.Operators.Common (matchOperators)
 
 matchBinderOperators

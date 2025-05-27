@@ -22,7 +22,7 @@ import Data.List.NonEmpty qualified as NEL
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (Environment(..), NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..))
 import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition)
-import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified, pattern Qualified, QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName, runProperName, properNameFromString, mkQualified_, mapQualified)
+import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName, runProperName, properNameFromString, Qualified, mapQualified)
 import Language.PureScript.Pretty.Types (prettyPrintType)
 import Language.PureScript.Pretty.Values (prettyPrintValue)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
@@ -38,7 +38,6 @@ import Data.HashMap.Strict qualified as HM
 import Data.HashSet qualified as HS
 import Control.Monad.Identity (Identity(runIdentity))
 import Control.Monad (forM_, when, join, (<=<), guard)
-import Data.IntSet (IntSet)
 
 newtype TypeCheckM a = TypeCheckM { unTypeCheckM :: StateT CheckState (SupplyT (ExceptT MultipleErrors (SW.Writer MultipleErrors))) a }
   deriving newtype (Functor, Applicative, Monad, MonadSupply, MonadState CheckState, MonadWriter MultipleErrors, MonadError MultipleErrors)
@@ -179,9 +178,9 @@ withScopedTypeVars
 withScopedTypeVars mn ks ma = do
   orig <- get
   forM_ ks $ \(name, _) ->
-    when (mkQualified_ (ByModuleName mn) (properNameFromString name) `HM.member` types (checkEnv orig)) $
+    when (Qualified (ByModuleName mn) (properNameFromString name) `HM.member` types (checkEnv orig)) $
       tell . errorMessage $ ShadowedTypeVar name
-  bindTypes (HM.fromList (map (\(name, k) -> (mkQualified_ (ByModuleName mn) (properNameFromString name), (k, ScopedTypeVar))) ks)) ma
+  bindTypes (HM.fromList (map (\(name, k) -> (Qualified (ByModuleName mn) (properNameFromString name), (k, ScopedTypeVar))) ks)) ma
 
 withErrorMessageHint
   :: (MonadState CheckState m, MonadError MultipleErrors m)
@@ -257,7 +256,7 @@ bindLocalVariables
   -> TypeCheckM a
   -> TypeCheckM a
 bindLocalVariables bindings =
-  bindNames (HM.fromList $ flip map bindings $ \(ss, name, ty, visibility) -> (mkQualified_ (BySourcePos $ spanStart ss) name, (ty, Private, visibility)))
+  bindNames (HM.fromList $ flip map bindings $ \(ss, name, ty, visibility) -> (Qualified (BySourcePos $ spanStart ss) name, (ty, Private, visibility)))
 
 -- | Temporarily bind a collection of names to local type variables
 bindLocalTypeVariables
@@ -266,7 +265,7 @@ bindLocalTypeVariables
   -> TypeCheckM a
   -> TypeCheckM a
 bindLocalTypeVariables moduleName bindings =
-  bindTypes (HM.fromList $ flip map bindings $ \(pn, kind) -> (mkQualified_ (ByModuleName moduleName) pn, (kind, LocalTypeVariable)))
+  bindTypes (HM.fromList $ flip map bindings $ \(pn, kind) -> (Qualified (ByModuleName moduleName) pn, (kind, LocalTypeVariable)))
 
 -- | Update the visibility of all names to Defined
 makeBindingGroupVisible :: TypeCheckM ()
@@ -321,7 +320,7 @@ lookupTypeVariable
   -> TypeCheckM SourceType
 lookupTypeVariable currentModule (Qualified qb name) = do
   env <- getEnv
-  case HM.lookup (mkQualified_ qb' name) (types env) of
+  case HM.lookup (Qualified qb' name) (types env) of
     Nothing -> throwError . errorMessage $ UndefinedTypeVariable name
     Just (k, _) -> return k
   where

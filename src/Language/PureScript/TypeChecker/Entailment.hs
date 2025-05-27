@@ -40,7 +40,7 @@ import Language.PureScript.AST.Declarations (UnknownsHint(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (Environment(..), FunctionalDependency(..), TypeClassData(..), dictTypeName, kindRow, tyBoolean, tyInt, tyString)
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, addHints, errorMessage, rethrow)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual, runProperName, mkQualified_, mapQualified)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual, runProperName, Qualified, mapQualified)
 import Language.PureScript.TypeChecker.Entailment.Coercible (GivenSolverState(..), WantedSolverState(..), initialGivenSolverState, initialWantedSolverState, insoluble, solveGivens, solveWanteds)
 import Language.PureScript.TypeChecker.Entailment.IntCompare (mkFacts, mkRelation, solveRelation)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, unifyKinds')
@@ -312,7 +312,7 @@ entails SolverOptions{..} constraint context hints =
               Unsolved unsolved -> do
                 -- Generate a fresh name for the unsolved constraint's new dictionary
                 ident <- freshIdent ("dict" <> runProperName (disqualify (constraintClass unsolved)))
-                let qident = mkQualified_ ByNullSourcePos ident
+                let qident = Qualified ByNullSourcePos ident
                 -- Store the new dictionary in the InstanceContext so that we can solve this goal in
                 -- future.
                 newDicts <- lift . lift $ newDictionaries [] qident unsolved
@@ -377,7 +377,7 @@ entails SolverOptions{..} constraint context hints =
             tcdToInstanceDescription TypeClassDictionaryInScope{ tcdDescription, tcdValue } =
               let nii = namedInstanceIdentifier tcdValue
               in case tcdDescription of
-                Just ty -> flip mkQualified_ (Left ty) <$> fmap (byMaybeModuleName . getQual) nii
+                Just ty -> flip Qualified (Left ty) <$> fmap (byMaybeModuleName . getQual) nii
                 Nothing -> mapQualified Right <$> nii
 
             canBeGeneralized :: Type a -> Bool
@@ -442,7 +442,7 @@ entails SolverOptions{..} constraint context hints =
                       where
                         -- Only keep type class members that need VTAs to resolve their type class instances
                         qualifyAndFilter (ident, _, mbVtaRequiredArgs) = mbVtaRequiredArgs <&> \vtaRequiredArgs ->
-                          (mkQualified_ (ByModuleName tyClassModuleName) ident, map (map indexToArgText . NEL.toList) $ S.toList vtaRequiredArgs)
+                          (Qualified (ByModuleName tyClassModuleName) ident, map (map indexToArgText . NEL.toList) $ S.toList vtaRequiredArgs)
 
                     tyClassMembersInExpr :: Expr -> [(Qualified Ident, [[Text]])]
                     tyClassMembersInExpr = getVars
