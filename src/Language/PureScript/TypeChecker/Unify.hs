@@ -32,7 +32,7 @@ import Language.PureScript.Errors (ErrorMessageHint(..), SimpleErrorMessage(..),
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, unifyKinds')
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
-import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, mkForAll, rowFromList, srcTUnknown)
+import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, mkForAll, rowFromList, srcTUnknown, Hashed(..))
 import Data.HashSet qualified as HS
 import Data.IntSet qualified as IntSet
 import Data.Hashable (hash)
@@ -122,9 +122,9 @@ unifyTypes t1 t2 = do
     cache <- gets unificationCache
     let h1 = hash t1'
         h2 = hash t2'
-        h3 = hash $ if h1 > h2 then (h1, h2) else (h2, h1)
-    unless (IntSet.member h3 cache) $ do
-      modify $ \st -> st { unificationCache = IntSet.insert h3 cache }
+        hashed :: (Hashed (SourceType, SourceType)) =  if h1 > h2 then Hashed (hash (h1, h2)) (t1', t2') else Hashed (hash (h2, h1)) (t2', t1')
+    unless (HS.member hashed cache) $ do
+      modify $ \st -> st { unificationCache = HS.insert hashed cache }
       uf
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()
   unifyTypes' (TUnknown _ u) t = solveType u t

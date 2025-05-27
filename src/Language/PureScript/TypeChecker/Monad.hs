@@ -26,7 +26,7 @@ import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperN
 import Language.PureScript.Pretty.Types (prettyPrintType)
 import Language.PureScript.Pretty.Values (prettyPrintValue)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
-import Language.PureScript.Types (Constraint(..), SourceType, Type(..), srcKindedType, srcTypeVar)
+import Language.PureScript.Types (Constraint(..), SourceType, Type(..), srcKindedType, srcTypeVar, Hashed)
 import Text.PrettyPrint.Boxes (render)
 import Control.Monad.Supply (SupplyT (unSupplyT))
 import Control.Monad.Supply.Class (MonadSupply)
@@ -136,7 +136,7 @@ data CheckState = CheckState
   , checkConstructorImportsForCoercible :: S.Set (ModuleName, Qualified (ProperName 'ConstructorName))
   -- ^ Newtype constructors imports required to solve Coercible constraints.
   -- We have to keep track of them so that we don't emit unused import warnings.
-  , unificationCache :: IntSet
+  , unificationCache :: HS.HashSet (Hashed (SourceType, SourceType))
   }
 
 -- | Create an empty @CheckState@

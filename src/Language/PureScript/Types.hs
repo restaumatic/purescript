@@ -917,3 +917,15 @@ eqConstraint (Constraint _ a b c d) (Constraint _ a' b' c' d') = a == a' && and 
 compareConstraint :: Constraint a -> Constraint b -> Ordering
 compareConstraint (Constraint _ a b c d) (Constraint _ a' b' c' d') = compare a a' <> fold (zipWith compareType b b') <> fold (zipWith compareType c c') <> compare d d'
 
+
+-- | The type is used to optimize unification cache lookups, by reducing the potentially expensive hashing of a nested
+-- Type
+data Hashed a = Hashed { hashValue :: Int, value :: a }
+
+instance Eq a => Eq (Hashed a) where
+  (==) (Hashed hashValue value) (Hashed hashValue' value') =
+    hashValue == hashValue' && value == value'
+
+instance Eq a => Hashable (Hashed a) where
+  hashWithSalt s (Hashed hashValue _) = s `hashWithSalt` hashValue
+  hash (Hashed hashValue _) = hashValue
