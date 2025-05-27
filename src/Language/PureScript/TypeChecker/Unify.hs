@@ -99,9 +99,8 @@ occursCheck u t = void $ do
     Nothing -> throwError . errorMessage . InfiniteType $ t
     _ -> return () 
   where
-  go (TUnknown _ u') | u == u' = throwError . errorMessage . InfiniteType $ t
-  go (TUnknown _ u') | u == u' = Nothing
-  go other = return other
+    go (TUnknown _ u') | u == u' = Nothing
+    go other = return other
 
 -- | Compute a list of all unknowns appearing in a type
 unknownsInType :: Type a -> [(a, Int)]
