@@ -929,10 +929,7 @@ checkKindDeclaration _ ty = do
         other -> pure other
 
   checkValidKind =
-    (\case
-        Left err -> throwError err
-        Right v -> pure v
-    ) . everywhereOnTypesM (\case
+    liftEither . everywhereOnTypesM (\case
          ty'@(ConstrainedType ann _ _) ->
             throwError . errorMessage' (fst ann) $ UnsupportedTypeInKind ty'
          other -> pure other
