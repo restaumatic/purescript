@@ -121,14 +121,14 @@ typeSearch unsolved env st type' =
     runTypeSearch :: HM.HashMap k P.SourceType -> HM.HashMap k P.SourceType
     runTypeSearch = HM.mapMaybe (\ty -> checkSubsume unsolved env st type' ty $> ty)
 
-    matchingNames = runTypeSearch (HM.map (\(ty, _, _) -> ty) (P.names env))
-    matchingConstructors = runTypeSearch (HM.map (\(_, _, ty, _) -> ty) (P.dataConstructors env))
+    matchingNames = sortOn fst $ HM.toList $ runTypeSearch (fmap (\(ty, _, _) -> ty) (P.names env))
+    matchingConstructors = sortOn fst $ HM.toList $ runTypeSearch (fmap (\(_, _, ty, _) -> ty) (P.dataConstructors env))
     (allLabels, matchingLabels) = accessorSearch unsolved env st type'
 
     runPlainIdent (Qualified m (Ident k), v) = Just (Qualified m k, v)
     runPlainIdent _ = Nothing
   in
     ( (first (P.mkQualified_ P.ByNullSourcePos . ("_." <>) . P.prettyPrintLabel) <$> matchingLabels)
-      <> mapMaybe runPlainIdent (HM.toList matchingNames)
-      <> (first (mapQualified P.runProperName) <$> HM.toList matchingConstructors)
+      <> mapMaybe runPlainIdent matchingNames
+      <> (first (mapQualified P.runProperName) <$> matchingConstructors)
     , if null allLabels then Nothing else Just allLabels)

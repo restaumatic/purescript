@@ -271,7 +271,9 @@ instance (Serialise a) => Serialise (Qualified' a)
 
 newtype Qualified a = QualifiedCons (HashCons (Qualified' a))
   deriving (Show, Eq, Generic)
-  deriving newtype (Ord) -- TODO: ORD? 
+
+instance (Eq a, Ord a) => Ord (Qualified a) where
+  compare (QualifiedCons q1) (QualifiedCons q2) = compare (unHashCons q1) (unHashCons q2)
 
 instance (NFData a) => NFData (Qualified a)
 
