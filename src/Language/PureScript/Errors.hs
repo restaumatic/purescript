@@ -1157,7 +1157,7 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
                       (Box.alignHoriz Box.left longestId <$> idBoxes)
                       tyBoxes
             in [ line "You could substitute the hole with one of these values:"
-               , markCodeBox (indent (formatTS (unzip (take maxTSResults (idents)))))
+               , markCodeBox (indent (formatTS (unzip (take maxTSResults idents))))
                ]
           _ -> []
       in
