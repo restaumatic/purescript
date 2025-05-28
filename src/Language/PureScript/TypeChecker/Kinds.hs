@@ -30,7 +30,7 @@ import Prelude
 import Control.Arrow ((***))
 import Control.Lens ((^.), _1, _2, _3)
 import Control.Monad (join, unless, void, when, (<=<))
-import Control.Monad.Error.Class (MonadError(..))
+import Control.Monad.Error.Class (MonadError(..), liftEither)
 import Control.Monad.State (gets, modify)
 import Control.Monad.Supply.Class (MonadSupply(..))
 
