@@ -81,7 +81,7 @@ instance Eq a => Eq (HashCons a) where
     | ref1 == ref2 = True
     | h1 /= h2 = False
     | otherwise = compareAndSubstitute ((==) :: a -> a -> Bool) True ref1 ref2
-  {- INLINE (==) #-}
+  {-# INLINE (==) #-}
 
 -- | NOTE: This instance orders by hash first, and only secondarily by
 -- the 'Ord' instance of 'a', to improve performance.
