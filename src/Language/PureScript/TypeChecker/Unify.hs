@@ -94,14 +94,14 @@ substituteType sub = everywhereOnTypes go
 -- | Make sure that an unknown does not occur in a type
 occursCheck :: Int -> SourceType -> TypeCheckM ()
 occursCheck _ TUnknown{} = return ()
-occursCheck u t = void $ do 
+occursCheck u t = void $ do
   let result = everywhereOnTypesM go t
   case result of
     Nothing -> throwError . errorMessage . InfiniteType $ t
     _ -> return () 
   where
-  go (TUnknown _ u') | u == u' = Nothing
-  go other = return other
+    go (TUnknown _ u') | u == u' = Nothing
+    go other = return other
 
 -- | Compute a list of all unknowns appearing in a type
 unknownsInType :: Type a -> [(a, Int)]

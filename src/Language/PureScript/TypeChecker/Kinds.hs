@@ -30,7 +30,7 @@ import Prelude
 import Control.Arrow ((***))
 import Control.Lens ((^.), _1, _2, _3)
 import Control.Monad (join, unless, void, when, (<=<))
-import Control.Monad.Error.Class (MonadError(..))
+import Control.Monad.Error.Class (MonadError(..), liftEither)
 import Control.Monad.State (gets, modify)
 import Control.Monad.Supply.Class (MonadSupply(..))
 
@@ -929,13 +929,11 @@ checkKindDeclaration _ ty = do
         other -> pure other
 
   checkValidKind :: SourceType -> TypeCheckM SourceType
-  checkValidKind = (\case
-      Left err -> throwError err
-      Right v -> pure v
-    ) . everywhereOnTypesM (\case
-      ty'@(ConstrainedType ann _ _) ->
-        throwError . errorMessage' (fst ann) $ UnsupportedTypeInKind ty'
-      other -> pure other
+  checkValidKind =
+    liftEither . everywhereOnTypesM (\case
+         ty'@(ConstrainedType ann _ _) ->
+            throwError . errorMessage' (fst ann) $ UnsupportedTypeInKind ty'
+         other -> pure other
     )
 
 existingSignatureOrFreshKind
