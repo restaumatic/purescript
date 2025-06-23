@@ -445,7 +445,7 @@ externsDeclarationToRef moduleName = \case
   --
   P.EDInstance cn n args kinds types constraints _ _ _ _ ->
     Just
-      ( TypeInstanceRef n (qualified cn) (mapMaybe myType types)
+      ( TypeInstanceRef n (qualified cn) (foldMap (P.everythingOnTypes (<>) (maybeToList . myType)) types)
       , maybe mempty constraintsDeps constraints <> instanceArgsDeps args <> foldMap typeDeps kinds
       )
   where
