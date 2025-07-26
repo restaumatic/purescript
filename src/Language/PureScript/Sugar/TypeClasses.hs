@@ -18,7 +18,6 @@ import Control.Monad.Supply.Class (MonadSupply)
 import Data.Graph (SCC(..), stronglyConnComp)
 import Data.List (find, partition)
 import Data.List.NonEmpty (nonEmpty)
-import Data.Map qualified as M
 import Data.Maybe (catMaybes, mapMaybe, isJust)
 import Data.List.NonEmpty qualified as NEL
 import Data.Set qualified as S
@@ -30,13 +29,14 @@ import Language.PureScript.Environment (DataDeclType(..), NameKind(..), TypeClas
 import Language.PureScript.Errors hiding (isExported, nonEmpty)
 import Language.PureScript.Externs (ExternsDeclaration(..), ExternsFile(..))
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify, runIdent)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName, ProperNameType(..), pattern Qualified, QualifiedBy(..), coerceProperName, freshIdent, qualify, runIdent, Qualified, mapQualified)
 import Language.PureScript.PSString (mkString)
 import Language.PureScript.Sugar.CaseDeclarations (desugarCases)
 import Language.PureScript.TypeClassDictionaries (superclassName)
 import Language.PureScript.Types
+import Data.HashMap.Strict qualified as HM
 
-type MemberMap = M.Map (ModuleName, ProperName 'ClassName) TypeClassData
+type MemberMap = HM.HashMap (ModuleName, ProperName 'ClassName) TypeClassData
 
 type Desugar = StateT MemberMap
 
@@ -54,14 +54,14 @@ desugarTypeClasses externs = flip evalStateT initialState . desugarModule
   initialState :: MemberMap
   initialState =
     mconcat
-      [ M.mapKeys (qualify C.M_Prim) primClasses
-      , M.mapKeys (qualify C.M_Prim_Coerce) primCoerceClasses
-      , M.mapKeys (qualify C.M_Prim_Row) primRowClasses
-      , M.mapKeys (qualify C.M_Prim_RowList) primRowListClasses
-      , M.mapKeys (qualify C.M_Prim_Symbol) primSymbolClasses
-      , M.mapKeys (qualify C.M_Prim_Int) primIntClasses
-      , M.mapKeys (qualify C.M_Prim_TypeError) primTypeErrorClasses
-      , M.fromList (externs >>= \ExternsFile{..} -> mapMaybe (fromExternsDecl efModuleName) efDeclarations)
+      [ HM.mapKeys (qualify C.M_Prim) primClasses
+      , HM.mapKeys (qualify C.M_Prim_Coerce) primCoerceClasses
+      , HM.mapKeys (qualify C.M_Prim_Row) primRowClasses
+      , HM.mapKeys (qualify C.M_Prim_RowList) primRowListClasses
+      , HM.mapKeys (qualify C.M_Prim_Symbol) primSymbolClasses
+      , HM.mapKeys (qualify C.M_Prim_Int) primIntClasses
+      , HM.mapKeys (qualify C.M_Prim_TypeError) primTypeErrorClasses
+      , HM.fromList (externs >>= \ExternsFile{..} -> mapMaybe (fromExternsDecl efModuleName) efDeclarations)
       ]
 
   fromExternsDecl
@@ -205,7 +205,7 @@ desugarDecl
 desugarDecl mn exps = go
   where
   go d@(TypeClassDeclaration sa name args implies deps members) = do
-    modify (M.insert (mn, name) (makeTypeClassData args (map memberToNameAndType members) implies deps False))
+    modify (HM.insert (mn, name) (makeTypeClassData args (map memberToNameAndType members) implies deps False))
     return (Nothing, d : typeClassDictionaryDeclaration sa name args implies members : map (typeClassMemberToDictionaryAccessor mn name args) members)
   go (TypeInstanceDeclaration sa na chainId idx name deps className tys body) = do
     name' <- desugarInstName name
@@ -223,7 +223,7 @@ desugarDecl mn exps = go
           typeInstanceDictionaryDeclaration sa name' mn deps className tys desugared
       Left dict ->
         let
-          dictTy = foldl srcTypeApp (srcTypeConstructor (fmap (coerceProperName . dictTypeName) className)) tys
+          dictTy = foldl srcTypeApp (srcTypeConstructor (mapQualified (coerceProperName . dictTypeName) className)) tys
           constrainedTy = quantify (foldr srcConstrainedType dictTy deps)
         in
           return $ ValueDecl sa name' Private [] [MkUnguarded (TypedValue True dict constrainedTy)]
@@ -279,7 +279,7 @@ typeClassDictionaryDeclaration
   -> Declaration
 typeClassDictionaryDeclaration sa name args implies members =
   let superclassTypes = superClassDictionaryNames implies `zip`
-        [ function unit (foldl srcTypeApp (srcTypeConstructor (fmap (coerceProperName . dictTypeName) superclass)) tyArgs)
+        [ function unit (foldl srcTypeApp (srcTypeConstructor (mapQualified (coerceProperName . dictTypeName) superclass)) tyArgs)
         | (Constraint _ superclass _ tyArgs _) <- implies
         ]
       members' = map (first runIdent . memberToNameAndType) members
@@ -299,7 +299,7 @@ typeClassMemberToDictionaryAccessor mn name args (TypeDeclaration (TypeDeclarati
   let className = Qualified (ByModuleName mn) name
       dictIdent = Ident "dict"
       dictObjIdent = Ident "v"
-      ctor = ConstructorBinder ss (coerceProperName . dictTypeName <$> className) [VarBinder ss dictObjIdent]
+      ctor = ConstructorBinder ss (coerceProperName . dictTypeName `mapQualified` className) [VarBinder ss dictObjIdent]
       acsr = Accessor (mkString $ runIdent ident) (Var ss (Qualified ByNullSourcePos dictObjIdent))
       visibility = second (const TypeVarVisible) <$> args
   in ValueDecl sa ident Private []
@@ -329,8 +329,8 @@ typeInstanceDictionaryDeclaration sa@(ss, _) name mn deps className tys decls =
 
   -- Lookup the type arguments and member types for the type class
   TypeClassData{..} <-
-    maybe (throwError . errorMessage' ss . UnknownName $ fmap TyClassName className) return $
-      M.lookup (qualify mn className) m
+    maybe (throwError . errorMessage' ss . UnknownName $ mapQualified TyClassName className) return $
+      HM.lookup (qualify mn className) m
 
   -- Replace the type arguments with the appropriate types in the member types
   let memberTypes = map (second (replaceAllTypeVars (zip (map fst typeClassArguments) tys)) . tuple3To2) typeClassMembers
@@ -358,9 +358,9 @@ typeInstanceDictionaryDeclaration sa@(ss, _) name mn deps className tys decls =
   let superclasses = superClassDictionaryNames typeClassSuperclasses `zip` superclassesDicts
 
   let props = Literal ss $ ObjectLiteral $ map (first mkString) (members ++ superclasses)
-      dictTy = foldl srcTypeApp (srcTypeConstructor (fmap (coerceProperName . dictTypeName) className)) tys
+      dictTy = foldl srcTypeApp (srcTypeConstructor (mapQualified (coerceProperName . dictTypeName) className)) tys
       constrainedTy = quantify (foldr srcConstrainedType dictTy deps)
-      dict = App (Constructor ss (fmap (coerceProperName . dictTypeName) className)) props
+      dict = App (Constructor ss (mapQualified (coerceProperName . dictTypeName) className)) props
       mkTV = if unreachable then TypedValue False (Var nullSourceSpan C.I_undefined) else TypedValue True dict
       result = ValueDecl sa name Private [] [MkUnguarded (mkTV constrainedTy)]
   return result

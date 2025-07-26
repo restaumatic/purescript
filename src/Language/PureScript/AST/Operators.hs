@@ -12,6 +12,7 @@ import Data.Aeson ((.=))
 import Data.Aeson qualified as A
 
 import Language.PureScript.Crash (internalError)
+import Data.Hashable (Hashable)
 
 -- |
 -- A precedence level for an infix operator
@@ -26,6 +27,7 @@ data Associativity = Infixl | Infixr | Infix
 
 instance NFData Associativity
 instance Serialise Associativity
+instance Hashable Associativity
 
 showAssoc :: Associativity -> String
 showAssoc Infixl = "infixl"

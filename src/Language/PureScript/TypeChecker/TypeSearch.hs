@@ -5,7 +5,7 @@ module Language.PureScript.TypeChecker.TypeSearch
 import Protolude
 
 import Control.Monad.Writer (WriterT, runWriterT)
-import Data.Map qualified as Map
+import Data.HashMap.Strict qualified as HM
 import Language.PureScript.TypeChecker.Entailment qualified as Entailment
 
 import Language.PureScript.TypeChecker.Monad qualified as TC
@@ -60,7 +60,7 @@ checkSubsume unsolved env st userT envT = checkInEnvironment env st $ do
   userT' <- initializeSkolems userT
   envT' <- initializeSkolems envT
 
-  let dummyExpression = P.Var nullSourceSpan (P.Qualified P.ByNullSourcePos (P.Ident "x"))
+  let dummyExpression = P.Var nullSourceSpan (P.mkQualified_ P.ByNullSourcePos (P.Ident "x"))
 
   elab <- subsumes envT' userT'
   subst <- gets TC.checkSubstitution
@@ -69,7 +69,7 @@ checkSubsume unsolved env st userT envT = checkInEnvironment env st $ do
   -- Now check that any unsolved constraints have not become impossible
   (traverse_ . traverse_) (\(_, context, constraint) -> do
     let constraint' = P.mapConstraintArgs (map (P.substituteType subst)) constraint
-    flip evalStateT Map.empty . evalWriterT $
+    flip evalStateT HM.empty . evalWriterT $
       Entailment.entails
         (Entailment.SolverOptions
           { solverShouldGeneralize = True
@@ -118,17 +118,17 @@ typeSearch
   -> ([(P.Qualified Text, P.SourceType)], Maybe [(Label, P.SourceType)])
 typeSearch unsolved env st type' =
   let
-    runTypeSearch :: Map k P.SourceType -> Map k P.SourceType
-    runTypeSearch = Map.mapMaybe (\ty -> checkSubsume unsolved env st type' ty $> ty)
+    runTypeSearch :: HM.HashMap k P.SourceType -> HM.HashMap k P.SourceType
+    runTypeSearch = HM.mapMaybe (\ty -> checkSubsume unsolved env st type' ty $> ty)
 
-    matchingNames = runTypeSearch (Map.map (\(ty, _, _) -> ty) (P.names env))
-    matchingConstructors = runTypeSearch (Map.map (\(_, _, ty, _) -> ty) (P.dataConstructors env))
+    matchingNames = sortOn fst $ HM.toList $ runTypeSearch (fmap (\(ty, _, _) -> ty) (P.names env))
+    matchingConstructors = sortOn fst $ HM.toList $ runTypeSearch (fmap (\(_, _, ty, _) -> ty) (P.dataConstructors env))
     (allLabels, matchingLabels) = accessorSearch unsolved env st type'
 
     runPlainIdent (Qualified m (Ident k), v) = Just (Qualified m k, v)
     runPlainIdent _ = Nothing
   in
-    ( (first (P.Qualified P.ByNullSourcePos . ("_." <>) . P.prettyPrintLabel) <$> matchingLabels)
-      <> mapMaybe runPlainIdent (Map.toList matchingNames)
-      <> (first (map P.runProperName) <$> Map.toList matchingConstructors)
+    ( (first (P.mkQualified_ P.ByNullSourcePos . ("_." <>) . P.prettyPrintLabel) <$> matchingLabels)
+      <> mapMaybe runPlainIdent matchingNames
+      <> (first (mapQualified P.runProperName) <$> matchingConstructors)
     , if null allLabels then Nothing else Just allLabels)

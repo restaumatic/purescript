@@ -8,9 +8,9 @@ module Language.PureScript.Docs.Prim
 
 import Prelude hiding (fail)
 import Data.Functor (($>))
+import Data.HashMap.Strict qualified as HM
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Map qualified as Map
 import Language.PureScript.Docs.Types (Declaration(..), DeclarationInfo(..), Module(..), Type', convertFundepsToStrings)
 
 import Language.PureScript.Constants.Prim qualified as P
@@ -161,13 +161,13 @@ primTypeErrorDocsModule = Module
 
 unsafeLookup
   :: forall v (a :: P.ProperNameType)
-  . Map.Map (P.Qualified (P.ProperName a)) v
+  . HM.HashMap (P.Qualified (P.ProperName a)) v
   -> String
   -> P.Qualified (P.ProperName a)
   -> v
 unsafeLookup m errorMsg name = go name
   where
-  go = fromJust' . flip Map.lookup m
+  go = fromJust' . flip HM.lookup m
 
   fromJust' (Just x) = x
   fromJust' _ = P.internalError $ errorMsg ++ show (P.runProperName $ P.disqualify name)

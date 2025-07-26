@@ -26,6 +26,7 @@ import Data.Monoid (Any(..))
 import Data.String (fromString)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Hashable (Hashable)
 
 import Language.PureScript.AST.SourcePos (SourceSpan, displayStartEndPos)
 import Language.PureScript.CodeGen.JS.Common as Common
@@ -39,7 +40,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (ErrorMessageHint(..), SimpleErrorMessage(..),
                                    MultipleErrors(..), rethrow, errorMessage,
                                    errorMessage', rethrowWithPosition, addHint)
-import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), Qualified(..), QualifiedBy(..), runIdent, runModuleName, showIdent, showQualified)
+import Language.PureScript.Names (Ident(..), ModuleName, pattern Qualified, Qualified, QualifiedBy(..), runIdent, runModuleName, showIdent, showQualified, runProperName)
 import Language.PureScript.Options (CodegenTarget(..), Options(..))
 import Language.PureScript.PSString (PSString, mkString)
 import Language.PureScript.Traversals (sndM)
@@ -392,7 +393,7 @@ moduleBindToJs mn = bindToJs
 
   -- Generate code in the simplified JavaScript intermediate representation for a reference to a
   -- variable that may have a qualified name.
-  qualifiedToJS :: (a -> Ident) -> Qualified a -> AST
+  qualifiedToJS :: (Hashable a) => (a -> Ident) -> Qualified a -> AST
   qualifiedToJS f (Qualified (ByModuleName C.M_Prim) a) = AST.Var Nothing . runIdent $ f a
   qualifiedToJS f (Qualified (ByModuleName mn') a) | mn /= mn' = AST.ModuleAccessor Nothing mn' . mkString . T.concatMap identCharToText . runIdent $ f a
   qualifiedToJS f (Qualified _ a) = AST.Var Nothing $ identToJs (f a)

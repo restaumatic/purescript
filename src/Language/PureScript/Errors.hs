@@ -474,7 +474,7 @@ onTypesInErrorMessageM f (ErrorMessage hints simple) = ErrorMessage <$> traverse
   gSimple (InvalidInstanceHead t) = InvalidInstanceHead <$> f t
   gSimple (NoInstanceFound con ambig unks) = NoInstanceFound <$> overConstraintArgs (traverse f) con <*> pure ambig <*> pure unks
   gSimple (AmbiguousTypeVariables t uis) = AmbiguousTypeVariables <$> f t <*> pure uis
-  gSimple (OverlappingInstances cl ts insts) = OverlappingInstances cl <$> traverse f ts <*> traverse (traverse $ bitraverse f pure) insts
+  gSimple (OverlappingInstances cl ts insts) = OverlappingInstances cl <$> traverse f ts <*> traverse (traverseQualified $ bitraverse f pure) insts
   gSimple (PossiblyInfiniteInstance cl ts) = PossiblyInfiniteInstance cl <$> traverse f ts
   gSimple (CannotDerive cl ts) = CannotDerive cl <$> traverse f ts
   gSimple (InvalidNewtypeInstance cl ts) = InvalidNewtypeInstance cl <$> traverse f ts
@@ -862,8 +862,7 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
             ]
     renderSimpleErrorMessage (TypesDoNotUnify u1 u2)
       = let (row1Box, row2Box) = printRows u1 u2
-
-        in paras [ line "Could not match type"
+        in  paras [ line "Could not match type"
                  , row1Box
                  , line "with type"
                  , row2Box
@@ -1200,7 +1199,7 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
 
     renderSimpleErrorMessage msg@(UnusedExplicitImport mn names _ _) =
       paras [ line $ "The import of module " <> markCode (runModuleName mn) <> " contains the following unused references:"
-            , indent $ paras $ map (line . markCode . runName . Qualified ByNullSourcePos) names
+            , indent $ paras $ map (line . markCode . runName . mkQualified_ ByNullSourcePos ) names
             , line "It could be replaced with:"
             , indent $ line $ markCode $ showSuggestion msg ]
 
@@ -1801,7 +1800,7 @@ prettyPrintSingleError (PPEOptions codeColor full level showDocs relPath fileCon
         Box.<> markCodeBox (prettyType ty)
         Box.<> " "
         Box.<> (line . displayStartEndPos . fst $ getAnnForType ty)
-    Qualified mn (Right inst) -> line . markCode . showQualified showIdent $ Qualified mn inst
+    Qualified mn (Right inst) -> line . markCode . showQualified showIdent $ mkQualified_ mn inst
 
   -- As of this writing, this function assumes that all provided SourceSpans
   -- are non-overlapping (except for exact duplicates) and span no line breaks. A

@@ -14,7 +14,7 @@ import Data.Functor.Identity (runIdentity)
 import Data.List (mapAccumL)
 import Data.Maybe (mapMaybe)
 import Data.List.NonEmpty qualified as NEL
-import Data.Map qualified as M
+import Data.HashMap.Strict qualified as HM
 import Data.Set qualified as S
 
 import Language.PureScript.AST.Binders (Binder(..), binderNames)
@@ -718,4 +718,4 @@ overTypes f = let (_, f', _) = everywhereOnValues id g id in f'
   g other = other
   updateDict fn dict = dict { tcdInstanceTypes = fn (tcdInstanceTypes dict) }
   updateScope = fmap . fmap . fmap . fmap $ updateDict $ fmap f
-  updateCtx = M.alter updateScope ByNullSourcePos
+  updateCtx = HM.alter updateScope ByNullSourcePos

@@ -17,7 +17,6 @@ import Control.Monad.Writer.Class (MonadWriter(..))
 
 import Data.List (foldl', sortOn)
 import Data.Maybe (fromMaybe)
-import Data.Map qualified as M
 import Data.Text qualified as T
 
 import Language.PureScript.AST.Binders (Binder(..))
@@ -31,6 +30,7 @@ import Language.PureScript.Names as P
 import Language.PureScript.Pretty.Values (prettyPrintBinderAtom)
 import Language.PureScript.Types as P
 import Language.PureScript.Constants.Prim qualified as C
+import Data.HashMap.Strict qualified as HM
 
 -- | There are two modes of failure for the redundancy check:
 --
@@ -67,7 +67,7 @@ getConstructors env defmn n = extractConstructors lnte
   extractConstructors _ = internalError "Data name not in the scope of the current environment in extractConstructors"
 
   lnte :: Maybe (SourceType, TypeKind)
-  lnte = M.lookup qpn (types env)
+  lnte = HM.lookup qpn (types env)
 
   qpn :: Qualified (ProperName 'TypeName)
   qpn = getConsDataName n
@@ -79,7 +79,7 @@ getConstructors env defmn n = extractConstructors lnte
       Just (_, pm, _, _) -> qualifyName pm defmn con
 
   getConsInfo :: Qualified (ProperName 'ConstructorName) -> Maybe (DataDeclType, ProperName 'TypeName, SourceType, [Ident])
-  getConsInfo con = M.lookup con (dataConstructors env)
+  getConsInfo con = HM.lookup con (dataConstructors env)
 
 -- |
 -- Replicates a wildcard binder

@@ -5,7 +5,7 @@ import Prelude
 import Data.List (sort)
 import Control.Exception (evaluate)
 import Control.DeepSeq (force)
-import Data.Map qualified as Map
+import Data.HashMap.Strict qualified as HM
 import Data.Text qualified as Text
 import Language.PureScript qualified as P
 import Language.PureScript.Docs qualified as D
@@ -21,7 +21,7 @@ spec = do
   it "all Prim modules are fully documented" $ do
     let actualPrimNames =
           -- note that prim type classes are listed in P.primTypes
-          filter (not . Text.any (== '$')) . map (P.runProperName . P.disqualify . fst) $ Map.toList
+          filter (not . Text.any (== '$')) . map (P.runProperName . P.disqualify . fst) $ HM.toList
             ( P.primTypes <>
               P.primBooleanTypes <>
               P.primCoerceTypes <>

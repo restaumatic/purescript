@@ -8,11 +8,11 @@ import Data.Text (Text)
 import Data.Text qualified as T
 
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Names (Ident(..), InternalIdentData(..), ModuleName(..), ProperName(..), unusedIdent)
+import Language.PureScript.Names (Ident(..), InternalIdentData(..), runModuleName, ProperName(..), unusedIdent, ModuleName, runProperName)
 
 moduleNameToJs :: ModuleName -> Text
-moduleNameToJs (ModuleName mn) =
-  let name = T.replace "." "_" mn
+moduleNameToJs mn =
+  let name = T.replace "." "_" (runModuleName mn)
   in if nameIsJsBuiltIn name then "$$" <> name else name
 
 -- | Convert an 'Ident' into a valid JavaScript identifier:

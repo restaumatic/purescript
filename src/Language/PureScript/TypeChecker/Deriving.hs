@@ -12,7 +12,6 @@ import Control.Monad.Writer.Class (MonadWriter(..))
 import Data.Align (align, unalign)
 import Data.Foldable (foldl1, foldr1)
 import Data.List (init, last, zipWith3, (!!))
-import Data.Map qualified as M
 import Data.These (These(..), mergeTheseWith, these)
 
 import Language.PureScript.AST (Binder(..), CaseAlternative(..), ErrorMessageHint(..), Expr(..), InstanceDerivationStrategy(..), Literal(..), SourceSpan, nullSourceSpan)
@@ -23,7 +22,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), FunctionalDependency(..), TypeClassData(..), TypeKind(..), kindType, (-:>))
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, errorMessage, internalCompilerError)
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, freshIdent, qualify)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), ProperName(..), ProperNameType(..), pattern Qualified, QualifiedBy(..), coerceProperName, freshIdent, qualify, properNameFromString, Qualified, mapQualified)
 import Language.PureScript.PSString (PSString, mkString)
 import Language.PureScript.Sugar.TypeClasses (superClassDictionaryNames)
 import Language.PureScript.TypeChecker.Entailment (InstanceContext, findDicts)
@@ -31,6 +30,7 @@ import Language.PureScript.TypeChecker.Monad (getEnv, getTypeClassDictionaries, 
 import Language.PureScript.TypeChecker.Synonyms (replaceAllTypeSynonyms)
 import Language.PureScript.TypeClassDictionaries (TypeClassDictionaryInScope(..))
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, SourceType, Type(..), completeBinderList, eqType, everythingOnTypes, replaceAllTypeVars, srcTypeVar, usedTypeVariables)
+import Data.HashMap.Strict qualified as HM
 
 -- | Extract the name of the newtype appearing in the last type argument of
 -- a derived newtype instance.
@@ -53,11 +53,11 @@ deriveInstance instType className strategy = do
   mn <- unsafeCheckCurrentModule
   env <- getEnv
   instUtc@UnwrappedTypeConstructor{ utcArgs = tys } <- maybe (internalCompilerError "invalid instance type") pure $ unwrapTypeConstructor instType
-  let ctorName = coerceProperName <$> utcQTyCon instUtc
+  let ctorName = coerceProperName `mapQualified` utcQTyCon instUtc
 
   TypeClassData{..} <-
-    note (errorMessage . UnknownName $ fmap TyClassName className) $
-      className `M.lookup` typeClasses env
+    note (errorMessage . UnknownName $ mapQualified TyClassName className) $
+      className `HM.lookup` typeClasses env
 
   case strategy of
     KnownClassStrategy -> let
@@ -142,10 +142,10 @@ deriveNewtypeInstance className tys (UnwrappedTypeConstructor mn tyConNm dkargs 
     verifySuperclasses :: TypeCheckM ()
     verifySuperclasses = do
       env <- getEnv
-      for_ (M.lookup className (typeClasses env)) $ \TypeClassData{ typeClassArguments = args, typeClassSuperclasses = superclasses } ->
+      for_ (HM.lookup className (typeClasses env)) $ \TypeClassData{ typeClassArguments = args, typeClassSuperclasses = superclasses } ->
         for_ superclasses $ \Constraint{..} -> do
           let constraintClass' = qualify (internalError "verifySuperclasses: unknown class module") constraintClass
-          for_ (M.lookup constraintClass (typeClasses env)) $ \TypeClassData{ typeClassDependencies = deps } ->
+          for_ (HM.lookup constraintClass (typeClasses env)) $ \TypeClassData{ typeClassDependencies = deps } ->
             -- We need to check whether the newtype is mentioned, because of classes like MonadWriter
             -- with its Monoid superclass constraint.
             when (not (null args) && any ((fst (last args) `elem`) . usedTypeVariables) constraintArgs) $ do
@@ -173,8 +173,8 @@ deriveNewtypeInstance className tys (UnwrappedTypeConstructor mn tyConNm dkargs 
           lookIn mn'
             = elem nt
             . (toList . extractNewtypeName mn' . tcdInstanceTypes
-                <=< foldMap toList . M.elems
-                <=< toList . (M.lookup su <=< M.lookup (ByModuleName mn')))
+                <=< foldMap toList . HM.elems
+                <=< toList . (HM.lookup su <=< HM.lookup (ByModuleName mn')))
             $ dicts
       in lookIn suModule || lookIn newtypeModule
 
@@ -279,10 +279,10 @@ deriveOrd utc = do
     orderingMod = ModuleName "Data.Ordering"
 
     orderingCtor :: Text -> Expr
-    orderingCtor = mkCtor orderingMod . ProperName
+    orderingCtor = mkCtor orderingMod . properNameFromString
 
     orderingBinder :: Text -> Binder
-    orderingBinder name = mkCtorBinder orderingMod (ProperName name) []
+    orderingBinder name = mkCtorBinder orderingMod (properNameFromString name) []
 
     ordCompare :: Expr -> Expr -> Expr
     ordCompare = App . App (mkRef Libs.I_compare)
@@ -339,11 +339,11 @@ lookupTypeDecl
 lookupTypeDecl mn typeName = do
   env <- getEnv
   note (errorMessage $ CannotFindDerivingType typeName) $ do
-    (kind, DataType _ args dctors) <- Qualified (ByModuleName mn) typeName `M.lookup` types env
+    (kind, DataType _ args dctors) <- Qualified (ByModuleName mn) typeName `HM.lookup` types env
     (kargs, _) <- completeBinderList kind
     let dtype = do
           (ctorName, _) <- headMay dctors
-          (a, _, _, _) <- Qualified (ByModuleName mn) ctorName `M.lookup` dataConstructors env
+          (a, _, _, _) <- Qualified (ByModuleName mn) ctorName `HM.lookup` dataConstructors env
           pure a
     pure (dtype, fst . snd <$> kargs, map (\(v, k, _) -> (v, k)) args, dctors)
 

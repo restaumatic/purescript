@@ -27,6 +27,7 @@ import Data.Functor (($>), (<&>))
 import Data.List (delete, findIndices, minimumBy, nubBy, sortOn, tails)
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
 import Data.Map qualified as M
+import Data.HashMap.Strict qualified as HM
 import Data.Set qualified as S
 import Data.Traversable (for)
 import Data.Text (Text, stripPrefix, stripSuffix)
@@ -39,7 +40,7 @@ import Language.PureScript.AST.Declarations (UnknownsHint(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (Environment(..), FunctionalDependency(..), TypeClassData(..), dictTypeName, kindRow, tyBoolean, tyInt, tyString)
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, addHints, errorMessage, rethrow)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual, runProperName, Qualified, mapQualified)
 import Language.PureScript.TypeChecker.Entailment.Coercible (GivenSolverState(..), WantedSolverState(..), initialGivenSolverState, initialWantedSolverState, insoluble, solveGivens, solveWanteds)
 import Language.PureScript.TypeChecker.Entailment.IntCompare (mkFacts, mkRelation, solveRelation)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, unifyKinds')
@@ -93,12 +94,12 @@ namedInstanceIdentifier _ = Nothing
 type TypeClassDict = TypeClassDictionaryInScope Evidence
 
 -- | The 'InstanceContext' tracks those constraints which can be satisfied.
-type InstanceContext = M.Map QualifiedBy
-                         (M.Map (Qualified (ProperName 'ClassName))
-                           (M.Map (Qualified Ident) (NonEmpty NamedDict)))
+type InstanceContext = HM.HashMap QualifiedBy
+                         (HM.HashMap (Qualified (ProperName 'ClassName))
+                           (HM.HashMap (Qualified Ident) (NonEmpty NamedDict)))
 
 findDicts :: InstanceContext -> Qualified (ProperName 'ClassName) -> QualifiedBy -> [TypeClassDict]
-findDicts ctx cn = fmap (fmap NamedInstance) . foldMap NEL.toList . foldMap M.elems . (M.lookup cn <=< flip M.lookup ctx)
+findDicts ctx cn = fmap (fmap NamedInstance) . foldMap NEL.toList . foldMap HM.elems . (HM.lookup cn <=< flip HM.lookup ctx)
 
 -- | A type substitution which makes an instance head match a list of types.
 --
@@ -107,7 +108,7 @@ findDicts ctx cn = fmap (fmap NamedInstance) . foldMap NEL.toList . foldMap M.el
 type Matching a = M.Map Text a
 
 combineContexts :: InstanceContext -> InstanceContext -> InstanceContext
-combineContexts = M.unionWith (M.unionWith (M.unionWith (<>)))
+combineContexts = HM.unionWith (HM.unionWith (HM.unionWith (<>)))
 
 -- | Replace type class dictionary placeholders with inferred type class dictionaries
 replaceTypeClassDictionaries
@@ -115,7 +116,7 @@ replaceTypeClassDictionaries
    Bool
   -> Expr
   -> TypeCheckM (Expr, [(Ident, InstanceContext, SourceConstraint)])
-replaceTypeClassDictionaries shouldGeneralize expr = flip evalStateT M.empty $ do
+replaceTypeClassDictionaries shouldGeneralize expr = flip evalStateT HM.empty $ do
     -- Loop, deferring any unsolved constraints, until there are no more
     -- constraints which can be solved, then make a generalization pass.
     let loop e = do
@@ -255,7 +256,7 @@ entails SolverOptions{..} constraint context hints =
               , typeClassIsEmpty
               , typeClassCoveringSets
               , typeClassMembers 
-              } <- case M.lookup className' classesInScope of
+              } <- case HM.lookup className' classesInScope of
                 Nothing -> throwError . errorMessage $ UnknownClass className'
                 Just tcd -> pure tcd
 
@@ -377,7 +378,7 @@ entails SolverOptions{..} constraint context hints =
               let nii = namedInstanceIdentifier tcdValue
               in case tcdDescription of
                 Just ty -> flip Qualified (Left ty) <$> fmap (byMaybeModuleName . getQual) nii
-                Nothing -> fmap Right <$> nii
+                Nothing -> mapQualified Right <$> nii
 
             canBeGeneralized :: Type a -> Bool
             canBeGeneralized TUnknown{} = True
@@ -420,10 +421,10 @@ entails SolverOptions{..} constraint context hints =
               return (useEmptyDict args)
             mkDictionary (IsSymbolInstance sym) _ =
               let fields = [ ("reflectSymbol", Abs (VarBinder nullSourceSpan UnusedIdent) (Literal nullSourceSpan (StringLiteral sym))) ] in
-              return $ App (Constructor nullSourceSpan (coerceProperName . dictTypeName <$> C.IsSymbol)) (Literal nullSourceSpan (ObjectLiteral fields))
+              return $ App (Constructor nullSourceSpan (coerceProperName . dictTypeName `mapQualified` C.IsSymbol)) (Literal nullSourceSpan (ObjectLiteral fields))
             mkDictionary (ReflectableInstance ref) _ =
               let fields = [ ("reflectType", Abs (VarBinder nullSourceSpan UnusedIdent) (asExpression ref)) ] in
-              pure $ App (Constructor nullSourceSpan (coerceProperName . dictTypeName <$> C.Reflectable)) (Literal nullSourceSpan (ObjectLiteral fields))
+              pure $ App (Constructor nullSourceSpan (coerceProperName . dictTypeName `mapQualified` C.Reflectable)) (Literal nullSourceSpan (ObjectLiteral fields))
 
             unknownsInAllCoveringSets :: (Int -> Text) -> [(Ident, SourceType, Maybe (S.Set (NEL.NonEmpty Int)))] -> [SourceType] -> S.Set (S.Set Int) -> UnknownsHint
             unknownsInAllCoveringSets indexToArgText tyClassMembers tyArgs coveringSets = do
@@ -870,7 +871,7 @@ newDictionaries
   -> m [NamedDict]
 newDictionaries path name (Constraint _ className instanceKinds instanceTy _) = do
     tcs <- gets (typeClasses . checkEnv)
-    let TypeClassData{..} = fromMaybe (internalError "newDictionaries: type class lookup failed") $ M.lookup className tcs
+    let TypeClassData{..} = fromMaybe (internalError "newDictionaries: type class lookup failed") $ HM.lookup className tcs
     supDicts <- join <$> zipWithM (\(Constraint ann supName supKinds supArgs _) index ->
                                       let sub = zip (map fst typeClassArguments) instanceTy in
                                       newDictionaries ((supName, index) : path)
@@ -883,8 +884,8 @@ newDictionaries path name (Constraint _ className instanceKinds instanceTy _) = 
     return (TypeClassDictionaryInScope Nothing 0 name path className [] instanceKinds instanceTy Nothing Nothing : supDicts)
 
 mkContext :: [NamedDict] -> InstanceContext
-mkContext = foldr combineContexts M.empty . map fromDict where
-  fromDict d = M.singleton ByNullSourcePos (M.singleton (tcdClassName d) (M.singleton (tcdValue d) (pure d)))
+mkContext = foldr combineContexts HM.empty . map fromDict where
+  fromDict d = HM.singleton ByNullSourcePos (HM.singleton (tcdClassName d) (HM.singleton (tcdValue d) (pure d)))
 
 -- | Check all pairs of values in a list match a predicate
 pairwiseAll :: Monoid m => (a -> a -> m) -> [a] -> m

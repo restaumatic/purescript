@@ -3,7 +3,7 @@ module Language.PureScript.AST.Utils where
 import Protolude
 
 import Language.PureScript.AST (Binder(..), CaseAlternative, Expr(..), GuardedExpr, Literal, pattern MkUnguarded, nullSourceSpan)
-import Language.PureScript.Names (Ident, ModuleName, ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName)
+import Language.PureScript.Names (Ident, ModuleName, ProperName, ProperNameType(..), pattern Qualified, QualifiedBy(..), byMaybeModuleName, Qualified)
 import Language.PureScript.Types (SourceType, Type(..))
 
 lam :: Ident -> Expr -> Expr

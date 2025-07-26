@@ -18,8 +18,9 @@ import Data.Set qualified as S
 import Language.PureScript.AST (Declaration(..), DeclarationRef(..), ErrorMessageHint(..), ExportSource(..), ImportDeclarationType(..), Module(..), SourceSpan, internalModuleSourceSpan)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (MultipleErrors, SimpleErrorMessage(..), addHint, errorMessage', rethrow)
-import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName)
+import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName, ProperNameType(..), QualifiedBy(..), byMaybeModuleName, mkQualified_, Qualified)
 import Language.PureScript.Sugar.Names.Env (Env, Exports(..), ImportProvenance(..), ImportRecord(..), Imports(..), envModuleExports, nullImports)
+import Data.Hashable (Hashable)
 
 type ImportDef = (SourceSpan, ImportDeclarationType, Maybe ModuleName)
 
@@ -69,7 +70,7 @@ resolveModuleImport env ie (mn, imps) = foldM go ie imps
   go ie' (ss, typ, impQual) = do
     modExports <-
       maybe
-        (throwError . errorMessage' ss . UnknownName . Qualified ByNullSourcePos $ ModName mn)
+        (throwError . errorMessage' ss . UnknownName . mkQualified_ ByNullSourcePos $ ModName mn)
         (return . envModuleExports)
         (mn `M.lookup` env)
     let impModules = importedModules ie'
@@ -210,7 +211,7 @@ resolveImport importModule exps imps impQual = resolveByType
 
   -- Add something to an import resolution list
   updateImports
-    :: Ord a
+    :: (Ord a, Hashable a)
     => M.Map (Qualified a) [ImportRecord a]
     -> M.Map a b
     -> (b -> ExportSource)
@@ -221,9 +222,9 @@ resolveImport importModule exps imps impQual = resolveByType
   updateImports imps' exps' expName name ss prov =
     let
       src = maybe (internalError "Invalid state in updateImports") expName (name `M.lookup` exps')
-      rec = ImportRecord (Qualified (ByModuleName importModule) name) (exportSourceDefinedIn src) ss prov
+      rec = ImportRecord (mkQualified_ (ByModuleName importModule) name) (exportSourceDefinedIn src) ss prov
     in
       M.alter
         (\currNames -> Just $ rec : fromMaybe [] currNames)
-        (Qualified (byMaybeModuleName impQual) name)
+        (mkQualified_ (byMaybeModuleName impQual) name)
         imps'

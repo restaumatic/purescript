@@ -34,11 +34,12 @@ import Data.Text (Text)
 
 import Data.Map qualified as M
 import Data.Set qualified as S
+import Data.HashMap.Strict qualified as HM
 
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), TypeKind(..), unapplyKinds)
 import Language.PureScript.Errors (DeclarationRef(..), ErrorMessageHint(..), ExportSource, ImportDeclarationType(..), MultipleErrors, SimpleErrorMessage(..), SourceAnn, errorMessage, UnknownsHint(..))
-import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), Qualified(..), byMaybeModuleName, toMaybeModuleName)
+import Language.PureScript.Names (ModuleName, ProperName, ProperNameType(..), pattern Qualified, byMaybeModuleName, toMaybeModuleName, Qualified)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, freshKindWithKind, unifyKinds')
 import Language.PureScript.TypeChecker.Monad (CheckState(..), TypeCheckM)
 import Language.PureScript.TypeChecker.Roles (lookupRoles)
@@ -547,7 +548,7 @@ canonUnsaturatedHigherKindedType
   -> MaybeT CanonM Canonicalized
 canonUnsaturatedHigherKindedType env a b
   | (TypeConstructor _ aTyName, akapps, axs) <- unapplyTypes a
-  , (ak, _) <- fromMaybe (internalError "canonUnsaturatedHigherKindedType: type lookup failed") $ M.lookup aTyName (types env)
+  , (ak, _) <- fromMaybe (internalError "canonUnsaturatedHigherKindedType: type lookup failed") $ HM.lookup aTyName (types env)
   , (aks, _) <- unapplyKinds ak
   , length axs < length aks = do
       ak' <- lift $ do
@@ -651,7 +652,7 @@ lookupNewtypeConstructor
   -> [SourceType]
   -> Maybe ([Text], ProperName 'ConstructorName, SourceType)
 lookupNewtypeConstructor env qualifiedNewtypeName ks = do
-  (newtyk, DataType Newtype tvs [(ctorName, [wrappedTy])]) <- M.lookup qualifiedNewtypeName (types env)
+  (newtyk, DataType Newtype tvs [(ctorName, [wrappedTy])]) <- HM.lookup qualifiedNewtypeName (types env)
   let (kvs, _) = fromMaybe (internalError "lookupNewtypeConstructor: unkinded forall binder") $ completeBinderList newtyk
       instantiatedKinds = zipWith (\(_, (kv, _)) k -> (kv, k)) kvs ks
   pure (map (\(name, _, _) -> name) tvs, ctorName, replaceAllTypeVars instantiatedKinds wrappedTy)

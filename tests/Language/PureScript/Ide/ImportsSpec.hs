@@ -114,7 +114,7 @@ spec = do
         addValueImport i mn q is =
           prettyPrintImportSection (addExplicitImport' (_idaDeclaration (Test.ideValue i Nothing)) mn q is)
         addOpImport op mn q is =
-          prettyPrintImportSection (addExplicitImport' (_idaDeclaration (Test.ideValueOp op (P.Qualified (P.byMaybeModuleName q) (Left "")) 2 Nothing Nothing)) mn q is)
+          prettyPrintImportSection (addExplicitImport' (_idaDeclaration (Test.ideValueOp op (P.mkQualified_ (P.byMaybeModuleName q) (Left "")) 2 Nothing Nothing)) mn q is)
         addDtorImport i t mn q is =
           prettyPrintImportSection (addExplicitImport' (_idaDeclaration (Test.ideDtor i t Nothing)) mn q is)
         addTypeImport i mn q is =

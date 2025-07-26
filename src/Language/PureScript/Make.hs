@@ -40,7 +40,7 @@ import Language.PureScript.Errors (MultipleErrors(..), SimpleErrorMessage(..), a
 import Language.PureScript.Externs (ExternsFile, applyExternsFileToEnvironment, moduleToExternsFile)
 import Language.PureScript.Linter (Name(..), lint, lintImports)
 import Language.PureScript.ModuleDependencies (DependencyDepth(..), moduleSignature, sortModules)
-import Language.PureScript.Names (ModuleName(..), isBuiltinModuleName, runModuleName)
+import Language.PureScript.Names (ModuleName(..), isBuiltinModuleName, runModuleName, mapQualified)
 import Language.PureScript.Renamer (renameInModule)
 import Language.PureScript.Sugar (Env, collapseBindingGroups, createBindingGroups, desugar, desugarCaseGuards, externsEnv, primEnv)
 import Language.PureScript.TypeChecker (CheckState(..), emptyCheckState, typeCheckModule)
@@ -117,7 +117,7 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
     let modulesExports = (\(_, _, exports) -> exports) <$> exEnv'
     (checked, CheckState{..}) <- runStateT (liftTypeCheckM $ typeCheckModule modulesExports desugared) $ emptyCheckState env
     let usedImports' = foldl' (flip $ \(fromModuleName, newtypeCtorName) ->
-          M.alter (Just . (fmap DctorName newtypeCtorName :) . fold) fromModuleName) usedImports checkConstructorImportsForCoercible
+          M.alter (Just . (mapQualified DctorName newtypeCtorName :) . fold) fromModuleName) usedImports checkConstructorImportsForCoercible
     -- Imports cannot be linted before type checking because we need to
     -- known which newtype constructors are used to solve Coercible
     -- constraints in order to not report them as unused.
@@ -247,8 +247,8 @@ make' MakeOptions{..} ma@MakeActions{..} ms = do
   -- Here we return all the ExternsFile in the ordering of the topological sort,
   -- so they can be folded into an Environment. This result is used in the tests
   -- and in PSCI.
-  let lookupResult mn@(ModuleName name) =
-        fromMaybe (internalError $ "make: module not found in results: " <> T.unpack name)
+  let lookupResult mn =
+        fromMaybe (internalError $ "make: module not found in results: " <> T.unpack (runModuleName mn))
         $ M.lookup mn successes
 
   pure $

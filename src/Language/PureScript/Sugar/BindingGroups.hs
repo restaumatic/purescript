@@ -28,7 +28,7 @@ import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (NameKind)
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors(..), SimpleErrorMessage(..), errorMessage', parU, positionedError)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident, ModuleName, ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident, ModuleName, ProperName, ProperNameType(..), pattern Qualified, QualifiedBy(..), coerceProperName, mkQualified_)
 import Language.PureScript.Types (Constraint(..), SourceConstraint, SourceType, Type(..), everythingOnTypes)
 
 data VertexType
@@ -275,8 +275,8 @@ toDataBindingGroup (CyclicSCC ds')
         $ typeSynonymCycles
   | otherwise = return . DataBindingGroupDeclaration . NEL.fromList $ getDecl <$> ds'
   where
-  kindDecl (KindDeclaration sa _ pn _) = [(fst sa, Qualified ByNullSourcePos pn)]
-  kindDecl (ExternDataDeclaration sa pn _) = [(fst sa, Qualified ByNullSourcePos pn)]
+  kindDecl (KindDeclaration sa _ pn _) = [(fst sa, mkQualified_ ByNullSourcePos pn)]
+  kindDecl (ExternDataDeclaration sa pn _) = [(fst sa, mkQualified_ ByNullSourcePos pn)]
   kindDecl _ = []
 
   getDecl (decl, _, _) = decl

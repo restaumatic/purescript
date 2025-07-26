@@ -28,6 +28,7 @@ import Language.PureScript.Sugar.Names.Common (warnDuplicateRefs)
 import Language.PureScript.Sugar.Names.Env (Env, Exports(..), ImportRecord(..), Imports(..), envModuleExports, nullImports)
 import Language.PureScript.Sugar.Names.Imports (ImportDef, findImports)
 import Language.PureScript.Constants.Prim qualified as C
+import Data.Hashable (Hashable)
 
 -- |
 -- Map of module name to list of imported names from that module which have
@@ -183,7 +184,8 @@ lintImports (Module _ _ mn mdecls (Just mexports)) env usedImps = do
     go (q, name) = M.alter (Just . maybe [name] (name :)) q
 
   extractByQual
-    :: ModuleName
+    :: Hashable a
+    => ModuleName
     -> M.Map (Qualified a) [ImportRecord a]
     -> (a -> Name)
     -> [(ModuleName, Qualified Name)]
@@ -192,11 +194,11 @@ lintImports (Module _ _ mn mdecls (Just mexports)) env usedImps = do
     go (q@(Qualified mnq _), is)
       | isUnqualified q =
           case find (isQualifiedWith k) (map importName is) of
-            Just (Qualified _ name) -> Just (k, Qualified mnq (toName name))
+            Just (Qualified _ name) -> Just (k, mkQualified_ mnq (toName name))
             _ -> Nothing
       | isQualifiedWith k q =
           case importName (head is) of
-            Qualified (ByModuleName mn') name -> Just (mn', Qualified mnq (toName name))
+            Qualified (ByModuleName mn') name -> Just (mn', mkQualified_ mnq (toName name))
             _ -> internalError "unqualified name in extractByQual"
     go _ = Nothing
 

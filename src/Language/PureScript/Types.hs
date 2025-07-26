@@ -25,9 +25,10 @@ import GHC.Generics (Generic)
 
 import Language.PureScript.AST.SourcePos (pattern NullSourceAnn, SourceAnn, SourceSpan)
 import Language.PureScript.Constants.Prim qualified as C
-import Language.PureScript.Names (OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, coerceProperName)
+import Language.PureScript.Names (OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, coerceProperName, mapQualified)
 import Language.PureScript.Label (Label)
 import Language.PureScript.PSString (PSString)
+import Data.Hashable (Hashable (hashWithSalt, hash))
 
 type SourceType = Type SourceAnn
 type SourceConstraint = Constraint SourceAnn
@@ -40,6 +41,7 @@ newtype SkolemScope = SkolemScope { runSkolemScope :: Int }
 
 instance NFData SkolemScope
 instance Serialise SkolemScope
+instance Hashable SkolemScope
 
 -- |
 -- Describes how a TypeWildcard should be presented to the user during
@@ -52,6 +54,7 @@ data WildcardData = HoleWildcard Text | UnnamedWildcard | IgnoredWildcard
 
 instance NFData WildcardData
 instance Serialise WildcardData
+instance Hashable WildcardData
 
 data TypeVarVisibility
   = TypeVarVisible
@@ -60,6 +63,7 @@ data TypeVarVisibility
 
 instance NFData TypeVarVisibility
 instance Serialise TypeVarVisibility
+instance Hashable TypeVarVisibility
 
 typeVarVisibilityPrefix :: TypeVarVisibility -> Text
 typeVarVisibilityPrefix = \case
@@ -114,6 +118,12 @@ data Type a
 
 instance NFData a => NFData (Type a)
 instance Serialise a => Serialise (Type a)
+
+instance Hashable (Type a) where
+  hash = hashType
+  {-# INLINE hash #-}
+  hashWithSalt s t = hashWithSalt s (hashType t)
+  {-# INLINE hashWithSalt #-}
 
 srcTUnknown :: Int -> SourceType
 srcTUnknown = TUnknown NullSourceAnn
@@ -177,6 +187,7 @@ data ConstraintData
 
 instance NFData ConstraintData
 instance Serialise ConstraintData
+instance Hashable ConstraintData
 
 -- | A typeclass constraint
 data Constraint a = Constraint
@@ -689,7 +700,7 @@ srcInstanceType ss vars className tys
   = setAnnForType (ss, [])
   . flip (foldr $ \(tv, k) ty -> srcForAll TypeVarInvisible tv (Just k) ty Nothing) vars
   . flip (foldl' srcTypeApp) tys
-  $ srcTypeConstructor $ coerceProperName <$> className
+  $ srcTypeConstructor $ mapQualified coerceProperName className
 
 everywhereOnTypes :: (Type a -> Type a) -> Type a -> Type a
 everywhereOnTypes f = go where
@@ -717,6 +728,7 @@ everywhereOnTypesM f = go where
   go (ParensInType ann t) = (ParensInType ann <$> go t) >>= f
   go other = f other
 {-# INLINE everywhereOnTypesM #-}
+
 
 everywhereOnTypesTopDownM :: Monad m => (Type a -> m (Type a)) -> Type a -> m (Type a)
 everywhereOnTypesTopDownM f = go <=< f where
@@ -813,11 +825,34 @@ eqType (KindedType _ a b) (KindedType _ a' b') = eqType a a' && eqType b b'
 eqType (BinaryNoParensType _ a b c) (BinaryNoParensType _ a' b' c') = eqType a a' && eqType b b' && eqType c c'
 eqType (ParensInType _ a) (ParensInType _ a') = eqType a a'
 eqType _ _ = False
+{-# INLINE eqType #-}
 
 eqMaybeType :: Maybe (Type a) -> Maybe (Type b) -> Bool
 eqMaybeType (Just a) (Just b) = eqType a b
 eqMaybeType Nothing Nothing = True
 eqMaybeType _ _ = False
+
+hashType :: Type a -> Int
+hashType =  \case
+  (TUnknown _ a) -> hash a
+  (TypeVar _ a) -> hash a
+  (TypeLevelString _ a) -> hash a
+  (TypeLevelInt _ a) -> hash a
+  (TypeWildcard _ a) -> hash a
+  (TypeConstructor _ a) -> hash a
+  (TypeOp _ a) -> hash a
+  (TypeApp _ a b) -> hash (a, b)
+  (KindApp _ a b) -> hash (a, b)
+  (ForAll _ _ a b c d) -> 
+    hash (a, b, c, d)
+  (ConstrainedType _ a b) -> hash (a, b)
+  (Skolem _ a b c d) -> hash (a, b, c, d)
+  (REmpty _) -> hash ("REmpty" :: Text)
+  (RCons _ a b c) -> hash (a, b, c)
+  (KindedType _ a b) -> hash (a, b)
+  (BinaryNoParensType _ a b c) -> hash (a, b, c)
+  (ParensInType _ a) -> hash a
+{-# INLINE hashType #-}
 
 compareType :: Type a -> Type b -> Ordering
 compareType (TUnknown _ a) (TUnknown _ a') = compare a a'
@@ -859,6 +894,8 @@ compareType typ typ' =
       orderOf BinaryNoParensType{} = 15
       orderOf ParensInType{} = 16
 
+{-# INLINE compareType #-}
+
 compareMaybeType :: Maybe (Type a) -> Maybe (Type b) -> Ordering
 compareMaybeType (Just a) (Just b) = compareType a b
 compareMaybeType Nothing Nothing = EQ
@@ -871,8 +908,24 @@ instance Eq (Constraint a) where
 instance Ord (Constraint a) where
   compare = compareConstraint
 
+instance Hashable (Constraint a) where
+  hashWithSalt s (Constraint _ a b c d) = s `hashWithSalt` a `hashWithSalt` b `hashWithSalt` c `hashWithSalt` d
+
 eqConstraint :: Constraint a -> Constraint b -> Bool
 eqConstraint (Constraint _ a b c d) (Constraint _ a' b' c' d') = a == a' && and (zipWith eqType b b') && and (zipWith eqType c c') && d == d'
 
 compareConstraint :: Constraint a -> Constraint b -> Ordering
 compareConstraint (Constraint _ a b c d) (Constraint _ a' b' c' d') = compare a a' <> fold (zipWith compareType b b') <> fold (zipWith compareType c c') <> compare d d'
+
+
+-- | The type is used to optimize unification cache lookups, by reducing the potentially expensive hashing of a nested
+-- Type
+data Hashed a = Hashed { hashValue :: Int, value :: a }
+
+instance Eq a => Eq (Hashed a) where
+  (==) (Hashed hashValue value) (Hashed hashValue' value') =
+    hashValue == hashValue' && value == value'
+
+instance Eq a => Hashable (Hashed a) where
+  hashWithSalt s (Hashed hashValue _) = s `hashWithSalt` hashValue
+  hash (Hashed hashValue _) = hashValue

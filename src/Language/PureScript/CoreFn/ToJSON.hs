@@ -23,8 +23,9 @@ import Data.Text qualified as T
 import Language.PureScript.AST.Literals (Literal(..))
 import Language.PureScript.AST.SourcePos (SourceSpan(..))
 import Language.PureScript.CoreFn (Ann, Bind(..), Binder(..), CaseAlternative(..), ConstructorType(..), Expr(..), Meta(..), Module(..))
-import Language.PureScript.Names (Ident, ModuleName(..), ProperName(..), Qualified(..), QualifiedBy(..), runIdent)
+import Language.PureScript.Names (Ident, ModuleName(..), ProperName(..), pattern Qualified, Qualified, QualifiedBy(..), runIdent, runModuleName, runProperName)
 import Language.PureScript.PSString (PSString)
+import Data.Hashable (Hashable)
 
 constructorTypeToJSON :: ConstructorType -> Value
 constructorTypeToJSON ProductType = toJSON "ProductType"
@@ -101,7 +102,7 @@ identToJSON = toJSON . runIdent
 properNameToJSON :: ProperName a -> Value
 properNameToJSON = toJSON . runProperName
 
-qualifiedToJSON :: (a -> Text) -> Qualified a -> Value
+qualifiedToJSON :: Hashable a => (a -> Text) -> Qualified a -> Value
 qualifiedToJSON f (Qualified qb a) =
   case qb of
     ByModuleName mn -> object
@@ -114,7 +115,7 @@ qualifiedToJSON f (Qualified qb a) =
       ]
 
 moduleNameToJSON :: ModuleName -> Value
-moduleNameToJSON (ModuleName name) = toJSON (T.splitOn (T.pack ".") name)
+moduleNameToJSON mn = toJSON (T.splitOn (T.pack ".") $ runModuleName mn)
 
 moduleToJSON :: Version -> Module Ann -> Value
 moduleToJSON v m = object

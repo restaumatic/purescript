@@ -23,11 +23,13 @@ import Language.PureScript.CoreFn.Module (Module(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (DataDeclType(..), Environment(..), NameKind(..), isDictTypeName, lookupConstructor, lookupValue)
 import Language.PureScript.Label (Label(..))
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), getQual)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, QualifiedBy(..), getQual, runProperName, Qualified, mapQualified)
 import Language.PureScript.PSString (PSString)
 import Language.PureScript.Types (pattern REmptyKinded, SourceType, Type(..))
 import Language.PureScript.AST qualified as A
 import Language.PureScript.Constants.Prim qualified as C
+import Data.Hashable (Hashable)
+import Data.HashMap.Strict qualified as HM
 
 -- | Desugars a module from AST to CoreFn representation.
 moduleToCoreFn :: Environment -> A.Module -> Module Ann
@@ -132,7 +134,7 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
       , CaseAlternative [NullBinder (ssAnn ss)]
                         (Right $ exprToCoreFn ss [] Nothing v3) ]
   exprToCoreFn _ com _ (A.Constructor ss name) =
-    Var (ss, com, Just $ getConstructorMeta name) $ fmap properToIdent name
+    Var (ss, com, Just $ getConstructorMeta name) $ mapQualified properToIdent name
   exprToCoreFn ss com _ (A.Case vs alts) =
     Case (ss, com, Nothing) (fmap (exprToCoreFn ss [] Nothing) vs) (fmap (altToCoreFn ss) alts)
   exprToCoreFn ss com _ (A.TypedValue _ v ty) =
@@ -209,12 +211,12 @@ moduleToCoreFn env (A.Module modSS coms mn decls (Just exps)) =
     numConstructors
       :: (Qualified (ProperName 'ConstructorName), (DataDeclType, ProperName 'TypeName, SourceType, [Ident]))
       -> Int
-    numConstructors ty = length $ filter (((==) `on` typeConstructor) ty) $ M.toList $ dataConstructors env
+    numConstructors ty = length $ filter (((==) `on` typeConstructor) ty) $ HM.toList $ dataConstructors env
 
     typeConstructor
       :: (Qualified (ProperName 'ConstructorName), (DataDeclType, ProperName 'TypeName, SourceType, [Ident]))
       -> (ModuleName, ProperName 'TypeName)
-    typeConstructor (Qualified (ByModuleName mn') _, (_, tyCtor, _, _)) = (mn', tyCtor)
+    typeConstructor (Qualified (ByModuleName mn') _ , (_, tyCtor, _, _)) = (mn', tyCtor)
     typeConstructor _ = internalError "Invalid argument to typeConstructor"
 
 -- | Find module names from qualified references to values. This is used to
@@ -240,7 +242,7 @@ findQualModules decls =
   fqBinders (A.ConstructorBinder _ q _) = getQual' q
   fqBinders _ = []
 
-  getQual' :: Qualified a -> [ModuleName]
+  getQual' :: (Hashable a) => Qualified a -> [ModuleName]
   getQual' = maybe [] return . getQual
 
 -- | Desugars import declarations from AST to CoreFn representation.

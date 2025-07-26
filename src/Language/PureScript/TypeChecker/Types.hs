@@ -50,7 +50,7 @@ import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage', escalateWarningWhen, internalCompilerError, onErrorMessages, onTypesInErrorMessage, parU)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, freshIdent)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName(..), ProperNameType(..), pattern Qualified, Qualified, QualifiedBy(..), byMaybeModuleName, coerceProperName, freshIdent, properNameFromString, runProperName, mkQualified_, mapQualified)
 import Language.PureScript.TypeChecker.Deriving (deriveInstance)
 import Language.PureScript.TypeChecker.Entailment (InstanceContext, newDictionaries, replaceTypeClassDictionaries)
 import Language.PureScript.TypeChecker.Kinds (checkConstraint, checkKind, checkTypeKind, kindOf, kindOfWithScopedVars, unifyKinds', unknownsWithKinds)
@@ -63,6 +63,7 @@ import Language.PureScript.TypeChecker.Unify (freshTypeWithKind, replaceTypeWild
 import Language.PureScript.Types
 import Language.PureScript.Label (Label(..))
 import Language.PureScript.PSString (PSString)
+import Data.HashMap.Strict qualified as HM
 
 data BindingGroupType
   = RecursiveBindingGroup
@@ -79,7 +80,7 @@ tvToExpr (TypedValue' c e t) = TypedValue c e t
 -- | Lookup data about a type class in the @Environment@
 lookupTypeClass :: MonadState CheckState TypeCheckM => Qualified (ProperName 'ClassName) -> TypeCheckM TypeClassData
 lookupTypeClass name =
-  let findClass = fromMaybe (internalError "entails: type class not found in environment") . M.lookup name
+  let findClass = fromMaybe (internalError "entails: type class not found in environment") . HM.lookup name
    in gets (findClass . typeClasses . checkEnv)
 
 -- | Infer the types of multiple mutually-recursive values, and return elaborated values including
@@ -234,7 +235,7 @@ data SplitBindingGroup = SplitBindingGroup
   -- ^ The untyped expressions
   , _splitBindingGroupTyped :: [((SourceAnn, Ident), (Expr, [(Text, SourceType)], SourceType, Bool))]
   -- ^ The typed expressions, along with their type annotations
-  , _splitBindingGroupNames :: M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+  , _splitBindingGroupNames :: HM.HashMap (Qualified Ident) (SourceType, NameKind, NameVisibility)
   -- ^ A map containing all expressions and their assigned types (which might be
   -- fresh unification variables). These will be added to the 'Environment' after
   -- the binding group is checked, so the value type of the 'Map' is chosen to be
@@ -266,7 +267,7 @@ typeDictionaryForBindingGroup moduleName vals = do
       return ((sai, ty), (sai, (expr, ty)))
     -- Create the dictionary of all name/type pairs, which will be added to the
     -- environment during type checking
-    let dict = M.fromList [ (Qualified (maybe (BySourcePos $ spanStart ss) ByModuleName moduleName) ident, (ty, Private, Undefined))
+    let dict = HM.fromList [ (mkQualified_ (maybe (BySourcePos $ spanStart ss) ByModuleName moduleName) ident, (ty, Private, Undefined))
                           | (((ss, _), ident), ty) <- typedDict <> untypedDict
                           ]
     return (SplitBindingGroup untyped' typed' dict)
@@ -287,7 +288,7 @@ checkTypedBindingGroupElement
   => ModuleName
   -> ((SourceAnn, Ident), (Expr, [(Text, SourceType)], SourceType, Bool))
   -- ^ The identifier we are trying to define, along with the expression and its type annotation
-  -> M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+  -> HM.HashMap (Qualified Ident) (SourceType, NameKind, NameVisibility)
   -- ^ Names brought into scope in this binding group
   -> TypeCheckM ((SourceAnn, Ident), (Expr, SourceType))
 checkTypedBindingGroupElement mn (ident, (val, args, ty, checkType)) dict = do
@@ -306,7 +307,7 @@ typeForBindingGroupElement
   => ((SourceAnn, Ident), (Expr, SourceType))
   -- ^ The identifier we are trying to define, along with the expression and its assigned type
   -- (at this point, this should be a unification variable)
-  -> M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+  -> HM.HashMap (Qualified Ident) (SourceType, NameKind, NameVisibility)
   -- ^ Names brought into scope in this binding group
   -> TypeCheckM ((SourceAnn, Ident), (Expr, SourceType))
 typeForBindingGroupElement (ident, (val, ty)) dict = do
@@ -489,8 +490,8 @@ infer' (Var ss var) = do
     _ -> return $ TypedValue' True (Var ss var) ty
 infer' v@(Constructor _ c) = do
   env <- getEnv
-  case M.lookup c (dataConstructors env) of
-    Nothing -> throwError . errorMessage . UnknownName . fmap DctorName $ c
+  case HM.lookup c (dataConstructors env) of
+    Nothing -> throwError . errorMessage . UnknownName . mapQualified DctorName $ c
     Just (_, _, ty, _) -> TypedValue' True v <$> (introduceSkolemScope <=< replaceAllTypeSynonyms $ ty)
 infer' (Case vals binders) = do
   (vals', ts) <- instantiateForBinders vals binders
@@ -514,7 +515,7 @@ infer' (DeferredDictionary className tys) = do
   con <- checkConstraint (srcConstraint className [] tys Nothing)
   return $ TypedValue' False
              (TypeClassDictionary con dicts hints)
-             (foldl srcTypeApp (srcTypeConstructor (fmap coerceProperName className)) tys)
+             (foldl srcTypeApp (srcTypeConstructor (mapQualified coerceProperName className)) tys)
 infer' (TypedValue checkType val ty) = do
   moduleName <- unsafeCheckCurrentModule
   ((args, elabTy), kind) <- kindOfWithScopedVars ty
@@ -585,20 +586,20 @@ inferLetBinding seen (ValueDecl sa@(ss, _) ident nameKind [] [MkUnguarded (Typed
   TypedValue' _ val' ty'' <- warnAndRethrowWithPositionTC ss $ do
     ((args, elabTy), kind) <- kindOfWithScopedVars ty
     checkTypeKind ty kind
-    let dict = M.singleton (Qualified (BySourcePos $ spanStart ss) ident) (elabTy, nameKind, Undefined)
+    let dict = HM.singleton (mkQualified_ (BySourcePos $ spanStart ss) ident) (elabTy, nameKind, Undefined)
     ty' <- introduceSkolemScope <=< replaceAllTypeSynonyms <=< replaceTypeWildcards $ elabTy
     if checkType
       then withScopedTypeVars moduleName args (bindNames dict (check val ty'))
       else return (TypedValue' checkType val elabTy)
-  bindNames (M.singleton (Qualified (BySourcePos $ spanStart ss) ident) (ty'', nameKind, Defined))
+  bindNames (HM.singleton (mkQualified_ (BySourcePos $ spanStart ss) ident) (ty'', nameKind, Defined))
     $ inferLetBinding (seen ++ [ValueDecl sa ident nameKind [] [MkUnguarded (TypedValue checkType val' ty'')]]) rest ret j
 inferLetBinding seen (ValueDecl sa@(ss, _) ident nameKind [] [MkUnguarded val] : rest) ret j = do
   valTy <- freshTypeWithKind kindType
   TypedValue' _ val' valTy' <- warnAndRethrowWithPositionTC ss $ do
-    let dict = M.singleton (Qualified (BySourcePos $ spanStart ss) ident) (valTy, nameKind, Undefined)
+    let dict = HM.singleton (mkQualified_ (BySourcePos $ spanStart ss) ident) (valTy, nameKind, Undefined)
     bindNames dict $ infer val
   warnAndRethrowWithPositionTC ss $ unifyTypes valTy valTy'
-  bindNames (M.singleton (Qualified (BySourcePos $ spanStart ss) ident) (valTy', nameKind, Defined))
+  bindNames (HM.singleton (mkQualified_ (BySourcePos $ spanStart ss) ident) (valTy', nameKind, Defined))
     $ inferLetBinding (seen ++ [ValueDecl sa ident nameKind [] [MkUnguarded val']]) rest ret j
 inferLetBinding seen (BindingGroupDeclaration ds : rest) ret j = do
   moduleName <- unsafeCheckCurrentModule
@@ -625,7 +626,7 @@ inferBinder val (LiteralBinder _ (BooleanLiteral _)) = unifyTypes val tyBoolean 
 inferBinder val (VarBinder ss name) = return $ M.singleton name (ss, val)
 inferBinder val (ConstructorBinder ss ctor binders) = do
   env <- getEnv
-  case M.lookup ctor (dataConstructors env) of
+  case HM.lookup ctor (dataConstructors env) of
     Just (_, _, ty, _) -> do
       (_, fn) <- instantiatePolyTypeWithUnknowns (internalError "Data constructor types cannot contain constraints") ty
       fn' <- introduceSkolemScope <=< replaceAllTypeSynonyms $ fn
@@ -635,7 +636,7 @@ inferBinder val (ConstructorBinder ss ctor binders) = do
       unless (expected == actual) . throwError . errorMessage' ss $ IncorrectConstructorArity ctor expected actual
       unifyTypes ret val
       M.unions <$> zipWithM inferBinder (reverse args) binders
-    _ -> throwError . errorMessage' ss . UnknownName . fmap DctorName $ ctor
+    _ -> throwError . errorMessage' ss . UnknownName . mapQualified DctorName $ ctor
   where
   peelArgs :: Type a -> ([Type a], Type a)
   peelArgs = go []
@@ -776,17 +777,17 @@ check' val (ForAll ann vis ident mbK ty _) = do
       -- an undefined type variable that happens to clash with the variable we
       -- want to skolemize. This can happen due to synonym expansion (see 2542).
       skVal
-        | Just _ <- M.lookup (Qualified (byMaybeModuleName mn) (ProperName ident)) $ types env =
+        | Just _ <- HM.lookup (mkQualified_ (byMaybeModuleName mn) (properNameFromString ident)) $ types env =
             skolemizeTypesInValue ss ident mbK sko scope val
         | otherwise = val
   val' <- tvToExpr <$> check skVal sk
   return $ TypedValue' True val' (ForAll ann vis ident mbK ty (Just scope))
-check' val t@(ConstrainedType _ con@(Constraint _ cls@(Qualified _ (ProperName className)) _ _ _) ty) = do
+check' val t@(ConstrainedType _ con@(Constraint _ cls@(Qualified _ className) _ _ _) ty) = do
   TypeClassData{ typeClassIsEmpty } <- lookupTypeClass cls
   -- An empty class dictionary is never used; see code in `TypeChecker.Entailment`
   -- that wraps empty dictionary solutions in `Unused`.
-  dictName <- if typeClassIsEmpty then pure UnusedIdent else freshIdent ("dict" <> className)
-  dicts <- newDictionaries [] (Qualified ByNullSourcePos dictName) con
+  dictName <- if typeClassIsEmpty then pure UnusedIdent else freshIdent ("dict" <> runProperName className)
+  dicts <- newDictionaries [] (mkQualified_ ByNullSourcePos dictName) con
   val' <- withBindingGroupVisible $ withTypeClassDictionaries dicts $ check val ty
   return $ TypedValue' True (Abs (VarBinder nullSourceSpan dictName) (tvToExpr val')) t
 check' val u@(TUnknown _ _) = do
@@ -885,8 +886,8 @@ check' (Accessor prop val) ty = withErrorMessageHint (ErrorCheckingAccessor val 
   return $ TypedValue' True (Accessor prop val') ty
 check' v@(Constructor _ c) ty = do
   env <- getEnv
-  case M.lookup c (dataConstructors env) of
-    Nothing -> throwError . errorMessage . UnknownName . fmap DctorName $ c
+  case HM.lookup c (dataConstructors env) of
+    Nothing -> throwError . errorMessage . UnknownName . mapQualified DctorName $ c
     Just (_, _, ty1, _) -> do
       repl <- introduceSkolemScope <=< replaceAllTypeSynonyms $ ty1
       ty' <- introduceSkolemScope <=< replaceAllTypeSynonyms $ ty

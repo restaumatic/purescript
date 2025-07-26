@@ -16,7 +16,7 @@ module Language.PureScript.TypeChecker.Unify
 
 import Prelude
 
-import Control.Monad (forM_, void, when)
+import Control.Monad (forM_, void, unless)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets, modify, state)
 import Control.Monad.Writer.Class (MonadWriter(..))
@@ -25,6 +25,8 @@ import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe)
 import Data.IntMap.Lazy qualified as IM
 import Data.Text qualified as T
+import Data.HashSet qualified as HS
+import Data.Hashable (hash)
 
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment qualified as E
@@ -32,8 +34,7 @@ import Language.PureScript.Errors (ErrorMessageHint(..), SimpleErrorMessage(..),
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, unifyKinds')
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
-import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, mkForAll, rowFromList, srcTUnknown)
-import Data.Set qualified as S
+import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, mkForAll, rowFromList, srcTUnknown, Hashed(..))
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: TypeCheckM SourceType
@@ -114,13 +115,16 @@ unknownsInType t = everythingOnTypes (.) go t []
 unifyTypes :: SourceType -> SourceType -> TypeCheckM ()
 unifyTypes t1 t2 = do
   sub <- gets checkSubstitution
-  withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes'' (substituteType sub t1) (substituteType sub t2)
+  withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes' (substituteType sub t1) (substituteType sub t2)
   where
-  unifyTypes'' t1' t2'= do
+  withCache t1' t2' uf = do
     cache <- gets unificationCache
-    when (S.notMember (t1', t2') cache) $ do
-      modify $ \st -> st { unificationCache = S.insert (t1', t2') cache }
-      unifyTypes' t1' t2'
+    let h1 = hash t1'
+        h2 = hash t2'
+        hashed :: (Hashed (SourceType, SourceType)) =  if h1 > h2 then Hashed (hash (h1, h2)) (t1', t2') else Hashed (hash (h2, h1)) (t2', t1')
+    unless (HS.member hashed cache) $ do
+      modify $ \st -> st { unificationCache = HS.insert hashed cache }
+      uf
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()
   unifyTypes' (TUnknown _ u) t = solveType u t
   unifyTypes' t (TUnknown _ u) = solveType u t
@@ -137,32 +141,32 @@ unifyTypes t1 t2 = do
     let sk = skolemize ann ident mbK sko sc ty1
     sk `unifyTypes` ty2
   unifyTypes' ForAll{} _ = internalError "unifyTypes: unspecified skolem scope"
-  unifyTypes' ty f@ForAll{} = f `unifyTypes` ty
+  unifyTypes' ty f@ForAll{} = withCache ty f $ f `unifyTypes` ty
   unifyTypes' (TypeVar _ v1) (TypeVar _ v2) | v1 == v2 = return ()
   unifyTypes' ty1@(TypeConstructor _ c1) ty2@(TypeConstructor _ c2) =
     guardWith (errorMessage (TypesDoNotUnify ty1 ty2)) (c1 == c2)
   unifyTypes' (TypeLevelString _ s1) (TypeLevelString _ s2) | s1 == s2 = return ()
   unifyTypes' (TypeLevelInt    _ n1) (TypeLevelInt    _ n2) | n1 == n2 = return ()
-  unifyTypes' (TypeApp _ t3 t4) (TypeApp _ t5 t6) = do
+  unifyTypes' t1'@(TypeApp _ t3 t4) t2'@(TypeApp _ t5 t6) = withCache t1' t2' $ do
     t3 `unifyTypes` t5
     t4 `unifyTypes` t6
-  unifyTypes' (KindApp _ t3 t4) (KindApp _ t5 t6) = do
+  unifyTypes' t1'@(KindApp _ t3 t4) t2'@(KindApp _ t5 t6) = withCache t1' t2' $ do
     t3 `unifyKinds'` t5
     t4 `unifyTypes` t6
   unifyTypes' (Skolem _ _ _ s1 _) (Skolem _ _ _ s2 _) | s1 == s2 = return ()
-  unifyTypes' (KindedType _ ty1 _) ty2 = ty1 `unifyTypes` ty2
-  unifyTypes' ty1 (KindedType _ ty2 _) = ty1 `unifyTypes` ty2
-  unifyTypes' r1@RCons{} r2 = unifyRows r1 r2
-  unifyTypes' r1 r2@RCons{} = unifyRows r1 r2
-  unifyTypes' r1@REmptyKinded{} r2 = unifyRows r1 r2
-  unifyTypes' r1 r2@REmptyKinded{} = unifyRows r1 r2
-  unifyTypes' (ConstrainedType _ c1 ty1) (ConstrainedType _ c2 ty2)
-    | constraintClass c1 == constraintClass c2 && constraintData c1 == constraintData c2 = do
+  unifyTypes' (KindedType _ ty1 _) ty2 = withCache ty1 ty2 $ ty1 `unifyTypes` ty2
+  unifyTypes' ty1 (KindedType _ ty2 _) = withCache ty1 ty2 $ ty1 `unifyTypes` ty2
+  unifyTypes' r1@RCons{} r2 = withCache r1 r2 $ unifyRows r1 r2 
+  unifyTypes' r1 r2@RCons{} = withCache r1 r2 $ unifyRows r1 r2
+  unifyTypes' r1@REmptyKinded{} r2 = withCache r1 r2 $ unifyRows r1 r2
+  unifyTypes' r1 r2@REmptyKinded{} = withCache r1 r2 $ unifyRows r1 r2
+  unifyTypes' t1'@(ConstrainedType _ c1 ty1) t2'@(ConstrainedType _ c2 ty2)
+    | constraintClass c1 == constraintClass c2 && constraintData c1 == constraintData c2 = withCache t1' t2' $ do
         traverse_ (uncurry unifyTypes) (constraintArgs c1 `zip` constraintArgs c2)
         ty1 `unifyTypes` ty2
   unifyTypes' ty1@ConstrainedType{} ty2 =
     throwError . errorMessage $ ConstrainedTypeUnified ty1 ty2
-  unifyTypes' t3 t4@ConstrainedType{} = unifyTypes' t4 t3
+  unifyTypes' t3 t4@ConstrainedType{} = withCache t3 t4 $ unifyTypes' t4 t3
   unifyTypes' t3 t4 =
     throwError . errorMessage $ TypesDoNotUnify t3 t4
 

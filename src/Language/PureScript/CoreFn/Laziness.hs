@@ -20,7 +20,7 @@ import Language.PureScript.AST.SourcePos (SourcePos(..), SourceSpan(..), nullSou
 import Language.PureScript.Constants.Libs qualified as C
 import Language.PureScript.CoreFn (Ann, Bind, Expr(..), Literal(..), Meta(..), ssAnn, traverseCoreFn)
 import Language.PureScript.Crash (internalError)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), InternalIdentData(..), ModuleName, Qualified(..), QualifiedBy(..), runIdent, runModuleName, toMaybeModuleName)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), InternalIdentData(..), ModuleName, pattern Qualified, QualifiedBy(..), runIdent, runModuleName, toMaybeModuleName, Qualified)
 import Language.PureScript.PSString (mkString)
 
 -- This module is responsible for ensuring that the bindings in recursive

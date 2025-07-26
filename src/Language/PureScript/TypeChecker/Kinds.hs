@@ -41,7 +41,6 @@ import Data.Function (on)
 import Data.Functor (($>))
 import Data.IntSet qualified as IS
 import Data.List (nubBy, sortOn, (\\))
-import Data.Map qualified as M
 import Data.IntMap.Lazy qualified as IM
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Text (Text)
@@ -51,12 +50,13 @@ import Data.Traversable (for)
 import Language.PureScript.Crash (HasCallStack, internalError)
 import Language.PureScript.Environment qualified as E
 import Language.PureScript.Errors
-import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, mkQualified)
+import Language.PureScript.Names (pattern ByNullSourcePos, ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified, QualifiedBy(..), coerceProperName, mkQualified, runProperName, properNameFromString, mkQualified_, mapQualified)
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, bindLocalTypeVariables, debugType, getEnv, lookupTypeVariable, unsafeCheckCurrentModule, withErrorMessageHint, withFreshSubstitution, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, newSkolemScope, skolemize)
 import Language.PureScript.TypeChecker.Synonyms (replaceAllTypeSynonyms)
 import Language.PureScript.Types
 import Language.PureScript.Pretty.Types (prettyPrintType)
+import Data.HashMap.Strict qualified as HM
 
 generalizeUnknowns :: [(Unknown, SourceType)] -> SourceType -> SourceType
 generalizeUnknowns unks ty =
@@ -166,9 +166,9 @@ inferKind = \tyToInfer ->
   go = \case
     ty@(TypeConstructor ann v) -> do
       env <- getEnv
-      case M.lookup v (E.types env) of
+      case HM.lookup v (E.types env) of
         Nothing ->
-          throwError . errorMessage' (fst ann) . UnknownName . fmap TyName $ v
+          throwError . errorMessage' (fst ann) . UnknownName . mapQualified TyName $ v
         Just (kind, E.LocalTypeVariable) -> do
           kind' <- apply kind
           pure (ty, kind' $> ann)
@@ -176,9 +176,9 @@ inferKind = \tyToInfer ->
           pure (ty, kind $> ann)
     ConstrainedType ann' con@(Constraint ann v _ _ _) ty -> do
       env <- getEnv
-      con' <- case M.lookup (coerceProperName <$> v) (E.types env) of
+      con' <- case HM.lookup (coerceProperName `mapQualified` v) (E.types env) of
         Nothing ->
-          throwError . errorMessage' (fst ann) . UnknownName . fmap TyClassName $ v
+          throwError . errorMessage' (fst ann) . UnknownName . mapQualified TyClassName $ v
         Just _ ->
           checkConstraint con
       ty' <- checkIsSaturatedType ty
@@ -190,7 +190,7 @@ inferKind = \tyToInfer ->
       pure (ty, E.tyInt $> ann)
     ty@(TypeVar ann v) -> do
       moduleName <- unsafeCheckCurrentModule
-      kind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos $ ProperName v)
+      kind <- apply =<< lookupTypeVariable moduleName (mkQualified_ ByNullSourcePos $ properNameFromString v)
       pure (ty, kind $> ann)
     ty@(Skolem ann _ mbK _ _) -> do
       kind <- apply $ fromMaybe (internalError "Skolem has no kind") mbK
@@ -231,7 +231,7 @@ inferKind = \tyToInfer ->
       kind <- case mbKind of
         Just k -> replaceAllTypeSynonyms =<< checkIsSaturatedType k
         Nothing -> freshKind (fst ann)
-      (ty', unks) <- bindLocalTypeVariables moduleName [(ProperName arg, kind)] $ do
+      (ty', unks) <- bindLocalTypeVariables moduleName [(properNameFromString arg, kind)] $ do
         ty' <- apply =<< checkIsSaturatedType ty
         unks <- unknownsWithKinds . IS.toList $ unknowns ty'
         pure (ty', unks)
@@ -270,7 +270,7 @@ inferAppKind ann (fn, fnKind) arg = case fnKind of
     cannotApplyTypeToType fn arg
   where
   requiresSynonymsToExpand = \case
-    TypeConstructor _ v -> M.notMember v . E.typeSynonyms <$> getEnv
+    TypeConstructor _ v -> not . HM.member v . E.typeSynonyms <$> getEnv
     TypeApp _ l _ -> requiresSynonymsToExpand l
     KindApp _ l _ -> requiresSynonymsToExpand l
     _ -> pure True
@@ -522,14 +522,14 @@ elaborateKind = \case
     pure $ E.tyInt $> ann
   TypeConstructor ann v -> do
     env <- getEnv
-    case M.lookup v (E.types env) of
+    case HM.lookup v (E.types env) of
       Nothing ->
-        throwError . errorMessage' (fst ann) . UnknownName . fmap TyName $ v
+        throwError . errorMessage' (fst ann) . UnknownName . mapQualified TyName $ v
       Just (kind, _) ->
         ($> ann) <$> apply kind
   TypeVar ann a -> do
     moduleName <- unsafeCheckCurrentModule
-    kind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos $ ProperName a)
+    kind <- apply =<< lookupTypeVariable moduleName (mkQualified_ ByNullSourcePos $ properNameFromString a)
     pure (kind $> ann)
   (Skolem ann _ mbK _ _) -> do
     kind <- apply $ fromMaybe (internalError "Skolem has no kind") mbK
@@ -628,7 +628,7 @@ type DataDeclarationResult =
   )
 
 kindOfData
-  :: 
+  ::
    ModuleName
   -> DataDeclarationArgs
   -> TypeCheckM DataDeclarationResult
@@ -636,17 +636,17 @@ kindOfData moduleName dataDecl =
   head . (^. _2) <$> kindsOfAll moduleName [] [dataDecl] []
 
 inferDataDeclaration
-  :: 
+  ::
   ModuleName
   -> DataDeclarationArgs
   -> TypeCheckM [(DataConstructorDeclaration, SourceType)]
 inferDataDeclaration moduleName (ann, tyName, tyArgs, ctors) = do
-  tyKind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos tyName)
+  tyKind <- apply =<< lookupTypeVariable moduleName (mkQualified_ ByNullSourcePos tyName)
   let (sigBinders, tyKind') = fromJust . completeBinderList $ tyKind
-  bindLocalTypeVariables moduleName (first ProperName . snd <$> sigBinders) $ do
+  bindLocalTypeVariables moduleName (first properNameFromString . snd <$> sigBinders) $ do
     tyArgs' <- for tyArgs . traverse . maybe (freshKind (fst ann)) $ replaceAllTypeSynonyms <=< apply <=< checkIsSaturatedType
     subsumesKind (foldr ((E.-:>) . snd) E.kindType tyArgs') tyKind'
-    bindLocalTypeVariables moduleName (first ProperName <$> tyArgs') $ do
+    bindLocalTypeVariables moduleName (first properNameFromString <$> tyArgs') $ do
       let tyCtorName = srcTypeConstructor $ mkQualified tyName moduleName
           tyCtor = foldl (\ty -> srcKindApp ty . srcTypeVar . fst . snd) tyCtorName sigBinders
           tyCtor' = foldl (\ty -> srcTypeApp ty . srcTypeVar . fst) tyCtor tyArgs'
@@ -656,7 +656,7 @@ inferDataDeclaration moduleName (ann, tyName, tyArgs, ctors) = do
         fmap (fmap (addVisibility visibility . mkForAll ctorBinders)) . inferDataConstructor tyCtor'
 
 inferDataConstructor
-  :: 
+  ::
    SourceType
   -> DataConstructorDeclaration
   -> TypeCheckM (DataConstructorDeclaration, SourceType)
@@ -680,7 +680,7 @@ type TypeDeclarationResult =
   )
 
 kindOfTypeSynonym
-  :: 
+  ::
    ModuleName
   -> TypeDeclarationArgs
   -> TypeCheckM TypeDeclarationResult
@@ -688,18 +688,18 @@ kindOfTypeSynonym moduleName typeDecl =
   head . (^. _1) <$> kindsOfAll moduleName [typeDecl] [] []
 
 inferTypeSynonym
-  :: 
+  ::
    ModuleName
   -> TypeDeclarationArgs
   -> TypeCheckM SourceType
 inferTypeSynonym moduleName (ann, tyName, tyArgs, tyBody) = do
-  tyKind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos tyName)
+  tyKind <- apply =<< lookupTypeVariable moduleName (mkQualified_ ByNullSourcePos tyName)
   let (sigBinders, tyKind') = fromJust . completeBinderList $ tyKind
-  bindLocalTypeVariables moduleName (first ProperName . snd <$> sigBinders) $ do
+  bindLocalTypeVariables moduleName (first properNameFromString . snd <$> sigBinders) $ do
     kindRes <- freshKind (fst ann)
     tyArgs' <- for tyArgs . traverse . maybe (freshKind (fst ann)) $ replaceAllTypeSynonyms <=< apply <=< checkIsSaturatedType
     unifyKinds tyKind' $ foldr ((E.-:>) . snd) kindRes tyArgs'
-    bindLocalTypeVariables moduleName (first ProperName <$> tyArgs') $ do
+    bindLocalTypeVariables moduleName (first properNameFromString <$> tyArgs') $ do
       tyBodyAndKind <- traverse apply =<< inferKind tyBody
       instantiateKind tyBodyAndKind =<< apply kindRes
 
@@ -710,7 +710,7 @@ inferTypeSynonym moduleName (ann, tyName, tyArgs, tyBody) = do
 -- | ill-scoped. We require that users explicitly generalize this kind
 -- | in such a case.
 checkQuantification
-  :: 
+  ::
   SourceType
   -> TypeCheckM ()
 checkQuantification =
@@ -737,7 +737,7 @@ checkQuantification =
       elem karg $ freeTypeVariables k
 
 checkVisibleTypeQuantification
-  :: 
+  ::
   SourceType
   -> TypeCheckM ()
 checkVisibleTypeQuantification =
@@ -754,7 +754,7 @@ checkVisibleTypeQuantification =
 -- | implicitly generalize unknowns, such as on the right-hand-side of
 -- | a type synonym, or in arguments to data constructors.
 checkTypeQuantification
-  :: 
+  ::
   SourceType
   -> TypeCheckM ()
 checkTypeQuantification =
@@ -797,7 +797,7 @@ type ClassDeclarationResult =
   )
 
 kindOfClass
-  :: 
+  ::
   ModuleName
   -> ClassDeclarationArgs
   -> TypeCheckM ClassDeclarationResult
@@ -805,23 +805,23 @@ kindOfClass moduleName clsDecl =
   head . (^. _3) <$> kindsOfAll moduleName [] [] [clsDecl]
 
 inferClassDeclaration
-  :: 
+  ::
   ModuleName
   -> ClassDeclarationArgs
   -> TypeCheckM ([(Text, SourceType)], [SourceConstraint], [Declaration])
 inferClassDeclaration moduleName (ann, clsName, clsArgs, superClasses, decls) = do
-  clsKind <- apply =<< lookupTypeVariable moduleName (Qualified ByNullSourcePos $ coerceProperName clsName)
+  clsKind <- apply =<< lookupTypeVariable moduleName (mkQualified_ ByNullSourcePos $ coerceProperName clsName)
   let (sigBinders, clsKind') = fromJust . completeBinderList $ clsKind
-  bindLocalTypeVariables moduleName (first ProperName . snd <$> sigBinders) $ do
+  bindLocalTypeVariables moduleName (first properNameFromString. snd <$> sigBinders) $ do
     clsArgs' <- for clsArgs . traverse . maybe (freshKind (fst ann)) $ replaceAllTypeSynonyms <=< apply <=< checkIsSaturatedType
     unifyKinds clsKind' $ foldr ((E.-:>) . snd) E.kindConstraint clsArgs'
-    bindLocalTypeVariables moduleName (first ProperName <$> clsArgs') $ do
+    bindLocalTypeVariables moduleName (first properNameFromString <$> clsArgs') $ do
       (clsArgs',,)
         <$> for superClasses checkConstraint
         <*> for decls checkClassMemberDeclaration
 
 checkClassMemberDeclaration
-  :: 
+  ::
   Declaration
   -> TypeCheckM Declaration
 checkClassMemberDeclaration = \case
@@ -830,7 +830,7 @@ checkClassMemberDeclaration = \case
   _ -> internalError "Invalid class member declaration"
 
 applyClassMemberDeclaration
-  :: 
+  ::
   Declaration
   -> TypeCheckM Declaration
 applyClassMemberDeclaration = \case
@@ -846,20 +846,20 @@ mapTypeDeclaration f = \case
     other
 
 checkConstraint
-  :: 
+  ::
   SourceConstraint
   -> TypeCheckM SourceConstraint
 checkConstraint (Constraint ann clsName kinds args dat) = do
-  let ty = foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (fmap coerceProperName clsName)) kinds) args
+  let ty = foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (mapQualified coerceProperName clsName)) kinds) args
   (_, kinds', args') <- unapplyTypes <$> checkKind ty E.kindConstraint
   pure $ Constraint ann clsName kinds' args' dat
 
 applyConstraint
-  :: 
+  ::
   SourceConstraint
   -> TypeCheckM SourceConstraint
 applyConstraint (Constraint ann clsName kinds args dat) = do
-  let ty = foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (fmap coerceProperName clsName)) kinds) args
+  let ty = foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (mapQualified coerceProperName clsName)) kinds) args
   (_, kinds', args') <- unapplyTypes <$> apply ty
   pure $ Constraint ann clsName kinds' args' dat
 
@@ -878,15 +878,15 @@ type InstanceDeclarationResult =
   )
 
 checkInstanceDeclaration
-  :: 
+  ::
   ModuleName
   -> InstanceDeclarationArgs
   -> TypeCheckM InstanceDeclarationResult
 checkInstanceDeclaration moduleName (ann, constraints, clsName, args) = do
-  let ty = foldl (TypeApp ann) (TypeConstructor ann (fmap coerceProperName clsName)) args
+  let ty = foldl (TypeApp ann) (TypeConstructor ann (mapQualified coerceProperName clsName)) args
       tyWithConstraints = foldr srcConstrainedType ty constraints
       freeVars = freeTypeVariables tyWithConstraints
-  freeVarsDict <- for freeVars $ \v -> (ProperName v,) <$> freshKind (fst ann)
+  freeVarsDict <- for freeVars $ \v -> (properNameFromString v,) <$> freshKind (fst ann)
   bindLocalTypeVariables moduleName freeVarsDict $ do
     ty' <- checkKind ty E.kindConstraint
     constraints' <- for constraints checkConstraint
@@ -899,7 +899,7 @@ checkInstanceDeclaration moduleName (ann, constraints, clsName, args) = do
     pure (allConstraints, allKinds, allArgs, varKinds)
 
 checkKindDeclaration
-  :: 
+  ::
   ModuleName
   -> SourceType
   -> TypeCheckM SourceType
@@ -928,6 +928,7 @@ checkKindDeclaration _ ty = do
           pure $ ForAll a' vis v'' k' ty'' sc'
         other -> pure other
 
+  checkValidKind :: SourceType -> TypeCheckM SourceType
   checkValidKind =
     liftEither . everywhereOnTypesM (\case
          ty'@(ConstrainedType ann _ _) ->
@@ -936,19 +937,19 @@ checkKindDeclaration _ ty = do
     )
 
 existingSignatureOrFreshKind
-  :: 
+  ::
   ModuleName
   -> SourceSpan
   -> ProperName 'TypeName
   -> TypeCheckM SourceType
 existingSignatureOrFreshKind moduleName ss name = do
   env <- getEnv
-  case M.lookup (Qualified (ByModuleName moduleName) name) (E.types env) of
+  case HM.lookup (mkQualified_ (ByModuleName moduleName) name) (E.types env) of
     Nothing -> freshKind ss
     Just (kind, _) -> pure kind
 
 kindsOfAll
-  :: 
+  ::
    ModuleName
   -> [TypeDeclarationArgs]
   -> [DataDeclarationArgs]

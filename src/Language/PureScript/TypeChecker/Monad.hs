@@ -22,11 +22,11 @@ import Data.List.NonEmpty qualified as NEL
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (Environment(..), NameKind(..), NameVisibility(..), TypeClassData(..), TypeKind(..))
 import Language.PureScript.Errors (Context, ErrorMessageHint, ExportSource, Expr, ImportDeclarationType, MultipleErrors, SimpleErrorMessage(..), SourceAnn, SourceSpan(..), addHint, errorMessage, positionedError, rethrow, warnWithPosition)
-import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName)
+import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperNameType(..), pattern Qualified, QualifiedBy(..), coerceProperName, disqualify, runIdent, runModuleName, showQualified, toMaybeModuleName, runProperName, properNameFromString, Qualified, mapQualified)
 import Language.PureScript.Pretty.Types (prettyPrintType)
 import Language.PureScript.Pretty.Values (prettyPrintValue)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
-import Language.PureScript.Types (Constraint(..), SourceType, Type(..), srcKindedType, srcTypeVar)
+import Language.PureScript.Types (Constraint(..), SourceType, Type(..), srcKindedType, srcTypeVar, Hashed)
 import Text.PrettyPrint.Boxes (render)
 import Control.Monad.Supply (SupplyT (unSupplyT))
 import Control.Monad.Supply.Class (MonadSupply)
@@ -34,6 +34,8 @@ import Control.Monad.Except (ExceptT, runExceptT)
 import Control.Monad.Trans.Writer.CPS qualified as SW
 import Control.Monad.Writer (MonadWriter(..), censor)
 import Control.Monad.Supply.Class qualified as Supply
+import Data.HashMap.Strict qualified as HM
+import Data.HashSet qualified as HS
 import Control.Monad.Identity (Identity(runIdentity))
 import Control.Monad (forM_, when, join, (<=<), guard)
 
@@ -133,7 +135,7 @@ data CheckState = CheckState
   , checkConstructorImportsForCoercible :: S.Set (ModuleName, Qualified (ProperName 'ConstructorName))
   -- ^ Newtype constructors imports required to solve Coercible constraints.
   -- We have to keep track of them so that we don't emit unused import warnings.
-  , unificationCache :: S.Set (SourceType, SourceType)
+  , unificationCache :: HS.HashSet (Hashed (SourceType, SourceType))
   }
 
 -- | Create an empty @CheckState@
@@ -145,24 +147,24 @@ type Unknown = Int
 
 -- | Temporarily bind a collection of names to values
 bindNames
-  :: M.Map (Qualified Ident) (SourceType, NameKind, NameVisibility)
+  :: HM.HashMap (Qualified Ident) (SourceType, NameKind, NameVisibility)
   -> TypeCheckM a
   -> TypeCheckM a
 bindNames newNames action = do
   orig <- get
-  modify $ \st -> st { checkEnv = (checkEnv st) { names = newNames `M.union` (names . checkEnv $ st) } }
+  modify $ \st -> st { checkEnv = (checkEnv st) { names = newNames `HM.union` (names . checkEnv $ st) } }
   a <- action
   modify $ \st -> st { checkEnv = (checkEnv st) { names = names . checkEnv $ orig } }
   return a
 
 -- | Temporarily bind a collection of names to types
 bindTypes
-  :: M.Map (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
+  :: HM.HashMap (Qualified (ProperName 'TypeName)) (SourceType, TypeKind)
   -> TypeCheckM a
   -> TypeCheckM a
 bindTypes newNames action = do
   orig <- get
-  modify $ \st -> st { checkEnv = (checkEnv st) { types = newNames `M.union` (types . checkEnv $ st) } }
+  modify $ \st -> st { checkEnv = (checkEnv st) { types = newNames `HM.union` (types . checkEnv $ st) } }
   a <- action
   modify $ \st -> st { checkEnv = (checkEnv st) { types = types . checkEnv $ orig } }
   return a
@@ -176,9 +178,9 @@ withScopedTypeVars
 withScopedTypeVars mn ks ma = do
   orig <- get
   forM_ ks $ \(name, _) ->
-    when (Qualified (ByModuleName mn) (ProperName name) `M.member` types (checkEnv orig)) $
+    when (Qualified (ByModuleName mn) (properNameFromString name) `HM.member` types (checkEnv orig)) $
       tell . errorMessage $ ShadowedTypeVar name
-  bindTypes (M.fromList (map (\(name, k) -> (Qualified (ByModuleName mn) (ProperName name), (k, ScopedTypeVar))) ks)) ma
+  bindTypes (HM.fromList (map (\(name, k) -> (Qualified (ByModuleName mn) (properNameFromString name), (k, ScopedTypeVar))) ks)) ma
 
 withErrorMessageHint
   :: (MonadState CheckState m, MonadError MultipleErrors m)
@@ -219,34 +221,34 @@ withTypeClassDictionaries entries action = do
   orig <- get
 
   let mentries =
-        M.fromListWith (M.unionWith (M.unionWith (<>)))
-          [ (qb, M.singleton className (M.singleton tcdValue (pure entry)))
+        HM.fromListWith (HM.unionWith (HM.unionWith (<>)))
+          [ (qb, HM.singleton className (HM.singleton tcdValue (pure entry)))
           | entry@TypeClassDictionaryInScope{ tcdValue = tcdValue@(Qualified qb _), tcdClassName = className }
               <- entries
           ]
 
-  modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = M.unionWith (M.unionWith (M.unionWith (<>))) (typeClassDictionaries . checkEnv $ st) mentries } }
+  modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = HM.unionWith (HM.unionWith (HM.unionWith (<>))) (typeClassDictionaries . checkEnv $ st) mentries } }
   a <- action
   modify $ \st -> st { checkEnv = (checkEnv st) { typeClassDictionaries = typeClassDictionaries . checkEnv $ orig } }
   return a
 
 -- | Get the currently available map of type class dictionaries
 getTypeClassDictionaries
-  :: TypeCheckM (M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))))
+  :: TypeCheckM (HM.HashMap QualifiedBy (HM.HashMap (Qualified (ProperName 'ClassName)) (HM.HashMap (Qualified Ident) (NEL.NonEmpty NamedDict))))
 getTypeClassDictionaries = gets $ typeClassDictionaries . checkEnv
 
 -- | Lookup type class dictionaries in a module.
 lookupTypeClassDictionaries
   :: QualifiedBy
-  -> TypeCheckM (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict)))
-lookupTypeClassDictionaries mn = gets $ fromMaybe M.empty . M.lookup mn . typeClassDictionaries . checkEnv
+  -> TypeCheckM (HM.HashMap (Qualified (ProperName 'ClassName)) (HM.HashMap (Qualified Ident) (NEL.NonEmpty NamedDict)))
+lookupTypeClassDictionaries mn = gets $ fromMaybe HM.empty . HM.lookup mn . typeClassDictionaries . checkEnv
 
 -- | Lookup type class dictionaries in a module.
 lookupTypeClassDictionariesForClass
   :: QualifiedBy
   -> Qualified (ProperName 'ClassName)
-  -> TypeCheckM (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))
-lookupTypeClassDictionariesForClass mn cn = fromMaybe M.empty . M.lookup cn <$> lookupTypeClassDictionaries mn
+  -> TypeCheckM (HM.HashMap (Qualified Ident) (NEL.NonEmpty NamedDict))
+lookupTypeClassDictionariesForClass mn cn = fromMaybe HM.empty . HM.lookup cn <$> lookupTypeClassDictionaries mn
 
 -- | Temporarily bind a collection of names to local variables
 bindLocalVariables
@@ -254,7 +256,7 @@ bindLocalVariables
   -> TypeCheckM a
   -> TypeCheckM a
 bindLocalVariables bindings =
-  bindNames (M.fromList $ flip map bindings $ \(ss, name, ty, visibility) -> (Qualified (BySourcePos $ spanStart ss) name, (ty, Private, visibility)))
+  bindNames (HM.fromList $ flip map bindings $ \(ss, name, ty, visibility) -> (Qualified (BySourcePos $ spanStart ss) name, (ty, Private, visibility)))
 
 -- | Temporarily bind a collection of names to local type variables
 bindLocalTypeVariables
@@ -263,11 +265,11 @@ bindLocalTypeVariables
   -> TypeCheckM a
   -> TypeCheckM a
 bindLocalTypeVariables moduleName bindings =
-  bindTypes (M.fromList $ flip map bindings $ \(pn, kind) -> (Qualified (ByModuleName moduleName) pn, (kind, LocalTypeVariable)))
+  bindTypes (HM.fromList $ flip map bindings $ \(pn, kind) -> (Qualified (ByModuleName moduleName) pn, (kind, LocalTypeVariable)))
 
 -- | Update the visibility of all names to Defined
 makeBindingGroupVisible :: TypeCheckM ()
-makeBindingGroupVisible = modifyEnv $ \e -> e { names = M.map (\(ty, nk, _) -> (ty, nk, Defined)) (names e) }
+makeBindingGroupVisible = modifyEnv $ \e -> e { names = HM.map (\(ty, nk, _) -> (ty, nk, Defined)) (names e) }
 
 -- | Update the visibility of all names to Defined in the scope of the provided action
 withBindingGroupVisible :: TypeCheckM a -> TypeCheckM a
@@ -287,7 +289,7 @@ lookupVariable
   -> TypeCheckM SourceType
 lookupVariable qual = do
   env <- getEnv
-  case M.lookup qual (names env) of
+  case HM.lookup qual (names env) of
     Nothing -> throwError . errorMessage $ NameIsUndefined (disqualify qual)
     Just (ty, _, _) -> return ty
 
@@ -297,7 +299,7 @@ getVisibility
   -> TypeCheckM NameVisibility
 getVisibility qual = do
   env <- getEnv
-  case M.lookup qual (names env) of
+  case HM.lookup qual (names env) of
     Nothing -> throwError . errorMessage $ NameIsUndefined (disqualify qual)
     Just (_, _, vis) -> return vis
 
@@ -318,7 +320,7 @@ lookupTypeVariable
   -> TypeCheckM SourceType
 lookupTypeVariable currentModule (Qualified qb name) = do
   env <- getEnv
-  case M.lookup (Qualified qb' name) (types env) of
+  case HM.lookup (Qualified qb' name) (types env) of
     Nothing -> throwError . errorMessage $ UndefinedTypeVariable name
     Just (k, _) -> return k
   where
@@ -334,7 +336,7 @@ getEnv = gets checkEnv
 getLocalContext :: TypeCheckM Context
 getLocalContext = do
   env <- getEnv
-  return [ (ident, ty') | (Qualified (BySourcePos _) ident@Ident{}, (ty', _, Defined)) <- M.toList (names env) ]
+  return [ (ident, ty') | (Qualified (BySourcePos _) ident@Ident{}, (ty', _, Defined)) <- HM.toList (names env) ]
 
 -- | Update the @Environment@
 putEnv :: Environment -> TypeCheckM ()
@@ -400,10 +402,10 @@ debugType = init . prettyPrintType 100
 
 debugConstraint :: Constraint a -> String
 debugConstraint (Constraint ann clsName kinds args _) =
-  debugType $ foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (fmap coerceProperName clsName)) kinds) args
+  debugType $ foldl (TypeApp ann) (foldl (KindApp ann) (TypeConstructor ann (mapQualified coerceProperName clsName)) kinds) args
 
 debugTypes :: Environment -> [String]
-debugTypes = go <=< M.toList . types
+debugTypes = go <=< HM.toList . types
   where
   go (qual, (srcTy, which)) = do
     let
@@ -419,7 +421,7 @@ debugTypes = go <=< M.toList . types
     pure $ decl <> " " <> unpack name <> " :: " <> init ppTy
 
 debugNames :: Environment -> [String]
-debugNames = fmap go . M.toList . names
+debugNames = fmap go . HM.toList . names
   where
   go (qual, (srcTy, _, _)) = do
     let
@@ -428,7 +430,7 @@ debugNames = fmap go . M.toList . names
     unpack name <> " :: " <> init ppTy
 
 debugDataConstructors :: Environment -> [String]
-debugDataConstructors = fmap go . M.toList . dataConstructors
+debugDataConstructors = fmap go . HM.toList . dataConstructors
   where
   go (qual, (_, _, ty, _)) = do
     let
@@ -437,7 +439,7 @@ debugDataConstructors = fmap go . M.toList . dataConstructors
     unpack name <> " :: " <> init ppTy
 
 debugTypeSynonyms :: Environment -> [String]
-debugTypeSynonyms = fmap go . M.toList . typeSynonyms
+debugTypeSynonyms = fmap go . HM.toList . typeSynonyms
   where
   go (qual, (binders, subTy)) = do
     let
@@ -451,10 +453,11 @@ debugTypeSynonyms = fmap go . M.toList . typeSynonyms
 debugTypeClassDictionaries :: Environment -> [String]
 debugTypeClassDictionaries = go . typeClassDictionaries
   where
+  -- TODO: order? 
   go tcds = do
-    (mbModuleName, classes) <- M.toList tcds
-    (className, instances) <- M.toList classes
-    (ident, dicts) <- M.toList instances
+    (mbModuleName, classes) <- HM.toList tcds
+    (className, instances) <- HM.toList classes
+    (ident, dicts) <- HM.toList instances
     let
       moduleName = maybe "" (\m -> "[" <> runModuleName m <> "] ") (toMaybeModuleName mbModuleName)
       className' = showQualified runProperName className
@@ -464,7 +467,7 @@ debugTypeClassDictionaries = go . typeClassDictionaries
     pure $ "dict " <> unpack moduleName <> unpack className' <> " " <> unpack ident' <> " (" <> show (length dicts) <> ")" <> " " <> kds <> " " <> tys
 
 debugTypeClasses :: Environment -> [String]
-debugTypeClasses = fmap go . M.toList . typeClasses
+debugTypeClasses = fmap go . HM.toList . typeClasses
   where
   go (className, tc) = do
     let

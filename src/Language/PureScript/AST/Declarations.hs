@@ -14,7 +14,6 @@ import Control.DeepSeq (NFData)
 import Data.Functor.Identity (Identity(..))
 
 import Data.Aeson.TH (Options(..), SumEncoding(..), defaultOptions, deriveJSON)
-import Data.Map qualified as M
 import Data.Text (Text)
 import Data.List.NonEmpty qualified as NEL
 import GHC.Generics (Generic)
@@ -27,12 +26,13 @@ import Language.PureScript.AST.Declarations.ChainId (ChainId)
 import Language.PureScript.Types (SourceConstraint, SourceType)
 import Language.PureScript.PSString (PSString)
 import Language.PureScript.Label (Label)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), toMaybeModuleName)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName(..), Name(..), OpName, OpNameType(..), ProperName, ProperNameType(..), Qualified, pattern Qualified, QualifiedBy(..), toMaybeModuleName)
 import Language.PureScript.Roles (Role)
 import Language.PureScript.TypeClassDictionaries (NamedDict)
 import Language.PureScript.Comments (Comment)
 import Language.PureScript.Environment (DataDeclType, Environment, FunctionalDependency, NameKind)
 import Language.PureScript.Constants.Prim qualified as C
+import Data.HashMap.Strict qualified as HM
 
 -- | A map of locally-bound names in scope.
 type Context = [(Ident, SourceType)]
@@ -740,7 +740,7 @@ data Expr
   -- instance type, and the type class dictionaries in scope.
   --
   | TypeClassDictionary SourceConstraint
-                        (M.Map QualifiedBy (M.Map (Qualified (ProperName 'ClassName)) (M.Map (Qualified Ident) (NEL.NonEmpty NamedDict))))
+                        (HM.HashMap QualifiedBy (HM.HashMap (Qualified (ProperName 'ClassName)) (HM.HashMap (Qualified Ident) (NEL.NonEmpty NamedDict))))
                         [ErrorMessageHint]
   -- |
   -- A placeholder for a superclass dictionary to be turned into a TypeClassDictionary during typechecking

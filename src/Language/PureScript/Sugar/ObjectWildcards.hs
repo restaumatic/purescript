@@ -14,7 +14,7 @@ import Data.Maybe (catMaybes)
 import Language.PureScript.AST
 import Language.PureScript.Environment (NameKind(..))
 import Language.PureScript.Errors (MultipleErrors, rethrowWithPosition)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident, Qualified(..), freshIdent')
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident, freshIdent', mkQualified_)
 import Language.PureScript.PSString (PSString)
 
 
@@ -98,4 +98,4 @@ desugarDecl d = rethrowWithPosition (declSourceSpan d) $ fn d
     | otherwise = return Nothing
 
   argToExpr :: Ident -> Expr
-  argToExpr = Var nullSourceSpan . Qualified ByNullSourcePos
+  argToExpr = Var nullSourceSpan . mkQualified_ ByNullSourcePos

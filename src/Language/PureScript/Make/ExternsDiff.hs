@@ -18,7 +18,7 @@ import Language.PureScript.Constants.Prim (primModules)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment qualified as P
 import Language.PureScript.Externs qualified as P
-import Language.PureScript.Names (ModuleName)
+import Language.PureScript.Names (ModuleName, mapQualified)
 import Language.PureScript.Names qualified as P
 import Language.PureScript.Types qualified as P
 
@@ -36,7 +36,9 @@ data Ref
   | ValueOpRef (P.OpName 'P.ValueOpName)
   | -- Instance ref points to the class and types defined in the same module.
     TypeInstanceRef P.Ident (ModuleName, P.ProperName 'P.ClassName) [P.ProperName 'P.TypeName]
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic)
+
+instance Hashable Ref
 
 data RefStatus = Removed | Updated
   deriving (Show)
@@ -258,12 +260,12 @@ checkUsage searches decls = anyUsages
 
     check q = Any $ S.member (P.getQual q, P.disqualify q) searches'
 
-    checkType = check . map TypeRef
-    checkTypeOp = check . map TypeOpRef
-    checkValue = check . map ValueRef
-    checkValueOp = check . map ValueOpRef
-    checkCtor = check . map (ConstructorRef emptyName)
-    checkClass = check . map TypeClassRef
+    checkType = check . mapQualified TypeRef
+    checkTypeOp = check . mapQualified TypeOpRef
+    checkValue = check . mapQualified ValueRef
+    checkValueOp = check . mapQualified ValueOpRef
+    checkCtor = check . mapQualified (ConstructorRef emptyName)
+    checkClass = check . mapQualified TypeClassRef
 
     -- A nested traversal: pick up types in the module then traverse the structure of the types
     (checkUsageInTypes, _, _, _, _) =
@@ -388,7 +390,7 @@ typeDeps = P.everythingOnTypes (<>) $
       internalError "typeDeps: type is not qualified"
     _ -> mempty
 
-qualified :: P.Qualified b -> (ModuleName, b)
+qualified :: (Hashable b) => P.Qualified b -> (ModuleName, b)
 qualified (P.Qualified (P.ByModuleName mn) v) = (mn, v)
 qualified _ = internalError "ExternsDiff: type is not qualified"
 

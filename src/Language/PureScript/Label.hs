@@ -7,6 +7,7 @@ import Control.DeepSeq (NFData)
 import Data.Monoid ()
 import Data.String (IsString(..))
 import Data.Aeson qualified as A
+import Data.Hashable (Hashable)
 
 import Language.PureScript.PSString (PSString)
 
@@ -16,6 +17,7 @@ import Language.PureScript.PSString (PSString)
 --
 newtype Label = Label { runLabel :: PSString }
   deriving (Show, Eq, Ord, IsString, Semigroup, Monoid, A.ToJSON, A.FromJSON, Generic)
+  deriving newtype Hashable
 
 instance NFData Label
 instance Serialise Label

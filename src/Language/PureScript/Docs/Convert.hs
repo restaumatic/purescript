@@ -11,9 +11,9 @@ import Control.Category ((>>>))
 import Control.Monad.Writer.Strict (runWriterT)
 import Control.Monad.Supply (evalSupplyT)
 import Data.List.NonEmpty qualified as NE
-import Data.Map qualified as Map
 import Data.String (String)
 import Data.Text qualified as T
+import Data.HashMap.Strict qualified as HM
 
 import Language.PureScript.Docs.Convert.Single (convertSingleModule)
 import Language.PureScript.Docs.Types (Declaration(..), DeclarationInfo(..), KindInfo(..), Module(..), Type')
@@ -83,8 +83,8 @@ insertValueTypesAndAdjustKinds env m =
     where
     inferredRoles :: [P.Role]
     inferredRoles = do
-      let key = P.Qualified (P.ByModuleName (modName m)) (P.ProperName (declTitle d))
-      case Map.lookup key (P.types env) of
+      let key = P.mkQualified_ (P.ByModuleName (modName m)) (P.properNameFromString (declTitle d))
+      case HM.lookup key (P.types env) of
         Just (_, tyKind) -> case tyKind of
           P.DataType _ tySourceTyRole _ ->
             map (\(_,_,r) -> r) tySourceTyRole
@@ -162,8 +162,8 @@ insertValueTypesAndAdjustKinds env m =
     either (err . ("failed to parse Ident: " ++)) identity . runParser CST.parseIdent
 
   lookupName name =
-    let key = P.Qualified (P.ByModuleName (modName m)) name
-    in case Map.lookup key (P.names env) of
+    let key = P.mkQualified_ (P.ByModuleName (modName m)) name
+    in case HM.lookup key (P.names env) of
       Just (ty, _, _) ->
         ty
       Nothing ->
@@ -213,8 +213,8 @@ insertValueTypesAndAdjustKinds env m =
   insertInferredKind :: Declaration -> Text -> P.KindSignatureFor -> Declaration
   insertInferredKind d name keyword =
     let
-      key = P.Qualified (P.ByModuleName (modName m)) (P.ProperName name)
-    in case Map.lookup key (P.types env) of
+      key = P.mkQualified_ (P.ByModuleName (modName m)) (P.properNameFromString name)
+    in case HM.lookup key (P.types env) of
       Just (inferredKind, _) ->
         if isUninteresting keyword inferredKind'
           then  d

@@ -17,6 +17,7 @@ import Language.PureScript.Crash qualified as P
 import Language.PureScript.Names qualified as P
 import Language.PureScript.Roles qualified as P
 import Language.PureScript.Types qualified as P
+import Language.PureScript.Names (mapQualified)
 
 -- |
 -- Convert a single Module, but ignore re-exports; any re-exported types or
@@ -198,11 +199,11 @@ convertDeclaration (P.TypeInstanceDeclaration (ss, com) _ _ _ _ constraints clas
   extractProperNames _ = []
 
   childDecl = ChildDeclaration title (convertComments com) (Just ss) (ChildInstance (fmap ($> ()) constraints) (classApp $> ()))
-  classApp = foldl' P.srcTypeApp (P.srcTypeConstructor (fmap P.coerceProperName className)) tys
+  classApp = foldl' P.srcTypeApp (P.srcTypeConstructor (mapQualified P.coerceProperName className)) tys
 convertDeclaration (P.ValueFixityDeclaration sa fixity (P.Qualified mn alias) _) title =
-  Just . Right $ mkDeclaration sa title (AliasDeclaration fixity (P.Qualified mn (Right alias)))
+  Just . Right $ mkDeclaration sa title (AliasDeclaration fixity (P.mkQualified_ mn (Right alias)))
 convertDeclaration (P.TypeFixityDeclaration sa fixity (P.Qualified mn alias) _) title =
-  Just . Right $ mkDeclaration sa title (AliasDeclaration fixity (P.Qualified mn (Left alias)))
+  Just . Right $ mkDeclaration sa title (AliasDeclaration fixity (P.mkQualified_ mn (Left alias)))
 convertDeclaration (P.KindDeclaration sa keyword _ kind) title =
   Just $ Left ([(title, AugmentType), (title, AugmentClass)], AugmentKindSig ksi)
   where
