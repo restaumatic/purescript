@@ -10,6 +10,7 @@ module Language.PureScript.Make
 
 import Prelude
 
+import Control.Concurrent.Async (forConcurrently)
 import Control.Exception (SomeException, fromException, throwIO, try)
 import Control.Monad (foldM, void, when)
 import Control.Monad.Error.Class (MonadError(..))
@@ -210,10 +211,16 @@ makeIncremental ma@MakeActions{..} ms = do
       rules = Rock.memoise memoVar
             $ makeRules moduleMap opts ma warningsRef compileFn cacheStatus allCachedExterns diffsRef
 
-  -- Run the rock task: sort modules and compile each one.
+  -- Run the rock task: sort modules, then compile all in parallel.
+  -- Rock's memoise handles synchronization: if module B depends on A,
+  -- B's thread blocks on A's MVar until A completes. This gives us
+  -- natural parallelism bounded by the dependency graph.
   let rockTask = Rock.runTask rules $ do
         sorted <- Rock.fetch SortedModules
-        traverse (\mn -> Rock.fetch (CompileModule mn)) sorted
+        -- Fork all module compilations concurrently within the same Task.
+        -- Each fork shares the same Fetch function (and thus memoization).
+        liftIO $ forConcurrently sorted $ \mn ->
+          Rock.runTask rules $ Rock.fetch (CompileModule mn)
   result <- liftIO (try rockTask) :: Make (Either SomeException [ExternsFile])
 
   -- Collect warnings accumulated during rock execution and emit them
