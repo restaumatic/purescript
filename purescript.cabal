@@ -166,9 +166,8 @@ common defaults
     cborg >=0.2.7.0 && <0.3,
     cheapskate >=0.1.1.2 && <0.2,
     clock >=0.8.3 && <0.9,
+    constraints-extras >=0.4.0 && <0.5,
     containers >=0.6.5.1 && <0.7,
-    -- unordered-containers,
-    -- hashable,
     cryptonite ==0.30.*,
     data-ordlist >=0.4.7.0 && <0.5,
     deepseq >=1.4.6.1 && <1.5,
@@ -178,6 +177,7 @@ common defaults
     file-embed >=0.0.15.0 && <0.1,
     filepath >=1.4.2.2 && <1.5,
     Glob >=0.10.2 && <0.11,
+    hashable >=1.4.3 && <1.5,
     haskeline ==0.8.2,
     language-javascript ==0.7.0.0,
     lens >=5.1.1 && <5.3,
@@ -193,11 +193,13 @@ common defaults
     process >=1.6.19.0 && <1.7,
     protolude >=0.3.1 && <0.4,
     regex-tdfa >=1.3.1.2 && <1.4,
+    rock,
     safe >=0.3.19 && <0.4,
     scientific >=0.3.7.0 && <0.4,
     semialign >=1.2.0.1 && <1.4,
     semigroups ==0.20.*,
     serialise >=0.2.5.0 && <0.3,
+    some >=1.0.4 && <1.1,
     sourcemap >=0.1.7 && <0.2,
     stm >=2.5.0.2 && <2.6,
     stringsearch >=0.3.6.6 && <0.4,
@@ -340,6 +342,8 @@ library
     Language.PureScript.Make.Cache
     Language.PureScript.Make.ExternsDiff
     Language.PureScript.Make.Monad
+    Language.PureScript.Make.Query
+    Language.PureScript.Make.Rules
     Language.PureScript.ModuleDependencies
     Language.PureScript.Names
     Language.PureScript.Options

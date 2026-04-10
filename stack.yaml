@@ -2,8 +2,10 @@
 # (or the CI build will fail)
 resolver: lts-22.43
 pvp-bounds: both
+system-ghc: true
 packages:
 - '.'
+- '../rock'
 ghc-options:
   # Build with advanced optimizations enabled by default
   "$locals": -O2 -Werror
@@ -17,6 +19,8 @@ extra-deps:
 - haskeline-0.8.2
 - these-1.2.1
 - aeson-better-errors-0.9.1.3
+# Rock incremental computation dependencies
+- dependent-hashmap-0.1.0.1
 
 - github: purescript/cheapskate
   commit: 8bfaf4beeb108e97a274ed51303f278905979e87

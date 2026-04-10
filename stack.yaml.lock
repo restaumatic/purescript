@@ -40,6 +40,13 @@ packages:
   original:
     hackage: aeson-better-errors-0.9.1.3
 - completed:
+    hackage: dependent-hashmap-0.1.0.1@sha256:6d1c20bd79f32d8daebd3cc741f884cc3d093118e3b876eb957defd4c594a966,1892
+    pantry-tree:
+      sha256: 817b36b81735d96696c5b165357c431e0b396dcf45afb8b4384fbfd4f4499cbb
+      size: 334
+  original:
+    hackage: dependent-hashmap-0.1.0.1
+- completed:
     name: cheapskate
     pantry-tree:
       sha256: a2253619f50d26f0137a802e51e5e7103ee52b1f71bc060d93a0979dcbefa2c8
