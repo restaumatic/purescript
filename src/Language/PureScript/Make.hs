@@ -23,15 +23,17 @@ import Data.Function (on)
 import Data.Foldable (fold, for_)
 import Data.IORef (newIORef, readIORef)
 import Data.List (foldl', sortOn)
+import Data.Maybe (mapMaybe)
 import Data.List.NonEmpty qualified as NEL
 import Data.Map qualified as M
+import Data.Set qualified as S
 import Data.Text qualified as T
 import Language.PureScript.AST (ErrorMessageHint(..), Module(..), getModuleName, getModuleSourceSpan, importPrim)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.CST qualified as CST
 import Language.PureScript.Docs.Convert qualified as Docs
 import Language.PureScript.Environment (initEnvironment)
-import Language.PureScript.Errors (MultipleErrors(..), SimpleErrorMessage(..), addHint, defaultPPEOptions, errorMessage', errorMessage'', prettyPrintMultipleErrors)
+import Language.PureScript.Errors (MultipleErrors(..), SimpleErrorMessage(..), addHint, defaultPPEOptions, errorMessage', errorMessage'', errorModule, prettyPrintMultipleErrors)
 import Language.PureScript.Externs (ExternsFile, applyExternsFileToEnvironment, moduleToExternsFile)
 import Language.PureScript.Linter (Name(..), lint, lintImports)
 import Language.PureScript.Names (ModuleName(..), isBuiltinModuleName, runModuleName)
@@ -39,6 +41,7 @@ import Language.PureScript.Renamer (renameInModule)
 import Language.PureScript.Sugar (Env, collapseBindingGroups, createBindingGroups, desugar, desugarCaseGuards, externsEnv, primEnv)
 import Language.PureScript.TypeChecker (CheckState(..), emptyCheckState, typeCheckModule)
 import Language.PureScript.Make.Actions as Actions
+import Language.PureScript.Make.Cache qualified as Cache
 import Language.PureScript.Make.Monad as Monad
     ( Make(..),
       writeTextFile,
@@ -63,7 +66,7 @@ import Language.PureScript.Make.Query (Query(..))
 import Language.PureScript.Make.Rules (makeRules, MakeError(..))
 import Language.PureScript.CoreFn qualified as CF
 import Rock qualified
-import System.Directory (doesFileExist)
+import System.Directory (doesFileExist, getCurrentDirectory)
 import System.FilePath (replaceExtension)
 import Language.PureScript.TypeChecker.Monad (liftTypeCheckM)
 
@@ -181,10 +184,22 @@ makeIncremental ma@MakeActions{..} ms = do
   let moduleMap = M.fromList
         [ (getModuleName (CST.resPartial pr), pr) | pr <- ms ]
 
+  -- Read cache database for incremental build support
+  cacheDb <- readCacheDb
+
+  -- Compute cache status for each module: check which modules have
+  -- unchanged source files and valid cached externs on disk.
+  -- Also load all previously cached externs (for ExternsDiff computation).
+  (cacheStatus, allCachedExterns) <- computeCacheStatus ma cacheDb (M.keys moduleMap)
+  -- Compute new CacheDb entries while checking
+  newCacheDb <- computeNewCacheDb ma cacheDb (M.keys moduleMap)
+
   -- IORef to accumulate warnings from rock Task executions
   warningsRef <- liftIO $ newIORef mempty
   -- IORef for rock's within-build memoization cache
   memoVar <- liftIO $ newIORef mempty
+  -- IORef for tracking ExternsDiff of recompiled modules
+  diffsRef <- liftIO $ newIORef M.empty
 
   -- The per-module compilation function, partially applied with MakeActions
   let compileFn = rebuildModule' ma
@@ -192,11 +207,9 @@ makeIncremental ma@MakeActions{..} ms = do
   -- Construct memoized rock rules
   let rules :: Rock.Rules Query
       rules = Rock.memoise memoVar
-            $ makeRules moduleMap opts warningsRef compileFn
+            $ makeRules moduleMap opts ma warningsRef compileFn cacheStatus allCachedExterns diffsRef
 
   -- Run the rock task: sort modules and compile each one.
-  -- We catch SomeException because errors from liftMake are wrapped in MakeError,
-  -- but other exceptions (IOException, etc.) might also propagate.
   let rockTask = Rock.runTask rules $ do
         sorted <- Rock.fetch SortedModules
         traverse (\mn -> Rock.fetch (CompileModule mn)) sorted
@@ -208,9 +221,17 @@ makeIncremental ma@MakeActions{..} ms = do
 
   case result of
     Left exc
-      | Just (MakeError errs) <- fromException exc -> throwError errs
+      | Just (MakeError errs) <- fromException exc -> do
+          -- On failure, remove ONLY the failed modules from CacheDb.
+          -- This ensures the failed modules are rebuilt next time, while
+          -- preserving cache entries for modules that didn't fail.
+          let failedModules = S.fromList $ mapMaybe errorModule (runMultipleErrors errs)
+          writeCacheDb $ Cache.removeModules failedModules newCacheDb
+          throwError errs
       | otherwise -> liftIO $ throwIO exc
     Right externs -> do
+      -- Write updated cache database
+      writeCacheDb newCacheDb
       writePackageJson
       outputPrimDocs
       pure externs
@@ -241,6 +262,58 @@ makeIncremental ma@MakeActions{..} ms = do
     case filter ((> 1) . length) . NEL.groupBy ((==) `on` f) . sortOn f $ xs of
       [] -> Nothing
       xss -> Just xss
+
+-- | Compute cache status for each module: determine which modules have
+-- unchanged source files and valid cached externs on disk.
+-- Returns:
+-- 1. CacheStatus: map from module name to Maybe ExternsFile (Just = can reuse, Nothing = needs rebuild)
+-- 2. AllCachedExterns: map of ALL previously cached externs (for ExternsDiff computation)
+computeCacheStatus
+  :: MakeActions Make
+  -> Cache.CacheDb
+  -> [ModuleName]
+  -> Make (M.Map ModuleName (Maybe ExternsFile), M.Map ModuleName ExternsFile)
+computeCacheStatus MakeActions{..} cacheDb moduleNames = do
+  results <- traverse checkModule moduleNames
+  let cacheStatusMap = M.fromList [(mn, status) | (mn, status, _) <- results]
+      allCached = M.fromList [(mn, exts) | (mn, _, Just exts) <- results]
+  pure (cacheStatusMap, allCached)
+  where
+    checkModule mn = do
+      -- Always try to load cached externs (needed for diff computation)
+      (_, mbExterns) <- readExterns mn
+      inputInfo <- getInputTimestampsAndHashes mn
+      case inputInfo of
+        Left RebuildAlways -> pure (mn, Nothing, mbExterns)
+        Left RebuildNever -> pure (mn, mbExterns, mbExterns)
+        Right timestamps -> do
+          cwd <- liftIO getCurrentDirectory
+          (_newCacheInfo, upToDate) <- Cache.checkChanged cacheDb mn cwd timestamps
+          if upToDate then do
+            outputTs <- getOutputTimestamp mn
+            case outputTs of
+              Nothing -> pure (mn, Nothing, mbExterns)
+              Just _  -> pure (mn, mbExterns, mbExterns)
+          else
+            pure (mn, Nothing, mbExterns)
+
+-- | Compute the updated CacheDb entries for all modules.
+computeNewCacheDb
+  :: MakeActions Make
+  -> Cache.CacheDb
+  -> [ModuleName]
+  -> Make Cache.CacheDb
+computeNewCacheDb MakeActions{..} cacheDb moduleNames = do
+  foldM updateModule cacheDb moduleNames
+  where
+    updateModule db mn = do
+      inputInfo <- getInputTimestampsAndHashes mn
+      case inputInfo of
+        Left _ -> pure db  -- RebuildPolicy modules don't update cache
+        Right timestamps -> do
+          cwd <- liftIO getCurrentDirectory
+          (newCacheInfo, _) <- Cache.checkChanged db mn cwd timestamps
+          pure $ M.insert mn newCacheInfo db
 
 -- | Infer the module name for a module by looking for the same filename with
 -- a .js extension.
