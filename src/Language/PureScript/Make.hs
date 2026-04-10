@@ -63,9 +63,10 @@ import Language.PureScript.Make.Monad as Monad
       getCurrentTime,
       copyFile )
 import Language.PureScript.Make.Query (Query(..))
-import Language.PureScript.Make.Rules (makeRules, MakeError(..))
+import Language.PureScript.Make.Rules (makeRules, MakeError(..), CacheStatus)
 import Language.PureScript.CoreFn qualified as CF
 import Rock qualified
+import Data.Time.Clock (UTCTime(..))
 import System.Directory (doesFileExist, getCurrentDirectory)
 import System.FilePath (replaceExtension)
 import Language.PureScript.TypeChecker.Monad (liftTypeCheckM)
@@ -141,7 +142,7 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
   -- a bug in the compiler, which should be reported as such.
   -- 2. We do not want to perform any extra work generating docs unless the
   -- user has asked for docs to be generated.
-  let docs = case Docs.convertModule externs exEnv env' m of
+  let docs = case Docs.convertModule externs exEnv env' withPrim of
                Left errs -> internalError $
                  "Failed to produce docs for " ++ T.unpack (runModuleName moduleName)
                  ++ "; details:\n" ++ prettyPrintMultipleErrors defaultPPEOptions errs
@@ -272,7 +273,7 @@ computeCacheStatus
   :: MakeActions Make
   -> Cache.CacheDb
   -> [ModuleName]
-  -> Make (M.Map ModuleName (Maybe ExternsFile), M.Map ModuleName ExternsFile)
+  -> Make (CacheStatus, M.Map ModuleName ExternsFile)
 computeCacheStatus MakeActions{..} cacheDb moduleNames = do
   results <- traverse checkModule moduleNames
   let cacheStatusMap = M.fromList [(mn, status) | (mn, status, _) <- results]
@@ -285,15 +286,22 @@ computeCacheStatus MakeActions{..} cacheDb moduleNames = do
       inputInfo <- getInputTimestampsAndHashes mn
       case inputInfo of
         Left RebuildAlways -> pure (mn, Nothing, mbExterns)
-        Left RebuildNever -> pure (mn, mbExterns, mbExterns)
+        Left RebuildNever -> do
+          -- RebuildNever modules are pinned — always use cached externs.
+          -- Use epoch as timestamp since these are never compared.
+          let epoch = UTCTime (toEnum 0) 0
+              status = fmap (\exts -> (exts, epoch)) mbExterns
+          pure (mn, status, mbExterns)
         Right timestamps -> do
           cwd <- liftIO getCurrentDirectory
           (_newCacheInfo, upToDate) <- Cache.checkChanged cacheDb mn cwd timestamps
           if upToDate then do
             outputTs <- getOutputTimestamp mn
-            case outputTs of
-              Nothing -> pure (mn, Nothing, mbExterns)
-              Just _  -> pure (mn, mbExterns, mbExterns)
+            let status = do
+                  exts <- mbExterns
+                  ts <- outputTs
+                  pure (exts, ts)
+            pure (mn, status, mbExterns)
           else
             pure (mn, Nothing, mbExterns)
 

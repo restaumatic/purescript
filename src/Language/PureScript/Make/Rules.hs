@@ -18,6 +18,7 @@ import Data.List (foldl')
 import Data.Map qualified as M
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as S
+import Data.Time.Clock (UTCTime)
 
 import Rock qualified
 
@@ -59,8 +60,8 @@ liftMake opts warningsRef action = liftIO $ do
 type CompileFn = Env -> [ExternsFile] -> Module -> Make ExternsFile
 
 -- | Pre-computed cache status for a module.
--- Nothing = needs rebuild, Just externs = source unchanged, cached externs available.
-type CacheStatus = M.Map ModuleName (Maybe ExternsFile)
+-- Nothing = needs rebuild, Just (externs, timestamp) = source unchanged, cached externs available.
+type CacheStatus = M.Map ModuleName (Maybe (ExternsFile, UTCTime))
 
 -- | Define the rock rules for the incremental compilation pipeline.
 makeRules
@@ -125,34 +126,50 @@ makeRules modules opts actions warningsRef compileFn cacheStatus allCachedExtern
         sortedDeps = filter (`S.member` depsSet) sorted
     depExterns <- traverse (\dep -> Rock.fetch (CompileModule dep)) sortedDeps
 
-    let cachedExterns = case M.lookup mn cacheStatus of
-          Just (Just exts) -> Just exts
-          _                -> Nothing
+    let cachedInfo = case M.lookup mn cacheStatus of
+          Just (Just (exts, ts)) -> Just (exts, ts)
+          _                      -> Nothing
 
-    case cachedExterns of
-      Just cached -> do
-        -- Source unchanged. Check if dep changes affect this module.
-        diffs <- liftIO $ readIORef diffsRef
-        let depDiffs = map (\dep -> fromMaybe (emptyDiff dep) (M.lookup dep diffs)) sortedDeps
-            pr = fromMaybe (internalError "makeRules: missing module")
-                   (M.lookup mn modules)
-            -- Use the full module (not just the header) for checkDiffs,
-            -- since it needs to inspect declarations to find usage of changed refs.
-            fullModule = case snd (CST.resFull pr) of
-              Right m  -> m
-              Left _   -> CST.resPartial pr  -- fallback to header if parse failed
-            needsRebuild = checkDiffs fullModule depDiffs
+    case cachedInfo of
+      Just (cached, myTimestamp) -> do
+        -- Source unchanged. Check if any dep's output is newer than ours
+        -- (indicates the dep was rebuilt separately, e.g. by IDE).
+        let depTimestamps = map (\dep -> case M.lookup dep cacheStatus of
+              Just (Just (_, ts)) -> Just ts
+              _                   -> Nothing) sortedDeps
+            depsNewerThanMe = any (\mts -> maybe False (> myTimestamp) mts) depTimestamps
 
-        if needsRebuild then do
+        if depsNewerThanMe then do
+          -- A dep was rebuilt after us → must recompile
           exts <- doCompile mn sugarEnv depExterns
-          let diff = diffExterns exts cached depDiffs
+          diffs <- liftIO $ readIORef diffsRef
+          let depDiffs = map (\dep -> fromMaybe (emptyDiff dep) (M.lookup dep diffs)) sortedDeps
+              diff = case M.lookup mn allCachedExterns of
+                Just old -> diffExterns exts old depDiffs
+                Nothing  -> emptyDiff mn
           liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn diff d, ()))
           pure exts
         else do
-          liftMake opts warningsRef $
-            progress actions $ SkippingModule mn Nothing
-          liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn (emptyDiff mn) d, ()))
-          pure cached
+          -- Check if dep externs changes affect this module (ExternsDiff).
+          diffs <- liftIO $ readIORef diffsRef
+          let depDiffs = map (\dep -> fromMaybe (emptyDiff dep) (M.lookup dep diffs)) sortedDeps
+              pr = fromMaybe (internalError "makeRules: missing module")
+                     (M.lookup mn modules)
+              fullModule = case snd (CST.resFull pr) of
+                Right m  -> m
+                Left _   -> CST.resPartial pr
+              needsRebuild = checkDiffs fullModule depDiffs
+
+          if needsRebuild then do
+            exts <- doCompile mn sugarEnv depExterns
+            let diff = diffExterns exts cached depDiffs
+            liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn diff d, ()))
+            pure exts
+          else do
+            liftMake opts warningsRef $
+              progress actions $ SkippingModule mn Nothing
+            liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn (emptyDiff mn) d, ()))
+            pure cached
 
       Nothing -> do
         exts <- doCompile mn sugarEnv depExterns
