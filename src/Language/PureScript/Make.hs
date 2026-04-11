@@ -64,11 +64,10 @@ import Language.PureScript.Make.Monad as Monad
       getCurrentTime,
       copyFile )
 import Language.PureScript.Make.Query (Query(..))
-import Language.PureScript.Make.Rules (makeRules, MakeError(..), CacheStatus)
+import Language.PureScript.Make.Rules (makeRules, MakeError(..))
 import Language.PureScript.CoreFn qualified as CF
 import Rock qualified
-import Data.Time.Clock (UTCTime(..))
-import System.Directory (doesFileExist, getCurrentDirectory)
+import System.Directory (doesFileExist)
 import System.FilePath (replaceExtension)
 import Language.PureScript.TypeChecker.Monad (liftTypeCheckM)
 
@@ -189,29 +188,25 @@ makeIncremental ma@MakeActions{..} ms = do
   -- Read cache database for incremental build support
   cacheDb <- readCacheDb
 
-  -- Compute cache status for each module: check which modules have
-  -- unchanged source files and valid cached externs on disk.
-  -- Also load all previously cached externs (for ExternsDiff computation).
-  (cacheStatus, allCachedExterns) <- computeCacheStatus ma cacheDb (M.keys moduleMap)
-  -- Compute new CacheDb entries while checking
-  newCacheDb <- computeNewCacheDb ma cacheDb (M.keys moduleMap)
-
-  -- IORef to accumulate warnings from rock Task executions
+  -- IORefs for state accumulated during the rock build
   warningsRef <- liftIO $ newIORef mempty
-  -- IORef for rock's within-build memoization cache
   memoVar <- liftIO $ newIORef mempty
-  -- IORef for tracking ExternsDiff of recompiled modules
   diffsRef <- liftIO $ newIORef M.empty
-  -- Shared cumulative sugar Env (like the old bpEnv MVar)
   sharedEnvRef <- liftIO $ newIORef primEnv
+  -- New CacheDb entries accumulated lazily as modules are checked
+  newCacheDbRef <- liftIO $ newIORef cacheDb
+  -- Output timestamps for dep freshness comparison
+  timestampsRef <- liftIO $ newIORef M.empty
 
   -- The per-module compilation function, partially applied with MakeActions
   let compileFn = rebuildModule' ma
 
-  -- Construct memoized rock rules
+  -- Construct memoized rock rules.
+  -- Cache checks happen lazily inside CompileModule — only when a module
+  -- is actually demanded by rock, not eagerly for all 1200 modules.
   let rules :: Rock.Rules Query
       rules = Rock.memoise memoVar
-            $ makeRules moduleMap opts ma warningsRef compileFn cacheStatus allCachedExterns diffsRef sharedEnvRef
+            $ makeRules moduleMap opts ma warningsRef compileFn cacheDb diffsRef sharedEnvRef newCacheDbRef timestampsRef
 
   -- Run the rock task: sort modules, then compile all in parallel.
   -- Rock's memoise handles synchronization: if module B depends on A,
@@ -233,14 +228,14 @@ makeIncremental ma@MakeActions{..} ms = do
     Left exc
       | Just (MakeError errs) <- fromException exc -> do
           -- On failure, remove ONLY the failed modules from CacheDb.
-          -- This ensures the failed modules are rebuilt next time, while
-          -- preserving cache entries for modules that didn't fail.
+          newCacheDb <- liftIO $ readIORef newCacheDbRef
           let failedModules = S.fromList $ mapMaybe errorModule (runMultipleErrors errs)
           writeCacheDb $ Cache.removeModules failedModules newCacheDb
           throwError errs
       | otherwise -> liftIO $ throwIO exc
     Right externs -> do
       -- Write updated cache database
+      newCacheDb <- liftIO $ readIORef newCacheDbRef
       writeCacheDb newCacheDb
       writePackageJson
       outputPrimDocs
@@ -272,83 +267,6 @@ makeIncremental ma@MakeActions{..} ms = do
     case filter ((> 1) . length) . NEL.groupBy ((==) `on` f) . sortOn f $ xs of
       [] -> Nothing
       xss -> Just xss
-
--- | Compute cache status for each module: determine which modules have
--- unchanged source files and valid cached externs on disk.
--- Returns:
--- 1. CacheStatus: map from module name to Maybe (ExternsFile, UTCTime)
---    (Just = source unchanged and cached externs available; Nothing = needs rebuild)
--- 2. AllCachedExterns: map of previously cached externs for modules that changed
---    (needed for ExternsDiff computation). Only loaded for modules that need rebuild.
-computeCacheStatus
-  :: MakeActions Make
-  -> Cache.CacheDb
-  -> [ModuleName]
-  -> Make (CacheStatus, M.Map ModuleName ExternsFile)
-computeCacheStatus MakeActions{..} cacheDb moduleNames = do
-  -- If CacheDb is empty (fresh build), skip all checks — nothing is cached.
-  if M.null cacheDb then
-    pure (M.fromList [(mn, Nothing) | mn <- moduleNames], M.empty)
-  else do
-    opts <- ask
-    results <- liftIO $ forConcurrently moduleNames (\mn -> do
-      (r, _) <- runMake opts (checkModule mn)
-      case r of
-        Left _  -> pure (mn, Nothing)
-        Right v -> pure v)
-    let cacheStatusMap = M.fromList [(mn, status) | (mn, status) <- results]
-    -- Only load old cached externs for modules that CHANGED (for ExternsDiff).
-    let changedModules = [mn | (mn, Nothing) <- results]
-    changedExterns <- fmap (M.fromList . mapMaybe id) $ traverse loadExterns changedModules
-    let upToDateExterns = M.fromList [(mn, exts) | (mn, Just (exts, _)) <- results]
-        allCached = M.union upToDateExterns changedExterns
-    pure (cacheStatusMap, allCached)
-  where
-    checkModule mn = do
-      inputInfo <- getInputTimestampsAndHashes mn
-      case inputInfo of
-        Left RebuildAlways -> pure (mn, Nothing)
-        Left RebuildNever -> do
-          -- RebuildNever: load externs (these are pinned modules, few of them)
-          (_, mbExterns) <- readExterns mn
-          let epoch = UTCTime (toEnum 0) 0
-              status = fmap (\exts -> (exts, epoch)) mbExterns
-          pure (mn, status)
-        Right timestamps -> do
-          cwd <- liftIO getCurrentDirectory
-          (_newCacheInfo, upToDate) <- Cache.checkChanged cacheDb mn cwd timestamps
-          if upToDate then do
-            outputTs <- getOutputTimestamp mn
-            case outputTs of
-              Nothing -> pure (mn, Nothing)
-              Just ts -> do
-                -- Source unchanged and output exists: load externs
-                (_, mbExterns) <- readExterns mn
-                pure (mn, fmap (\exts -> (exts, ts)) mbExterns)
-          else
-            pure (mn, Nothing)
-
-    loadExterns mn = do
-      (_, mbExterns) <- readExterns mn
-      pure $ fmap (\exts -> (mn, exts)) mbExterns
-
--- | Compute the updated CacheDb entries for all modules.
-computeNewCacheDb
-  :: MakeActions Make
-  -> Cache.CacheDb
-  -> [ModuleName]
-  -> Make Cache.CacheDb
-computeNewCacheDb MakeActions{..} cacheDb moduleNames = do
-  foldM updateModule cacheDb moduleNames
-  where
-    updateModule db mn = do
-      inputInfo <- getInputTimestampsAndHashes mn
-      case inputInfo of
-        Left _ -> pure db  -- RebuildPolicy modules don't update cache
-        Right timestamps -> do
-          cwd <- liftIO getCurrentDirectory
-          (newCacheInfo, _) <- Cache.checkChanged db mn cwd timestamps
-          pure $ M.insert mn newCacheInfo db
 
 -- | Infer the module name for a module by looking for the same filename with
 -- a .js extension.
