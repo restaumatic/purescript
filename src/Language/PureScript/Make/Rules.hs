@@ -87,12 +87,14 @@ makeRules
   -> IORef Env
   -> IORef CacheDb
   -> IORef (M.Map ModuleName UTCTime)
+  -> IORef (S.Set ModuleName)
+     -- ^ Modules actually compiled (not skipped) in this build
   -> Maybe Traces.CachedGraph
      -- ^ Cached module graph from previous build (if valid)
   -> IORef (Maybe ([ModuleName], [(ModuleName, [ModuleName])]))
      -- ^ Captures computed graph for persistence
   -> Rock.Rules Query
-makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvRef newCacheDbRef timestampsRef cachedGraph graphRef = \case
+makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvRef newCacheDbRef timestampsRef compiledRef cachedGraph graphRef = \case
 
   InputModule mn ->
     case M.lookup mn modules of
@@ -148,50 +150,51 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
 
     case ciCacheStatus cache of
       CacheHit myTimestamp -> do
-        -- Source unchanged. Check if any dep was rebuilt after us.
+        -- Source unchanged. Check if any dep was rebuilt externally (not
+        -- in this build) by comparing output timestamps. For deps rebuilt
+        -- in THIS build, ExternsDiff tells us if the interface changed.
+        diffs <- liftIO $ readIORef diffsRef
         timestamps <- liftIO $ readIORef timestampsRef
-        let depsNewerThanMe = any (\dep ->
-              maybe False (> myTimestamp) (getDepTimestamp timestamps dep)) sortedDeps
+        compiled <- liftIO $ readIORef compiledRef
+        let depDiffs = map (\dep -> fromMaybe (emptyDiff dep) (M.lookup dep diffs)) sortedDeps
+            pr = fromMaybe (internalError "makeRules: missing module")
+                   (M.lookup mn modules)
+            fullModule = case snd (CST.resFull pr) of
+              Right m  -> m
+              Left _   -> CST.resPartial pr
+            -- A dep rebuilt externally (in a previous build, not this one)
+            -- has newer output. We must recompile since ExternsDiff can't
+            -- tell us what changed in its externs across builds.
+            hasExternallyRebuiltDep = any (\dep ->
+              not (S.member dep compiled) && depHasNewerOutput timestamps dep myTimestamp) sortedDeps
+            needsRebuild = hasExternallyRebuiltDep || checkDiffs fullModule depDiffs
 
-        if depsNewerThanMe then do
+        if needsRebuild then do
+          -- Load cached externs for diff computation
+          mbCached <- loadExterns mn
           exts <- doCompile mn sortedDeps depExterns
-          recordDiff mn exts (ciOldExterns cache) sortedDeps
+          let diff = case mbCached of
+                Just old -> diffExterns exts old depDiffs
+                Nothing  -> emptyDiff mn
+          liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn diff d, ()))
           pure exts
         else do
-          -- Check ExternsDiff
-          diffs <- liftIO $ readIORef diffsRef
-          let depDiffs = map (\dep -> fromMaybe (emptyDiff dep) (M.lookup dep diffs)) sortedDeps
-              pr = fromMaybe (internalError "makeRules: missing module")
-                     (M.lookup mn modules)
-              fullModule = case snd (CST.resFull pr) of
-                Right m  -> m
-                Left _   -> CST.resPartial pr
-              needsRebuild = checkDiffs fullModule depDiffs
-
-          if needsRebuild then do
-            -- Load cached externs for diff computation
-            mbCached <- loadExterns mn
-            exts <- doCompile mn sortedDeps depExterns
-            let diff = case mbCached of
-                  Just old -> diffExterns exts old depDiffs
-                  Nothing  -> emptyDiff mn
-            liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn diff d, ()))
-            pure exts
-          else do
-            updateSharedEnv sortedDeps depExterns
-            liftMake opts warningsRef $
-              progress actions $ SkippingModule mn Nothing
-            liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn (emptyDiff mn) d, ()))
-            -- Load externs only now (deferred from cache check)
-            mbCached <- loadExterns mn
-            case mbCached of
-              Just cached -> pure cached
-              Nothing -> do
-                -- Externs missing on disk even though cache says up to date.
-                -- Fall back to recompilation.
-                exts <- doCompile mn sortedDeps depExterns
-                recordDiff mn exts Nothing sortedDeps
-                pure exts
+          -- Skip: deps' externs haven't meaningfully changed.
+          -- Don't call updateSharedEnv here — doCompile handles
+          -- missing env entries if a downstream module needs compilation.
+          liftMake opts warningsRef $
+            progress actions $ SkippingModule mn Nothing
+          liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn (emptyDiff mn) d, ()))
+          -- Load externs only now (deferred from cache check)
+          mbCached <- loadExterns mn
+          case mbCached of
+            Just cached -> pure cached
+            Nothing -> do
+              -- Externs missing on disk even though cache says up to date.
+              -- Fall back to recompilation.
+              exts <- doCompile mn sortedDeps depExterns
+              recordDiff mn exts Nothing sortedDeps
+              pure exts
 
       CacheMiss -> do
         exts <- doCompile mn sortedDeps depExterns
@@ -199,6 +202,12 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
         pure exts
 
   where
+    -- | Check if a dependency's output is newer than a given timestamp.
+    -- Used to detect deps rebuilt in a previous build (not in this one).
+    depHasNewerOutput :: M.Map ModuleName UTCTime -> ModuleName -> UTCTime -> Bool
+    depHasNewerOutput timestamps dep myTimestamp =
+      maybe False (> myTimestamp) (M.lookup dep timestamps)
+
     -- | Lazily check a single module's cache status.
     -- This is the key difference from the eager approach: only called
     -- when rock actually demands this module.
@@ -247,12 +256,9 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
         Right ext -> pure ext
         Left _    -> pure Nothing
 
-    -- | Get a dep's output timestamp (recorded during cache check).
-    getDepTimestamp :: M.Map ModuleName UTCTime -> ModuleName -> Maybe UTCTime
-    getDepTimestamp timestamps dep = M.lookup dep timestamps
-
     doCompile :: ModuleName -> [ModuleName] -> [ExternsFile] -> Rock.Task Query ExternsFile
     doCompile mn sortedDeps depExterns = do
+      liftIO $ atomicModifyIORef' compiledRef (\s -> (S.insert mn s, ()))
       currentEnv <- liftIO $ readIORef sharedEnvRef
       let pr = fromMaybe (internalError $ "makeRules: CompileModule: module not found: " <> show (runModuleName mn))
                  (M.lookup mn modules)
@@ -268,19 +274,6 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
         tell $ CST.toMultipleWarnings fp pwarnings
         m <- CST.unwrapParserError fp mres
         compileFn sugarEnv depExterns m
-
-    updateSharedEnv :: [ModuleName] -> [ExternsFile] -> Rock.Task Query ()
-    updateSharedEnv sortedDeps depExterns = do
-      currentEnv <- liftIO $ readIORef sharedEnvRef
-      let missingExterns = [ exts
-                           | (dep, exts) <- zip sortedDeps depExterns
-                           , not (M.member dep currentEnv)
-                           ]
-      if null missingExterns then pure ()
-      else do
-        newEnv <- liftMake opts warningsRef $
-          fmap fst . runWriterT $ foldM externsEnv currentEnv missingExterns
-        liftIO $ atomicModifyIORef' sharedEnvRef (\_ -> (newEnv, ()))
 
     recordDiff :: ModuleName -> ExternsFile -> Maybe ExternsFile -> [ModuleName] -> Rock.Task Query ()
     recordDiff mn exts mbOldExterns sortedDeps = do

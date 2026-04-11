@@ -222,6 +222,7 @@ makeIncremental ma@MakeActions{..} ms = do
   sharedEnvRef <- liftIO $ newIORef primEnv
   newCacheDbRef <- liftIO $ newIORef cacheDb
   timestampsRef <- liftIO $ newIORef M.empty
+  compiledRef <- liftIO $ newIORef S.empty
   -- Captured graph data for persistence
   graphRef <- liftIO $ newIORef (Nothing :: Maybe ([ModuleName], [(ModuleName, [ModuleName])]))
 
@@ -229,7 +230,7 @@ makeIncremental ma@MakeActions{..} ms = do
 
   let rules :: Rock.Rules Query
       rules = Rock.memoise memoVar
-            $ makeRules moduleMap opts ma warningsRef compileFn cacheDb diffsRef sharedEnvRef newCacheDbRef timestampsRef cachedGraph graphRef
+            $ makeRules moduleMap opts ma warningsRef compileFn cacheDb diffsRef sharedEnvRef newCacheDbRef timestampsRef compiledRef cachedGraph graphRef
 
   -- Run the rock task: sort modules, then compile all in parallel.
   -- Rock's memoise handles synchronization: if module B depends on A,
