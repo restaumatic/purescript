@@ -65,10 +65,11 @@ import Language.PureScript.Make.Monad as Monad
       copyFile )
 import Language.PureScript.Make.Query (Query(..))
 import Language.PureScript.Make.Rules (makeRules, MakeError(..))
+import Language.PureScript.Make.Traces qualified as Traces
 import Language.PureScript.CoreFn qualified as CF
 import Rock qualified
 import System.Directory (doesFileExist)
-import System.FilePath (replaceExtension)
+import System.FilePath (replaceExtension, (</>))
 import Language.PureScript.TypeChecker.Monad (liftTypeCheckM)
 
 -- | Rebuild a single module.
@@ -188,25 +189,29 @@ makeIncremental ma@MakeActions{..} ms = do
   -- Read cache database for incremental build support
   cacheDb <- readCacheDb
 
+  -- Try to load cached module graph from previous build.
+  -- If valid (all input hashes match), we skip the expensive sortModules call.
+  let graphFile = getOutputDir </> "module-graph.json"
+  -- Load cached module graph if available and valid.
+  -- Disabled for now: needs further debugging for test compatibility.
+  -- cachedGraph <- liftIO $ Traces.readCachedGraph graphFile cacheDb (S.fromList $ M.keys moduleMap)
+  let cachedGraph = (Nothing :: Maybe Traces.CachedGraph)
+
   -- IORefs for state accumulated during the rock build
   warningsRef <- liftIO $ newIORef mempty
   memoVar <- liftIO $ newIORef mempty
   diffsRef <- liftIO $ newIORef M.empty
   sharedEnvRef <- liftIO $ newIORef primEnv
-  -- New CacheDb entries accumulated lazily as modules are checked
   newCacheDbRef <- liftIO $ newIORef cacheDb
-  -- Output timestamps for dep freshness comparison
   timestampsRef <- liftIO $ newIORef M.empty
+  -- Captured graph data for persistence
+  graphRef <- liftIO $ newIORef (Nothing :: Maybe ([ModuleName], [(ModuleName, [ModuleName])]))
 
-  -- The per-module compilation function, partially applied with MakeActions
   let compileFn = rebuildModule' ma
 
-  -- Construct memoized rock rules.
-  -- Cache checks happen lazily inside CompileModule — only when a module
-  -- is actually demanded by rock, not eagerly for all 1200 modules.
   let rules :: Rock.Rules Query
       rules = Rock.memoise memoVar
-            $ makeRules moduleMap opts ma warningsRef compileFn cacheDb diffsRef sharedEnvRef newCacheDbRef timestampsRef
+            $ makeRules moduleMap opts ma warningsRef compileFn cacheDb diffsRef sharedEnvRef newCacheDbRef timestampsRef cachedGraph graphRef
 
   -- Run the rock task: sort modules, then compile all in parallel.
   -- Rock's memoise handles synchronization: if module B depends on A,
@@ -237,6 +242,12 @@ makeIncremental ma@MakeActions{..} ms = do
       -- Write updated cache database
       newCacheDb <- liftIO $ readIORef newCacheDbRef
       writeCacheDb newCacheDb
+      -- Save module graph for next build
+      mbGraph <- liftIO $ readIORef graphRef
+      case mbGraph of
+        Just (sorted, graph) ->
+          liftIO $ Traces.writeCachedGraph graphFile sorted graph newCacheDb
+        Nothing -> pure ()
       writePackageJson
       outputPrimDocs
       pure externs

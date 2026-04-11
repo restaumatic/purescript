@@ -345,6 +345,7 @@ library
     Language.PureScript.Make.Monad
     Language.PureScript.Make.Query
     Language.PureScript.Make.Rules
+    Language.PureScript.Make.Traces
     Language.PureScript.ModuleDependencies
     Language.PureScript.Names
     Language.PureScript.Options

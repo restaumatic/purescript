@@ -36,6 +36,7 @@ import Language.PureScript.Make.Query (Query(..))
 import Language.PureScript.ModuleDependencies (DependencyDepth(..), moduleSignature, sortModules)
 import Language.PureScript.Names (ModuleName, runModuleName)
 import Language.PureScript.Options (Options)
+import Language.PureScript.Make.Traces qualified as Traces
 import Language.PureScript.Sugar (Env, externsEnv)
 
 import Control.Monad.Writer.Strict (runWriterT)
@@ -81,9 +82,12 @@ makeRules
   -> IORef Env
   -> IORef CacheDb
   -> IORef (M.Map ModuleName UTCTime)
-     -- ^ Output timestamps for modules checked so far (for dep freshness)
+  -> Maybe Traces.CachedGraph
+     -- ^ Cached module graph from previous build (if valid)
+  -> IORef (Maybe ([ModuleName], [(ModuleName, [ModuleName])]))
+     -- ^ Captures computed graph for persistence
   -> Rock.Rules Query
-makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvRef newCacheDbRef timestampsRef = \case
+makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvRef newCacheDbRef timestampsRef cachedGraph graphRef = \case
 
   InputModule mn ->
     case M.lookup mn modules of
@@ -91,21 +95,33 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
       Nothing -> liftIO . throwIO . MakeError $ internalError
         ("makeRules: InputModule: module not found: " <> show (runModuleName mn))
 
-  SortedModules -> do
-    let allNames = M.keys modules
-    _ <- traverse (\mn -> Rock.fetch (InputModule mn)) allNames
-    liftMake opts warningsRef $ do
-      let prs = M.elems modules
-      (sorted, _graph) <- sortModules Transitive (moduleSignature . CST.resPartial) prs
-      pure $ map (getModuleName . CST.resPartial) sorted
+  SortedModules -> case cachedGraph of
+    Just cg | M.keysSet modules == S.fromList (Traces.cgSorted cg) -> pure (Traces.cgSorted cg)
+    _ -> do
+      let allNames = M.keys modules
+      _ <- traverse (\mn -> Rock.fetch (InputModule mn)) allNames
+      liftMake opts warningsRef $ do
+        let prs = M.elems modules
+        (sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) prs
+        let result = map (getModuleName . CST.resPartial) sorted
+        -- Capture for persistence
+        liftIO $ atomicModifyIORef' graphRef (\_ -> (Just (result, graph), ()))
+        pure result
 
-  ModuleGraph -> do
-    let allNames = M.keys modules
-    _ <- traverse (\mn -> Rock.fetch (InputModule mn)) allNames
-    liftMake opts warningsRef $ do
-      let prs = M.elems modules
-      (_sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) prs
-      pure $ M.fromList graph
+  ModuleGraph -> case cachedGraph of
+    Just cg | M.keysSet modules == S.fromList (Traces.cgSorted cg) -> pure $ M.fromList (Traces.cgGraph cg)
+    _ -> do
+      let allNames = M.keys modules
+      _ <- traverse (\mn -> Rock.fetch (InputModule mn)) allNames
+      liftMake opts warningsRef $ do
+        let prs = M.elems modules
+        (sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) prs
+        let result = map (getModuleName . CST.resPartial) sorted
+        -- Capture for persistence (if not already done by SortedModules)
+        liftIO $ atomicModifyIORef' graphRef (\prev -> case prev of
+          Nothing -> (Just (result, graph), ())
+          just    -> (just, ()))
+        pure $ M.fromList graph
 
   ModuleSugarEnv _mn -> liftIO $ readIORef sharedEnvRef
   ModuleTypeEnv mn -> do
