@@ -276,43 +276,61 @@ makeIncremental ma@MakeActions{..} ms = do
 -- | Compute cache status for each module: determine which modules have
 -- unchanged source files and valid cached externs on disk.
 -- Returns:
--- 1. CacheStatus: map from module name to Maybe ExternsFile (Just = can reuse, Nothing = needs rebuild)
--- 2. AllCachedExterns: map of ALL previously cached externs (for ExternsDiff computation)
+-- 1. CacheStatus: map from module name to Maybe (ExternsFile, UTCTime)
+--    (Just = source unchanged and cached externs available; Nothing = needs rebuild)
+-- 2. AllCachedExterns: map of previously cached externs for modules that changed
+--    (needed for ExternsDiff computation). Only loaded for modules that need rebuild.
 computeCacheStatus
   :: MakeActions Make
   -> Cache.CacheDb
   -> [ModuleName]
   -> Make (CacheStatus, M.Map ModuleName ExternsFile)
 computeCacheStatus MakeActions{..} cacheDb moduleNames = do
-  results <- traverse checkModule moduleNames
-  let cacheStatusMap = M.fromList [(mn, status) | (mn, status, _) <- results]
-      allCached = M.fromList [(mn, exts) | (mn, _, Just exts) <- results]
-  pure (cacheStatusMap, allCached)
+  -- If CacheDb is empty (fresh build), skip all checks — nothing is cached.
+  if M.null cacheDb then
+    pure (M.fromList [(mn, Nothing) | mn <- moduleNames], M.empty)
+  else do
+    opts <- ask
+    results <- liftIO $ forConcurrently moduleNames (\mn -> do
+      (r, _) <- runMake opts (checkModule mn)
+      case r of
+        Left _  -> pure (mn, Nothing)
+        Right v -> pure v)
+    let cacheStatusMap = M.fromList [(mn, status) | (mn, status) <- results]
+    -- Only load old cached externs for modules that CHANGED (for ExternsDiff).
+    let changedModules = [mn | (mn, Nothing) <- results]
+    changedExterns <- fmap (M.fromList . mapMaybe id) $ traverse loadExterns changedModules
+    let upToDateExterns = M.fromList [(mn, exts) | (mn, Just (exts, _)) <- results]
+        allCached = M.union upToDateExterns changedExterns
+    pure (cacheStatusMap, allCached)
   where
     checkModule mn = do
-      -- Always try to load cached externs (needed for diff computation)
-      (_, mbExterns) <- readExterns mn
       inputInfo <- getInputTimestampsAndHashes mn
       case inputInfo of
-        Left RebuildAlways -> pure (mn, Nothing, mbExterns)
+        Left RebuildAlways -> pure (mn, Nothing)
         Left RebuildNever -> do
-          -- RebuildNever modules are pinned — always use cached externs.
-          -- Use epoch as timestamp since these are never compared.
+          -- RebuildNever: load externs (these are pinned modules, few of them)
+          (_, mbExterns) <- readExterns mn
           let epoch = UTCTime (toEnum 0) 0
               status = fmap (\exts -> (exts, epoch)) mbExterns
-          pure (mn, status, mbExterns)
+          pure (mn, status)
         Right timestamps -> do
           cwd <- liftIO getCurrentDirectory
           (_newCacheInfo, upToDate) <- Cache.checkChanged cacheDb mn cwd timestamps
           if upToDate then do
             outputTs <- getOutputTimestamp mn
-            let status = do
-                  exts <- mbExterns
-                  ts <- outputTs
-                  pure (exts, ts)
-            pure (mn, status, mbExterns)
+            case outputTs of
+              Nothing -> pure (mn, Nothing)
+              Just ts -> do
+                -- Source unchanged and output exists: load externs
+                (_, mbExterns) <- readExterns mn
+                pure (mn, fmap (\exts -> (exts, ts)) mbExterns)
           else
-            pure (mn, Nothing, mbExterns)
+            pure (mn, Nothing)
+
+    loadExterns mn = do
+      (_, mbExterns) <- readExterns mn
+      pure $ fmap (\exts -> (mn, exts)) mbExterns
 
 -- | Compute the updated CacheDb entries for all modules.
 computeNewCacheDb
