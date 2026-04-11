@@ -202,6 +202,8 @@ makeIncremental ma@MakeActions{..} ms = do
   memoVar <- liftIO $ newIORef mempty
   -- IORef for tracking ExternsDiff of recompiled modules
   diffsRef <- liftIO $ newIORef M.empty
+  -- Shared cumulative sugar Env (like the old bpEnv MVar)
+  sharedEnvRef <- liftIO $ newIORef primEnv
 
   -- The per-module compilation function, partially applied with MakeActions
   let compileFn = rebuildModule' ma
@@ -209,7 +211,7 @@ makeIncremental ma@MakeActions{..} ms = do
   -- Construct memoized rock rules
   let rules :: Rock.Rules Query
       rules = Rock.memoise memoVar
-            $ makeRules moduleMap opts ma warningsRef compileFn cacheStatus allCachedExterns diffsRef
+            $ makeRules moduleMap opts ma warningsRef compileFn cacheStatus allCachedExterns diffsRef sharedEnvRef
 
   -- Run the rock task: sort modules, then compile all in parallel.
   -- Rock's memoise handles synchronization: if module B depends on A,

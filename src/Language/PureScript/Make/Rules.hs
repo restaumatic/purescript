@@ -36,7 +36,7 @@ import Language.PureScript.Make.Query (Query(..))
 import Language.PureScript.ModuleDependencies (DependencyDepth(..), moduleSignature, sortModules)
 import Language.PureScript.Names (ModuleName, runModuleName)
 import Language.PureScript.Options (Options)
-import Language.PureScript.Sugar (Env, externsEnv, primEnv)
+import Language.PureScript.Sugar (Env, externsEnv)
 
 import Control.Monad.Writer.Strict (runWriterT)
 
@@ -72,11 +72,13 @@ makeRules
   -> CompileFn
   -> CacheStatus
   -> M.Map ModuleName ExternsFile
-     -- ^ All previously cached externs (for ExternsDiff computation)
   -> IORef (M.Map ModuleName ExternsDiff)
-     -- ^ IORef for tracking externs diffs of recompiled modules
+  -> IORef Env
+     -- ^ Shared cumulative sugar Env (like the old bpEnv MVar).
+     -- Built up incrementally as modules compile, avoiding redundant
+     -- externsEnv calls.
   -> Rock.Rules Query
-makeRules modules opts actions warningsRef compileFn cacheStatus allCachedExterns diffsRef = \case
+makeRules modules opts actions warningsRef compileFn cacheStatus allCachedExterns diffsRef sharedEnvRef = \case
 
   InputModule mn ->
     case M.lookup mn modules of
@@ -100,16 +102,10 @@ makeRules modules opts actions warningsRef compileFn cacheStatus allCachedExtern
       (_sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) prs
       pure $ M.fromList graph
 
-  ModuleSugarEnv mn -> do
-    graph <- Rock.fetch ModuleGraph
-    sorted <- Rock.fetch SortedModules
-    let deps = fromMaybe [] $ M.lookup mn graph
-        depsSet = S.fromList deps
-        sortedDeps = filter (`S.member` depsSet) sorted
-    depExterns <- traverse (\dep -> Rock.fetch (CompileModule dep)) sortedDeps
-    liftMake opts warningsRef $
-      fmap fst . runWriterT $ foldM externsEnv primEnv depExterns
-
+  -- ModuleSugarEnv and ModuleTypeEnv are no longer used directly;
+  -- their logic is inlined into CompileModule for performance.
+  -- Kept for API compatibility.
+  ModuleSugarEnv _mn -> liftIO $ readIORef sharedEnvRef
   ModuleTypeEnv mn -> do
     graph <- Rock.fetch ModuleGraph
     let deps = fromMaybe [] $ M.lookup mn graph
@@ -118,7 +114,6 @@ makeRules modules opts actions warningsRef compileFn cacheStatus allCachedExtern
 
   CompileModule mn -> do
     _inputModule <- Rock.fetch (InputModule mn)
-    sugarEnv <- Rock.fetch (ModuleSugarEnv mn)
     graph <- Rock.fetch ModuleGraph
     sorted <- Rock.fetch SortedModules
     let deps = fromMaybe [] $ M.lookup mn graph
@@ -132,25 +127,16 @@ makeRules modules opts actions warningsRef compileFn cacheStatus allCachedExtern
 
     case cachedInfo of
       Just (cached, myTimestamp) -> do
-        -- Source unchanged. Check if any dep's output is newer than ours
-        -- (indicates the dep was rebuilt separately, e.g. by IDE).
         let depTimestamps = map (\dep -> case M.lookup dep cacheStatus of
               Just (Just (_, ts)) -> Just ts
               _                   -> Nothing) sortedDeps
             depsNewerThanMe = any (\mts -> maybe False (> myTimestamp) mts) depTimestamps
 
         if depsNewerThanMe then do
-          -- A dep was rebuilt after us → must recompile
-          exts <- doCompile mn sugarEnv depExterns
-          diffs <- liftIO $ readIORef diffsRef
-          let depDiffs = map (\dep -> fromMaybe (emptyDiff dep) (M.lookup dep diffs)) sortedDeps
-              diff = case M.lookup mn allCachedExterns of
-                Just old -> diffExterns exts old depDiffs
-                Nothing  -> emptyDiff mn
-          liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn diff d, ()))
+          exts <- doCompile mn sortedDeps depExterns
+          recordDiff mn exts sortedDeps
           pure exts
         else do
-          -- Check if dep externs changes affect this module (ExternsDiff).
           diffs <- liftIO $ readIORef diffsRef
           let depDiffs = map (\dep -> fromMaybe (emptyDiff dep) (M.lookup dep diffs)) sortedDeps
               pr = fromMaybe (internalError "makeRules: missing module")
@@ -161,35 +147,73 @@ makeRules modules opts actions warningsRef compileFn cacheStatus allCachedExtern
               needsRebuild = checkDiffs fullModule depDiffs
 
           if needsRebuild then do
-            exts <- doCompile mn sugarEnv depExterns
+            exts <- doCompile mn sortedDeps depExterns
             let diff = diffExterns exts cached depDiffs
             liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn diff d, ()))
             pure exts
           else do
+            -- Skip: update shared env with our deps and report
+            updateSharedEnv sortedDeps depExterns
             liftMake opts warningsRef $
               progress actions $ SkippingModule mn Nothing
             liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn (emptyDiff mn) d, ()))
             pure cached
 
       Nothing -> do
-        exts <- doCompile mn sugarEnv depExterns
-        -- Record diff against old cached externs (from allCachedExterns)
-        diffs <- liftIO $ readIORef diffsRef
-        let depDiffs = map (\dep -> fromMaybe (emptyDiff dep) (M.lookup dep diffs)) sortedDeps
-            diff = case M.lookup mn allCachedExterns of
-              Just old -> diffExterns exts old depDiffs
-              Nothing  -> emptyDiff mn
-        liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn diff d, ()))
+        exts <- doCompile mn sortedDeps depExterns
+        recordDiff mn exts sortedDeps
         pure exts
 
   where
-    doCompile mn sugarEnv depExterns = do
+    -- | Compile a module. Builds the sugar Env incrementally from the shared
+    -- cumulative env (only processing deps not yet in the env), then runs
+    -- the full compilation — all in a single liftMake call.
+    doCompile :: ModuleName -> [ModuleName] -> [ExternsFile] -> Rock.Task Query ExternsFile
+    doCompile mn sortedDeps depExterns = do
+      -- Read current shared env snapshot
+      currentEnv <- liftIO $ readIORef sharedEnvRef
+
       let pr = fromMaybe (internalError $ "makeRules: CompileModule: module not found: " <> show (runModuleName mn))
                  (M.lookup mn modules)
           fp = spanName . getModuleSourceSpan . CST.resPartial $ pr
           (pwarnings, mres) = CST.resFull pr
+          -- Only process deps not already in the shared env
+          missingExterns = [ exts
+                           | (dep, exts) <- zip sortedDeps depExterns
+                           , not (M.member dep currentEnv)
+                           ]
 
+      -- Single liftMake call: extend env + compile
       liftMake opts warningsRef $ do
+        -- Extend env with missing deps only
+        sugarEnv <- fmap fst . runWriterT $ foldM externsEnv currentEnv missingExterns
+        -- Update shared env for subsequent modules
+        liftIO $ atomicModifyIORef' sharedEnvRef (\_ -> (sugarEnv, ()))
+        -- Emit parser warnings and compile
         tell $ CST.toMultipleWarnings fp pwarnings
         m <- CST.unwrapParserError fp mres
         compileFn sugarEnv depExterns m
+
+    -- | Update the shared env with deps (used when skipping compilation)
+    updateSharedEnv :: [ModuleName] -> [ExternsFile] -> Rock.Task Query ()
+    updateSharedEnv sortedDeps depExterns = do
+      currentEnv <- liftIO $ readIORef sharedEnvRef
+      let missingExterns = [ exts
+                           | (dep, exts) <- zip sortedDeps depExterns
+                           , not (M.member dep currentEnv)
+                           ]
+      if null missingExterns then pure ()
+      else do
+        newEnv <- liftMake opts warningsRef $
+          fmap fst . runWriterT $ foldM externsEnv currentEnv missingExterns
+        liftIO $ atomicModifyIORef' sharedEnvRef (\_ -> (newEnv, ()))
+
+    -- | Record ExternsDiff for a freshly compiled module
+    recordDiff :: ModuleName -> ExternsFile -> [ModuleName] -> Rock.Task Query ()
+    recordDiff mn exts sortedDeps = do
+      diffs <- liftIO $ readIORef diffsRef
+      let depDiffs = map (\dep -> fromMaybe (emptyDiff dep) (M.lookup dep diffs)) sortedDeps
+          diff = case M.lookup mn allCachedExterns of
+            Just old -> diffExterns exts old depDiffs
+            Nothing  -> emptyDiff mn
+      liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn diff d, ()))
