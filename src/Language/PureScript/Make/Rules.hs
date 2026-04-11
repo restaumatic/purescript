@@ -62,13 +62,18 @@ liftMake opts warningsRef action = liftIO $ do
 type CompileFn = Env -> [ExternsFile] -> Module -> Make ExternsFile
 
 -- | Per-module cache info, computed lazily on demand.
--- (Just (externs, outputTimestamp)) = source unchanged, cached externs available
--- Nothing = needs rebuild
 data CacheInfo = CacheInfo
-  { ciCachedExterns :: !(Maybe (ExternsFile, UTCTime))
-  , ciOldExterns    :: !(Maybe ExternsFile)
+  { ciCacheStatus :: !CacheStatus
+  , ciOldExterns  :: !(Maybe ExternsFile)
     -- ^ Old externs for ExternsDiff (loaded even for changed modules)
   }
+
+-- | Whether a module's build artifacts are up to date.
+data CacheStatus
+  = CacheHit !UTCTime
+    -- ^ Source unchanged, output exists at this timestamp
+  | CacheMiss
+    -- ^ Needs rebuild (source changed or output missing)
 
 -- | Define the rock rules for the incremental compilation pipeline.
 makeRules
@@ -102,26 +107,25 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
       _ <- traverse (\mn -> Rock.fetch (InputModule mn)) allNames
       liftMake opts warningsRef $ do
         let prs = M.elems modules
-        (sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) prs
+        -- Use Direct deps for sorting (cheaper than Transitive).
+        -- Transitive closure is computed on demand in ModuleGraph.
+        (sorted, directGraph) <- sortModules Direct (moduleSignature . CST.resPartial) prs
         let result = map (getModuleName . CST.resPartial) sorted
-        -- Capture for persistence
-        liftIO $ atomicModifyIORef' graphRef (\_ -> (Just (result, graph), ()))
+        -- Capture direct graph for persistence (compact on disk)
+        liftIO $ atomicModifyIORef' graphRef (\_ -> (Just (result, directGraph), ()))
         pure result
 
   ModuleGraph -> case cachedGraph of
-    Just cg | M.keysSet modules == S.fromList (Traces.cgSorted cg) -> pure $ M.fromList (Traces.cgGraph cg)
+    Just cg | M.keysSet modules == S.fromList (Traces.cgSorted cg) ->
+      pure $ transitiveClosure (M.fromList (Traces.cgGraph cg))
     _ -> do
-      let allNames = M.keys modules
-      _ <- traverse (\mn -> Rock.fetch (InputModule mn)) allNames
-      liftMake opts warningsRef $ do
-        let prs = M.elems modules
-        (sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) prs
-        let result = map (getModuleName . CST.resPartial) sorted
-        -- Capture for persistence (if not already done by SortedModules)
-        liftIO $ atomicModifyIORef' graphRef (\prev -> case prev of
-          Nothing -> (Just (result, graph), ())
-          just    -> (just, ()))
-        pure $ M.fromList graph
+      -- Ensure SortedModules has run (which populates graphRef)
+      _ <- Rock.fetch SortedModules
+      directGraph <- liftIO $ readIORef graphRef
+      case directGraph of
+        Just (_sorted, graph) -> pure $ transitiveClosure (M.fromList graph)
+        Nothing -> liftIO . throwIO . MakeError $ internalError
+          "makeRules: ModuleGraph: graphRef not populated"
 
   ModuleSugarEnv _mn -> liftIO $ readIORef sharedEnvRef
   ModuleTypeEnv mn -> do
@@ -142,8 +146,8 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
     -- Lazy cache check: only done when this module is actually demanded
     cache <- checkModuleCache mn
 
-    case ciCachedExterns cache of
-      Just (cached, myTimestamp) -> do
+    case ciCacheStatus cache of
+      CacheHit myTimestamp -> do
         -- Source unchanged. Check if any dep was rebuilt after us.
         timestamps <- liftIO $ readIORef timestampsRef
         let depsNewerThanMe = any (\dep ->
@@ -165,8 +169,12 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
               needsRebuild = checkDiffs fullModule depDiffs
 
           if needsRebuild then do
+            -- Load cached externs for diff computation
+            mbCached <- loadExterns mn
             exts <- doCompile mn sortedDeps depExterns
-            let diff = diffExterns exts cached depDiffs
+            let diff = case mbCached of
+                  Just old -> diffExterns exts old depDiffs
+                  Nothing  -> emptyDiff mn
             liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn diff d, ()))
             pure exts
           else do
@@ -174,9 +182,18 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
             liftMake opts warningsRef $
               progress actions $ SkippingModule mn Nothing
             liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn (emptyDiff mn) d, ()))
-            pure cached
+            -- Load externs only now (deferred from cache check)
+            mbCached <- loadExterns mn
+            case mbCached of
+              Just cached -> pure cached
+              Nothing -> do
+                -- Externs missing on disk even though cache says up to date.
+                -- Fall back to recompilation.
+                exts <- doCompile mn sortedDeps depExterns
+                recordDiff mn exts Nothing sortedDeps
+                pure exts
 
-      Nothing -> do
+      CacheMiss -> do
         exts <- doCompile mn sortedDeps depExterns
         recordDiff mn exts (ciOldExterns cache) sortedDeps
         pure exts
@@ -190,16 +207,17 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
       -- Run the cache check directly in IO via runMake, avoiding
       -- the overhead of accumulating into warningsRef (cache checks
       -- don't produce warnings).
+      -- Note: does NOT read externs here — deferred to loadExterns
+      -- to avoid reading .cbor files for modules that don't need them.
       (result, _warnings) <- runMake opts $ do
         inputInfo <- getInputTimestampsAndHashes actions mn
         case inputInfo of
           Left RebuildAlways -> do
             (_, mbOld) <- readExterns actions mn
-            pure $ CacheInfo Nothing mbOld
+            pure $ CacheInfo CacheMiss mbOld
           Left RebuildNever -> do
-            (_, mbExterns) <- readExterns actions mn
             let epoch = UTCTime (toEnum 0) 0
-            pure $ CacheInfo (fmap (\e -> (e, epoch)) mbExterns) mbExterns
+            pure $ CacheInfo (CacheHit epoch) Nothing
           Right timestamps -> do
             cwd <- liftIO getCurrentDirectory
             (newCacheInfo, upToDate) <- Cache.checkChanged cacheDb mn cwd timestamps
@@ -207,17 +225,27 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
             if upToDate then do
               outputTs <- getOutputTimestamp actions mn
               case outputTs of
-                Nothing -> pure $ CacheInfo Nothing Nothing
+                Nothing -> pure $ CacheInfo CacheMiss Nothing
                 Just ts -> do
                   liftIO $ atomicModifyIORef' timestampsRef (\m -> (M.insert mn ts m, ()))
-                  (_, mbExterns) <- readExterns actions mn
-                  pure $ CacheInfo (fmap (\e -> (e, ts)) mbExterns) mbExterns
+                  pure $ CacheInfo (CacheHit ts) Nothing
             else do
               (_, mbOld) <- readExterns actions mn
-              pure $ CacheInfo Nothing mbOld
+              pure $ CacheInfo CacheMiss mbOld
       case result of
-        Left _errs -> pure $ CacheInfo Nothing Nothing
+        Left _errs -> pure $ CacheInfo CacheMiss Nothing
         Right info -> pure info
+
+    -- | Load cached externs from disk. Only called when externs are
+    -- actually needed (for compilation or to return as a result).
+    loadExterns :: ModuleName -> Rock.Task Query (Maybe ExternsFile)
+    loadExterns mn = liftIO $ do
+      (result, _) <- runMake opts $ do
+        (_, mbExterns) <- readExterns actions mn
+        pure mbExterns
+      case result of
+        Right ext -> pure ext
+        Left _    -> pure Nothing
 
     -- | Get a dep's output timestamp (recorded during cache check).
     getDepTimestamp :: M.Map ModuleName UTCTime -> ModuleName -> Maybe UTCTime
@@ -262,3 +290,16 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
             Just old -> diffExterns exts old depDiffs
             Nothing  -> emptyDiff mn
       liftIO $ atomicModifyIORef' diffsRef (\d -> (M.insert mn diff d, ()))
+
+-- | Compute transitive closure of a direct dependency graph.
+-- For each module, find all modules reachable via dependencies.
+transitiveClosure :: M.Map ModuleName [ModuleName] -> M.Map ModuleName [ModuleName]
+transitiveClosure directGraph = M.mapWithKey (\mn _ -> S.toList (go S.empty (directDeps mn))) directGraph
+  where
+    directDeps :: ModuleName -> [ModuleName]
+    directDeps mn = fromMaybe [] (M.lookup mn directGraph)
+    go :: S.Set ModuleName -> [ModuleName] -> S.Set ModuleName
+    go visited [] = visited
+    go visited (dep:deps)
+      | S.member dep visited = go visited deps
+      | otherwise = go (S.insert dep visited) (directDeps dep ++ deps)

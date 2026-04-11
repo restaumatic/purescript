@@ -12,9 +12,10 @@ import Prelude
 import Data.Aeson qualified as Aeson
 import Data.Aeson ((.=), (.:))
 import Data.ByteString.Lazy qualified as LBS
+import Data.Map qualified as M
 import Data.Set qualified as S
 import Data.Version (showVersion)
-import Language.PureScript.Make.Cache (CacheDb)
+import Language.PureScript.Make.Cache (CacheDb, ContentHash, hash)
 import Language.PureScript.Names (ModuleName)
 import Paths_purescript qualified as Paths
 import System.Directory (doesFileExist)
@@ -26,9 +27,9 @@ data CachedGraph = CachedGraph
   { cgVersion :: String
   , cgSorted :: [ModuleName]
   , cgGraph :: [(ModuleName, [ModuleName])]
-  , cgInputHashes :: CacheDb
-    -- ^ Snapshot of input hashes when graph was computed.
-    -- If current CacheDb matches, graph is still valid.
+  , cgCacheDbHash :: ContentHash
+    -- ^ Hash of the serialized CacheDb when graph was computed.
+    -- If current CacheDb hashes the same, graph is still valid.
   } deriving (Show)
 
 instance Aeson.ToJSON CachedGraph where
@@ -36,7 +37,7 @@ instance Aeson.ToJSON CachedGraph where
     [ "version" .= cgVersion
     , "sorted" .= cgSorted
     , "graph" .= cgGraph
-    , "hashes" .= cgInputHashes
+    , "cacheDbHash" .= cgCacheDbHash
     ]
 
 instance Aeson.FromJSON CachedGraph where
@@ -45,14 +46,19 @@ instance Aeson.FromJSON CachedGraph where
       <$> v .: "version"
       <*> v .: "sorted"
       <*> v .: "graph"
-      <*> v .: "hashes"
+      <*> v .: "cacheDbHash"
+
+-- | Compute a hash of the CacheDb for comparison purposes.
+hashCacheDb :: CacheDb -> ContentHash
+hashCacheDb = hash . LBS.toStrict . Aeson.encode
 
 -- | Try to read a cached graph. Returns Nothing if:
 -- - File doesn't exist
 -- - File can't be parsed
 -- - Compiler version differs
 -- - The set of module names differs from the current compilation
--- - Any input hash differs from the current CacheDb
+-- - The CacheDb hash differs (some input changed)
+-- - The CacheDb lacks entries for some current modules (can't verify content)
 readCachedGraph :: FilePath -> CacheDb -> S.Set ModuleName -> IO (Maybe CachedGraph)
 readCachedGraph path currentCacheDb currentModules = do
   exists <- doesFileExist path
@@ -66,7 +72,12 @@ readCachedGraph path currentCacheDb currentModules = do
         Just cg
           | cgVersion cg /= showVersion Paths.version -> pure Nothing
           | S.fromList (cgSorted cg) /= currentModules -> pure Nothing
-          | cgInputHashes cg /= currentCacheDb -> pure Nothing
+          -- Require that the CacheDb has entries for all current modules.
+          -- Without content hashes for every module, we can't verify the
+          -- dependency graph is still valid (e.g. when modules use
+          -- RebuildAlways/RebuildNever, their hashes are not tracked).
+          | not (currentModules `S.isSubsetOf` M.keysSet currentCacheDb) -> pure Nothing
+          | cgCacheDbHash cg /= hashCacheDb currentCacheDb -> pure Nothing
           | otherwise -> pure (Just cg)
 
 -- | Write cached graph to disk.
@@ -76,7 +87,7 @@ writeCachedGraph path sorted graph cacheDb = do
         { cgVersion = showVersion Paths.version
         , cgSorted = sorted
         , cgGraph = graph
-        , cgInputHashes = cacheDb
+        , cgCacheDbHash = hashCacheDb cacheDb
         }
   _ <- tryIOError $ LBS.writeFile path (Aeson.encode cg)
   pure ()

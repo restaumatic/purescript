@@ -24,7 +24,7 @@ import Data.Function (on)
 import Data.Foldable (fold, for_)
 import Data.IORef (newIORef, readIORef)
 import Data.List (foldl', sortOn)
-import Data.Maybe (mapMaybe)
+import Data.Maybe (isJust, mapMaybe)
 import Data.List.NonEmpty qualified as NEL
 import Data.Map qualified as M
 import Data.Set qualified as S
@@ -63,12 +63,13 @@ import Language.PureScript.Make.Monad as Monad
       getTimestamp,
       getCurrentTime,
       copyFile )
+import Language.PureScript.Options (Options)
 import Language.PureScript.Make.Query (Query(..))
 import Language.PureScript.Make.Rules (makeRules, MakeError(..))
 import Language.PureScript.Make.Traces qualified as Traces
 import Language.PureScript.CoreFn qualified as CF
 import Rock qualified
-import System.Directory (doesFileExist)
+import System.Directory (doesFileExist, getCurrentDirectory)
 import System.FilePath (replaceExtension, (</>))
 import Language.PureScript.TypeChecker.Monad (liftTypeCheckM)
 
@@ -163,10 +164,29 @@ make :: MakeActions Make
 make ma ms = makeIncremental ma ms
 
 -- | Like 'make' but discards the result.
+-- Uses a fast path to skip the rock pipeline when all modules are cached.
 make_ :: MakeActions Make
       -> [CST.PartialResult Module]
       -> Make ()
-make_ ma ms = void $ makeIncremental ma ms
+make_ ma@MakeActions{..} ms = do
+  -- Fast path: if all modules are cached, skip rock entirely.
+  -- This avoids the overhead of dependency resolution, memoization,
+  -- and reading externs from disk when nothing needs to compile.
+  opts <- ask
+  cacheDb <- readCacheDb
+  let moduleNames = map (getModuleName . CST.resPartial) ms
+  let currentModules = S.fromList moduleNames
+  let graphFile = getOutputDir </> "module-graph.json"
+  cachedGraph <- liftIO $ Traces.readCachedGraph graphFile cacheDb currentModules
+  case cachedGraph of
+    Just _ -> do
+      allCached <- liftIO $ allModulesCached opts ma cacheDb moduleNames
+      if allCached then do
+        writeCacheDb cacheDb
+        writePackageJson
+        outputPrimDocs
+      else void $ makeIncremental ma ms
+    Nothing -> void $ makeIncremental ma ms
 
 -- | Rock-based incremental compilation.
 -- Defines queries for each compilation phase and lets rock handle
@@ -192,10 +212,8 @@ makeIncremental ma@MakeActions{..} ms = do
   -- Try to load cached module graph from previous build.
   -- If valid (all input hashes match), we skip the expensive sortModules call.
   let graphFile = getOutputDir </> "module-graph.json"
-  -- Load cached module graph if available and valid.
-  -- Disabled for now: needs further debugging for test compatibility.
-  -- cachedGraph <- liftIO $ Traces.readCachedGraph graphFile cacheDb (S.fromList $ M.keys moduleMap)
-  let cachedGraph = (Nothing :: Maybe Traces.CachedGraph)
+  let currentModules = S.fromList $ M.keys moduleMap
+  cachedGraph <- liftIO $ Traces.readCachedGraph graphFile cacheDb currentModules
 
   -- IORefs for state accumulated during the rock build
   warningsRef <- liftIO $ newIORef mempty
@@ -219,8 +237,6 @@ makeIncremental ma@MakeActions{..} ms = do
   -- natural parallelism bounded by the dependency graph.
   let rockTask = Rock.runTask rules $ do
         sorted <- Rock.fetch SortedModules
-        -- Fork all module compilations concurrently within the same Task.
-        -- Each fork shares the same Fetch function (and thus memoization).
         liftIO $ forConcurrently sorted $ \mn ->
           Rock.runTask rules $ Rock.fetch (CompileModule mn)
   result <- liftIO (try rockTask) :: Make (Either SomeException [ExternsFile])
@@ -278,6 +294,37 @@ makeIncremental ma@MakeActions{..} ms = do
     case filter ((> 1) . length) . NEL.groupBy ((==) `on` f) . sortOn f $ xs of
       [] -> Nothing
       xss -> Just xss
+
+-- | Quick check: are all modules cached? Checks timestamps + hashes against
+-- CacheDb and verifies output exists. No externs are read.
+-- Runs all checks concurrently for speed.
+allModulesCached
+  :: Options
+  -> MakeActions Make
+  -> Cache.CacheDb
+  -> [ModuleName]
+  -> IO Bool
+allModulesCached opts MakeActions{..} cacheDb moduleNames = do
+  cwd <- getCurrentDirectory
+  results <- forConcurrently moduleNames $ \mn -> do
+    (result, _) <- runMake opts $ do
+      inputInfo <- getInputTimestampsAndHashes mn
+      case inputInfo of
+        Left RebuildAlways -> pure False
+        Left RebuildNever  -> do
+          -- Assume RebuildNever modules are always up to date
+          outputTs <- getOutputTimestamp mn
+          pure (isJust outputTs)
+        Right timestamps -> do
+          (_, upToDate) <- Cache.checkChanged cacheDb mn cwd timestamps
+          if upToDate then do
+            outputTs <- getOutputTimestamp mn
+            pure (isJust outputTs)
+          else pure False
+    pure $ case result of
+      Right True -> True
+      _          -> False
+  pure (and results)
 
 -- | Infer the module name for a module by looking for the same filename with
 -- a .js extension.
