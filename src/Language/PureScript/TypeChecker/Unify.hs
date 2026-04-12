@@ -32,7 +32,7 @@ import Language.PureScript.Errors (ErrorMessageHint(..), SimpleErrorMessage(..),
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, unifyKinds')
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
-import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, mkForAll, rowFromList, srcTUnknown)
+import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, hasFlag, mkForAll, rowFromList, srcTUnknown, tfHasWildcards, typeFlags)
 import Data.Set qualified as S
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
@@ -192,10 +192,13 @@ unifyRows r1 r2 = sequence_ matches *> uncurry unifyTails rest where
     throwError . errorMessage $ TypesDoNotUnify r1 r2
 
 -- |
--- Replace type wildcards with unknowns
+-- Replace type wildcards with unknowns.
+-- Short-circuits if the type has no wildcards.
 --
 replaceTypeWildcards :: SourceType -> TypeCheckM SourceType
-replaceTypeWildcards = everywhereOnTypesM replace
+replaceTypeWildcards ty
+  | not (hasFlag tfHasWildcards (typeFlags ty)) = return ty
+  | otherwise = everywhereOnTypesM replace ty
   where
   replace (TypeWildcard ann wdata) = do
     t <- freshType
