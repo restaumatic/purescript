@@ -68,8 +68,8 @@ instance GShow Query where
 instance GEq Query where
   geq (InputModule a) (InputModule b)
     | a == b = Just Refl
-  geq (ModuleGraph) (ModuleGraph) = Just Refl
-  geq (SortedModules) (SortedModules) = Just Refl
+  geq ModuleGraph ModuleGraph = Just Refl
+  geq SortedModules SortedModules = Just Refl
   geq (ModuleSugarEnv a) (ModuleSugarEnv b)
     | a == b = Just Refl
   geq (ModuleTypeEnv a) (ModuleTypeEnv b)

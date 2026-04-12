@@ -3,13 +3,13 @@
 module Language.PureScript.Make.Rules
   ( makeRules
   , MakeError(..)
-  , liftMake
   ) where
 
 import Prelude
 
 import Control.Exception (Exception, throwIO)
 import Control.Monad (foldM)
+import Data.Foldable (traverse_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Writer.Class (tell)
 import Data.IORef (IORef, atomicModifyIORef', readIORef)
@@ -106,7 +106,7 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
     Just cg | M.keysSet modules == S.fromList (Traces.cgSorted cg) -> pure (Traces.cgSorted cg)
     _ -> do
       let allNames = M.keys modules
-      _ <- traverse (\mn -> Rock.fetch (InputModule mn)) allNames
+      traverse_ (\mn -> Rock.fetch (InputModule mn)) allNames
       liftMake opts warningsRef $ do
         let prs = M.elems modules
         -- Use Direct deps for sorting (cheaper than Transitive).
@@ -114,7 +114,7 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
         (sorted, directGraph) <- sortModules Direct (moduleSignature . CST.resPartial) prs
         let result = map (getModuleName . CST.resPartial) sorted
         -- Capture direct graph for persistence (compact on disk)
-        liftIO $ atomicModifyIORef' graphRef (\_ -> (Just (result, directGraph), ()))
+        liftIO $ atomicModifyIORef' graphRef (const (Just (result, directGraph), ()))
         pure result
 
   ModuleGraph -> case cachedGraph of
@@ -270,7 +270,7 @@ makeRules modules opts actions warningsRef compileFn cacheDb diffsRef sharedEnvR
                            ]
       liftMake opts warningsRef $ do
         sugarEnv <- fmap fst . runWriterT $ foldM externsEnv currentEnv missingExterns
-        liftIO $ atomicModifyIORef' sharedEnvRef (\_ -> (sugarEnv, ()))
+        liftIO $ atomicModifyIORef' sharedEnvRef (const (sugarEnv, ()))
         tell $ CST.toMultipleWarnings fp pwarnings
         m <- CST.unwrapParserError fp mres
         compileFn sugarEnv depExterns m

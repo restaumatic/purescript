@@ -47,6 +47,17 @@ packages:
   original:
     hackage: dependent-hashmap-0.1.0.1
 - completed:
+    name: rock
+    pantry-tree:
+      sha256: cef9733314b1f4778ccecaf5fb6f80ef1004251ea76804073a498ddf02c00ed5
+      size: 751
+    sha256: 3b2ec18d31734ad105b5ff7cd795d06d4d0e9be925af5bcdb9a7ea20d414cbc7
+    size: 12242
+    url: https://github.com/ollef/rock/archive/2b007b75f2866b0c9dae82049a0a06582d883b0f.tar.gz
+    version: 0.3.1.2
+  original:
+    url: https://github.com/ollef/rock/archive/2b007b75f2866b0c9dae82049a0a06582d883b0f.tar.gz
+- completed:
     name: cheapskate
     pantry-tree:
       sha256: a2253619f50d26f0137a802e51e5e7103ee52b1f71bc060d93a0979dcbefa2c8
