@@ -116,10 +116,6 @@ hasFlag (TypeFlags mask) (TypeFlags w) = w .&. mask /= 0
 setFlag :: TypeFlags -> TypeFlags -> TypeFlags
 setFlag (TypeFlags f) (TypeFlags w) = TypeFlags (w .|. f)
 
--- | Clear a flag.
-clearFlag :: TypeFlags -> TypeFlags -> TypeFlags
-clearFlag (TypeFlags f) (TypeFlags w) = TypeFlags (w .&. (0xFF - f))
-
 -- | Extract the flags from a Type node.
 typeFlags :: Type a -> TypeFlags
 typeFlags (TUnknown_ f _ _) = f
@@ -156,51 +152,6 @@ constraintNodeFlags c ty = foldl' combineFlags (maskStructural (typeFlags ty)) (
 -- | Compute Skolem flags from its components.
 skolemNodeFlags :: Maybe (Type a) -> TypeFlags
 skolemNodeFlags = maybe noFlags (maskStructural . typeFlags)
-
--- | Recursively set a flag on every node in a type tree, short-circuiting
--- on subtrees that already have the flag set. Uses raw constructors to
--- avoid recomputing structural flags.
-markAllTypeFlags :: TypeFlags -> Type a -> Type a
-markAllTypeFlags tf = go where
-  s = setFlag tf
-  go t | hasFlag tf (typeFlags t) = t
-  go (TUnknown_ f a b) = TUnknown_ (s f) a b
-  go (TypeVar_ f a b) = TypeVar_ (s f) a b
-  go (TypeLevelString_ f a b) = TypeLevelString_ (s f) a b
-  go (TypeLevelInt_ f a b) = TypeLevelInt_ (s f) a b
-  go (TypeWildcard_ f a b) = TypeWildcard_ (s f) a b
-  go (TypeConstructor_ f a b) = TypeConstructor_ (s f) a b
-  go (TypeOp_ f a b) = TypeOp_ (s f) a b
-  go (TypeApp_ f a t1 t2) = TypeApp_ (s f) a (go t1) (go t2)
-  go (KindApp_ f a t1 t2) = KindApp_ (s f) a (go t1) (go t2)
-  go (ForAll_ f a vis ident mbK ty sco) = ForAll_ (s f) a vis ident (go <$> mbK) (go ty) sco
-  go (ConstrainedType_ f a c ty) = ConstrainedType_ (s f) a (mapConstraintArgsAll (map go) c) (go ty)
-  go (Skolem_ f a name mbK i sc) = Skolem_ (s f) a name (go <$> mbK) i sc
-  go (REmpty_ f a) = REmpty_ (s f) a
-  go (RCons_ f a l ty rest) = RCons_ (s f) a l (go ty) (go rest)
-  go (KindedType_ f a ty k) = KindedType_ (s f) a (go ty) (go k)
-  go (BinaryNoParensType_ f a t1 t2 t3) = BinaryNoParensType_ (s f) a (go t1) (go t2) (go t3)
-  go (ParensInType_ f a t) = ParensInType_ (s f) a (go t)
-
--- | Set a flag on the root node of a type (using raw constructors to preserve existing flags).
-setTypeFlags :: TypeFlags -> Type a -> Type a
-setTypeFlags tf (TUnknown_ f a b) = TUnknown_ (setFlag tf f) a b
-setTypeFlags tf (TypeVar_ f a b) = TypeVar_ (setFlag tf f) a b
-setTypeFlags tf (TypeLevelString_ f a b) = TypeLevelString_ (setFlag tf f) a b
-setTypeFlags tf (TypeLevelInt_ f a b) = TypeLevelInt_ (setFlag tf f) a b
-setTypeFlags tf (TypeWildcard_ f a b) = TypeWildcard_ (setFlag tf f) a b
-setTypeFlags tf (TypeConstructor_ f a b) = TypeConstructor_ (setFlag tf f) a b
-setTypeFlags tf (TypeOp_ f a b) = TypeOp_ (setFlag tf f) a b
-setTypeFlags tf (TypeApp_ f a b c) = TypeApp_ (setFlag tf f) a b c
-setTypeFlags tf (KindApp_ f a b c) = KindApp_ (setFlag tf f) a b c
-setTypeFlags tf (ForAll_ f a b c d e g) = ForAll_ (setFlag tf f) a b c d e g
-setTypeFlags tf (ConstrainedType_ f a b c) = ConstrainedType_ (setFlag tf f) a b c
-setTypeFlags tf (Skolem_ f a b c d e) = Skolem_ (setFlag tf f) a b c d e
-setTypeFlags tf (REmpty_ f a) = REmpty_ (setFlag tf f) a
-setTypeFlags tf (RCons_ f a b c d) = RCons_ (setFlag tf f) a b c d
-setTypeFlags tf (KindedType_ f a b c) = KindedType_ (setFlag tf f) a b c
-setTypeFlags tf (BinaryNoParensType_ f a b c d) = BinaryNoParensType_ (setFlag tf f) a b c d
-setTypeFlags tf (ParensInType_ f a b) = ParensInType_ (setFlag tf f) a b
 
 -- ---------------------------------------------------------------------------
 -- The type of types
