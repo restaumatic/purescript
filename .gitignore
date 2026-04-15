@@ -37,3 +37,10 @@ TAGS
 *.ps
 *.svg
 tests/purs/make/
+
+# Legacy perf-harness scratch space (replaced by experiments/ framework)
+.profile-baseline/
+profile-output/
+profile-results.log
+
+.claude/settings.local.json
