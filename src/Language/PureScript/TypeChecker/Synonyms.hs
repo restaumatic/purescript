@@ -11,6 +11,7 @@ module Language.PureScript.TypeChecker.Synonyms
 
 import Prelude
 
+import Control.Exception (assert)
 import Control.Monad.Error.Class (MonadError(..))
 import Data.Maybe (fromMaybe)
 import Data.Map qualified as M
@@ -21,7 +22,7 @@ import Language.PureScript.Names (ProperName, ProperNameType(..), Qualified)
 import Language.PureScript.TypeChecker.Monad (getEnv, TypeCheckM)
 import Language.PureScript.Types
   ( SourceType, Type(..), TypeFlags
-  , combineFlags, completeBinderList, constraintNodeFlags, forAllNodeFlags
+  , combineFlags, completeBinderList, constraintNodeFlags, everythingOnTypes, forAllNodeFlags
   , getAnnForType, hasFlag, overConstraintArgsAll, replaceAllTypeVars
   , setFlag, skolemNodeFlags, tfSynonymsFree, typeFlags
   )
@@ -139,7 +140,20 @@ replaceAllTypeSynonyms' syns kinds
 -- Short-circuits if the type is already marked as synonym-free.
 replaceAllTypeSynonyms :: SourceType -> TypeCheckM SourceType
 replaceAllTypeSynonyms d
-  | hasFlag tfSynonymsFree (typeFlags d) = return d
+  | hasFlag tfSynonymsFree (typeFlags d) = do
+      env <- getEnv
+      -- Sanity check in debug builds: the flag says this type is synonym-free,
+      -- so scanning should confirm no TypeConstructor in it refers to a synonym.
+      -- 'assert' is compiled away with -O, so this is a no-op in production.
+      return $! assert (not (containsTypeSynonyms (typeSynonyms env) d)) d
   | otherwise = do
       env <- getEnv
       either throwError return $ replaceAllTypeSynonyms' (typeSynonyms env) (types env) d
+
+-- | Scan a type for TypeConstructors that are type synonyms.
+-- Used as a correctness check for the 'tfSynonymsFree' flag.
+containsTypeSynonyms :: SynonymMap -> Type a -> Bool
+containsTypeSynonyms syns = everythingOnTypes (||) isSyn
+  where
+    isSyn (TypeConstructor _ ctor) = M.member ctor syns
+    isSyn _ = False

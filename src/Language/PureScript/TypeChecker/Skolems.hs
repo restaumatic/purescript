@@ -10,6 +10,7 @@ module Language.PureScript.TypeChecker.Skolems
 
 import Prelude
 
+import Control.Exception (assert)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets, modify)
 import Data.Foldable (traverse_)
@@ -34,11 +35,22 @@ newSkolemConstant = do
 -- Short-circuits if the type has no unscoped ForAlls.
 introduceSkolemScope :: MonadState CheckState m => Type a -> m (Type a)
 introduceSkolemScope ty
-  | not (hasFlag tfHasUnscopedForAlls (typeFlags ty)) = return ty
+  -- Sanity check in debug builds: the flag says no unscoped ForAlls exist,
+  -- so a scan should agree. 'assert' is compiled away with -O.
+  | not (hasFlag tfHasUnscopedForAlls (typeFlags ty)) =
+      return $! assert (not (containsUnscopedForAlls ty)) ty
   | otherwise = everywhereOnTypesM go ty
   where
   go (ForAll ann vis ident mbK t Nothing) = ForAll ann vis ident mbK t <$> (Just <$> newSkolemScope)
   go other = return other
+
+-- | Scan a type for ForAll nodes missing a SkolemScope.
+-- Used as a correctness check for the 'tfHasUnscopedForAlls' flag.
+containsUnscopedForAlls :: Type a -> Bool
+containsUnscopedForAlls = everythingOnTypes (||) isUnscoped
+  where
+    isUnscoped (ForAll _ _ _ _ _ Nothing) = True
+    isUnscoped _ = False
 
 -- | Generate a new skolem scope
 newSkolemScope :: MonadState CheckState m => m SkolemScope

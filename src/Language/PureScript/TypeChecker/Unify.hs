@@ -16,6 +16,7 @@ module Language.PureScript.TypeChecker.Unify
 
 import Prelude
 
+import Control.Exception (assert)
 import Control.Monad (forM_, void, when)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets, modify, state)
@@ -197,7 +198,10 @@ unifyRows r1 r2 = sequence_ matches *> uncurry unifyTails rest where
 --
 replaceTypeWildcards :: SourceType -> TypeCheckM SourceType
 replaceTypeWildcards ty
-  | not (hasFlag tfHasWildcards (typeFlags ty)) = return ty
+  -- Sanity check in debug builds: the flag says no wildcards, so a scan
+  -- should agree. 'assert' is compiled away with -O.
+  | not (hasFlag tfHasWildcards (typeFlags ty)) =
+      return $! assert (not (containsTypeWildcards ty)) ty
   | otherwise = everywhereOnTypesM replace ty
   where
   replace (TypeWildcard ann wdata) = do
@@ -210,6 +214,14 @@ replaceTypeWildcards ty
     forM_ err $ warnWithPosition (fst ann) . tell . errorMessage
     return t
   replace other = return other
+
+-- | Scan a type for TypeWildcard nodes.
+-- Used as a correctness check for the 'tfHasWildcards' flag.
+containsTypeWildcards :: Type a -> Bool
+containsTypeWildcards = everythingOnTypes (||) isWild
+  where
+    isWild (TypeWildcard _ _) = True
+    isWild _ = False
 
 -- |
 -- Replace outermost unsolved unification variables with named type variables
