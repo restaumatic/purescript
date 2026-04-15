@@ -100,10 +100,28 @@ tfHasUnscopedForAlls = TypeFlags 0x02
 tfSynonymsFree :: TypeFlags
 tfSynonymsFree = TypeFlags 0x04
 
--- | Combine flags from child subtrees. Only structural flags (HasWildcards,
--- HasUnscopedForAlls) propagate. Processing flags (SynonymsFree) are cleared
--- because constructing a new type from synonym-free children may create a
--- new synonym application.
+-- | Combine flags from child subtrees. Only structural flags
+-- ('tfHasWildcards', 'tfHasUnscopedForAlls') propagate; the processing flag
+-- 'tfSynonymsFree' is always cleared.
+--
+-- Why clear 'tfSynonymsFree'? Constructing a new type from synonym-free
+-- children can still create a new synonym application at the parent, even
+-- when both children are themselves synonym-free. Example:
+--
+-- @
+--   Before substitution: TypeApp (TUnknown u) someArg    -- no synonyms
+--   Substitution:        u -> TypeConstructor SomeAlias  -- standalone, fine
+--   After substitution:  TypeApp (TypeConstructor SomeAlias) someArg
+--                        -- now a fully-applied synonym that needs expansion!
+-- @
+--
+-- In PureScript the convention is to expand synonyms before unification, so
+-- the substitution /values/ are synonym-free in isolation. But when a
+-- 'TUnknown' in function position is substituted with a synonym constructor,
+-- the /resulting/ parent @TypeApp@ is a synonym application that must be
+-- expanded. We can't detect this from the children's flags alone without
+-- inspecting the spine, so we conservatively clear the flag and let
+-- 'replaceAllTypeSynonyms' re-scan when asked.
 combineFlags :: TypeFlags -> TypeFlags -> TypeFlags
 combineFlags (TypeFlags a) (TypeFlags b) = TypeFlags ((a .|. b) .&. structuralMask)
   where structuralMask = 0x03 -- bits 0 and 1 only
