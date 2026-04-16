@@ -140,6 +140,28 @@ git worktree list
 Each experiment's `EXPERIMENT.md` also records its worktree path in
 the frontmatter.
 
+### Per-declaration profiling
+
+The compiler emits eventlog markers for every typechecked declaration.
+To see which specific declarations are slow (e.g., complex type-level
+row-list computations, heavy instance resolution):
+
+```sh
+# Build normally, then run with eventlog
+stack build
+purs +RTS -l-agu -N1 -RTS compile $(spago sources)
+
+# Text report with declaration breakdown
+eventlog2html --json purs.eventlog
+node debug/eventlog.js purs.eventlog.json
+
+# Flamegraph (module > declaration hierarchy)
+node debug/eventlog-speedscope.js purs.eventlog.json > profile.json
+# Open at https://www.speedscope.app/ or chrome://tracing
+```
+
+See `debug/README.md` for details on RTS flags and tools.
+
 ### Hotspot reference
 
 From the most recent profile on the `restaumatic` branch (see
