@@ -26,12 +26,16 @@ if (!inputFile) {
 
 var topN = 50;
 var filterCap = null;
+var minMs = 0;  // skip entails events shorter than this (ms)
 for (var i = 3; i < process.argv.length; i++) {
     if (process.argv[i] === "--top" && process.argv[i+1]) {
         topN = parseInt(process.argv[i+1], 10);
         i++;
     } else if (process.argv[i] === "--cap" && process.argv[i+1]) {
         filterCap = parseInt(process.argv[i+1], 10);
+        i++;
+    } else if (process.argv[i] === "--min-ms" && process.argv[i+1]) {
+        minMs = parseFloat(process.argv[i+1]);
         i++;
     }
 }
@@ -44,8 +48,11 @@ var moduleRe = /^([\w.]+) (start|end)$/;
 var declRe = /^tc ([\w.]+) ([\w:+]+) (start|end)$/;
 // Phase-level: "tc-phase ModuleName bindName phase start" / "... end"
 var phaseRe = /^tc-phase ([\w.]+) ([\w+]+) (infer|solve) (start|end)$/;
-// Entailment: "tc-entails ClassName start" / "tc-entails ClassName end"
-var entailsRe = /^tc-entails ([\w.]+) (start|end)$/;
+// Entailment: "tc-entails ClassName [typeArgs...] start" / "tc-entails ClassName end"
+var entailsStartRe = /^tc-entails ([\w.]+) (.+) start$/;
+var entailsEndRe = /^tc-entails ([\w.]+) end$/;
+// Instance resolution: "tc-entails-instance ClassName instanceName"
+var instanceRe = /^tc-entails-instance ([\w.]+) (.+)$/;
 
 // Sort by timestamp
 eventlog.traces.sort(function(a, b) { return a.tx - b.tx; });
@@ -66,7 +73,7 @@ for (var trace of traces) {
     var m = moduleRe.exec(trace.desc);
     var d = declRe.exec(trace.desc);
     var p = phaseRe.exec(trace.desc);
-    var e = entailsRe.exec(trace.desc);
+    var e;
     var tid = trace.cap !== undefined ? trace.cap : 0;
 
     if (d) {
@@ -107,15 +114,51 @@ for (var trace of traces) {
             ts: trace.tx * 1e6,
             pid: 1, tid: tid
         });
-    } else if (e) {
-        // Per-constraint entailment
-        chromeEvents.push({
-            name: e[1],           // e.g. "Data.Show.Show"
-            cat: "entails",
-            ph: e[2] === "start" ? "B" : "E",
-            ts: trace.tx * 1e6,
-            pid: 1, tid: tid
-        });
+    } else if ((e = entailsStartRe.exec(trace.desc))) {
+        // Per-constraint entailment start — buffer it, emit on end if long enough
+        var entailArgs = e[2].trim();
+        var bev = { name: e[1], cat: "entails", ph: "B", ts: trace.tx * 1e6, pid: 1, tid: tid };
+        if (entailArgs) bev.args = { types: entailArgs };
+        if (!openSpans._entailStack) openSpans._entailStack = [];
+        openSpans._entailStack.push({ bev: bev, startTx: trace.tx, childEvents: [] });
+    } else if ((e = entailsEndRe.exec(trace.desc))) {
+        var stack = openSpans._entailStack;
+        if (stack && stack.length > 0) {
+            var span = stack.pop();
+            var durMs = (trace.tx - span.startTx) * 1000;
+            var eev = { name: e[1], cat: "entails", ph: "E", ts: trace.tx * 1e6, pid: 1, tid: tid };
+            if (durMs >= minMs) {
+                chromeEvents.push(span.bev);
+                for (var ce of span.childEvents) chromeEvents.push(ce);
+                chromeEvents.push(eev);
+            }
+            // If parent exists, add our events as child events (if we emitted)
+            if (stack.length > 0 && durMs >= minMs) {
+                // Already pushed to chromeEvents, no need to buffer in parent
+            }
+        }
+    } else if ((e = instanceRe.exec(trace.desc))) {
+        // Instance resolution — attach to current entailment span
+        var stack = openSpans._entailStack;
+        if (stack && stack.length > 0 && minMs <= 0) {
+            stack[stack.length-1].childEvents.push({
+                name: e[1] + " => " + e[2],
+                cat: "instance",
+                ph: "i", s: "t",
+                ts: trace.tx * 1e6,
+                pid: 1, tid: tid,
+                args: { class: e[1], instance: e[2] }
+            });
+        } else if (minMs <= 0) {
+            chromeEvents.push({
+                name: e[1] + " => " + e[2],
+                cat: "instance",
+                ph: "i", s: "t",
+                ts: trace.tx * 1e6,
+                pid: 1, tid: tid,
+                args: { class: e[1], instance: e[2] }
+            });
+        }
     } else if (m) {
         chromeEvents.push({
             name: m[1],           // e.g. "Restaumatic.PR.MenuV2.Import"

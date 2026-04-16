@@ -40,7 +40,7 @@ import Language.PureScript.AST.Declarations (UnknownsHint(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (Environment(..), FunctionalDependency(..), TypeClassData(..), dictTypeName, kindRow, tyBoolean, tyInt, tyString)
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, addHints, errorMessage, rethrow)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual, showQualified, runProperName)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual, showQualified, runProperName, runIdent)
 import Language.PureScript.TypeChecker.Entailment.Coercible (GivenSolverState(..), WantedSolverState(..), initialGivenSolverState, initialWantedSolverState, insoluble, solveGivens, solveWanteds)
 import Language.PureScript.TypeChecker.Entailment.IntCompare (mkFacts, mkRelation, solveRelation)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, unifyKinds')
@@ -176,6 +176,30 @@ instance Semigroup t => Semigroup (Matched t) where
 instance Monoid t => Monoid (Matched t) where
   mempty = Match mempty
 
+-- | Abbreviated type representation for eventlog markers.
+briefType :: SourceType -> String
+briefType (TypeConstructor _ (Qualified _ n)) = T.unpack (runProperName n)
+briefType (TypeApp _ f _) = briefType f
+briefType (KindApp _ f _) = briefType f
+briefType (KindedType _ t _) = briefType t
+briefType (TypeLevelString _ s) = "'" <> maybe "?" (take 20 . T.unpack) (decodeString s) <> "'"
+briefType (TypeLevelInt _ i) = show i
+briefType (TypeVar _ v) = T.unpack v
+briefType (RCons _ _ _ _) = "{..}"
+briefType (REmpty _) = "()"
+briefType (ForAll _ _ _ _ _ _) = "forall.."
+briefType (ConstrainedType _ _ _) = "=>.."
+briefType (TUnknown _ _) = "?"
+briefType _ = "_"
+
+-- | Abbreviated evidence representation for eventlog markers.
+briefEvidence :: Evidence -> String
+briefEvidence (NamedInstance (Qualified _ i)) = T.unpack (runIdent i)
+briefEvidence EmptyClassInstance = "empty"
+briefEvidence (IsSymbolInstance _) = "IsSymbol"
+briefEvidence (ReflectableInstance _) = "Reflectable"
+briefEvidence (WarnInstance _) = "Warn"
+
 -- | Check that the current set of type class dictionaries entail the specified type class goal, and, if so,
 -- return a type class dictionary reference.
 entails
@@ -239,8 +263,10 @@ entails SolverOptions{..} constraint context hints =
         go work _ (Constraint _ className' _ tys' _) | work > 1000 = throwError . errorMessage $ PossiblyInfiniteInstance className' tys'
         go work hints' con@(Constraint _ className' kinds' tys' conInfo) =
           let cn = T.unpack (showQualified runProperName className')
-              !_ = traceMarker ("tc-entails " <> cn <> " start") ()
-          in fmap (\r -> let !_ = traceMarker ("tc-entails " <> cn <> " end") () in r) $
+              startTag = "tc-entails " <> cn <> concatMap (\t -> " " <> briefType t) (take 3 tys') <> " start"
+              endTag = "tc-entails " <> cn <> " end"
+          in traceMarker startTag $
+          fmap (\r -> traceMarker endTag r) $
           WriterT . StateT . (withErrorMessageHint (ErrorSolvingConstraint con) .) . runStateT . runWriterT $ do
             -- We might have unified types by solving other constraints, so we need to
             -- apply the latest substitution.
@@ -288,6 +314,7 @@ entails SolverOptions{..} constraint context hints =
               $ unknownsInAllCoveringSets (fst . (typeClassArguments !!)) typeClassMembers tys'' typeClassCoveringSets
             case solution of
               Solved substs tcd -> do
+                let !_ = traceMarker ("tc-entails-instance " <> cn <> " " <> briefEvidence (tcdValue tcd)) ()
                 -- Note that we solved something.
                 tell (Any True, mempty)
                 -- Make sure the substitution is valid:
