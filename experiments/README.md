@@ -34,6 +34,7 @@ agent-facing overview.
 | [tc-queries](tc-queries/EXPERIMENT.md)         | blocked      | no-win  | 2e89bd4f   | +0.1% full, +9% prelude-edit         | incrementality, rock, caching  |
 | [synonym-opt](synonym-opt/EXPERIMENT.md)       | in-progress  | tbd     | 3fcac773   | (unmeasured under framework)         | typechecker, synonyms, flags   |
 | [rust-interning](rust-interning/EXPERIMENT.md) | in-progress  | tbd     | (varies)   | conflicting — see EXPERIMENT.md      | interning, psstring, label     |
+| [entailment-memo](entailment-memo/EXPERIMENT.md) | in-progress | tbd   | ebb0a6bb   | -15.5% full, 0% others              | entailment, unification, rows  |
 
 ## Closed experiments
 
