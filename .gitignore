@@ -44,3 +44,5 @@ profile-output/
 profile-results.log
 
 .claude/settings.local.json
+.claude/*.lock
+thoughts

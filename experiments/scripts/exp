@@ -1,0 +1,429 @@
+#!/bin/bash
+set -euo pipefail
+
+# exp — experiment lifecycle driver for PureScript compiler perf work.
+#
+# Sub-commands:
+#   exp new <id> [--from <baseline-sha>]
+#   exp build-baseline <sha-or-branch>
+#   exp run <id> [--scenarios all|full,nochange,...] [--runs 5] [--profile]
+#                [--baseline <sha>] [--notes "..."]
+#   exp report [<id>]
+#   exp close <id> --verdict win|partial|no-win|abandoned
+#
+# The driver looks up binaries and SHAs from
+# experiments/<id>/EXPERIMENT.md frontmatter, so `exp run <id>` is
+# usually all you need once the experiment is set up.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+EXPERIMENTS_DIR="$REPO_ROOT/experiments"
+BASELINES_DIR="$EXPERIMENTS_DIR/baselines"
+WORKTREE_BASE="/workspace/p"
+PROFILE_SH="$SCRIPT_DIR/run-profile.sh"
+
+log()   { echo "[exp] $*" >&2; }
+error() { echo "[exp ERROR] $*" >&2; exit 1; }
+
+usage() {
+    cat >&2 <<'EOF'
+exp — experiment lifecycle driver
+
+  exp new <id> [--from <baseline-sha>]
+      Create worktree /workspace/p/<id> on a new branch <id> and
+      scaffold experiments/<id>/{EXPERIMENT,TASK,HANDOFF,results}.md.
+
+  exp build-baseline <sha-or-branch>
+      Build an optimised purs from the given ref into
+      experiments/baselines/<short-sha>/purs and update manifest.md.
+
+  exp run <id> [options]
+      Run scenarios against the experiment's worktree.
+      --scenarios full|nochange|prelude|leaf|all       (default: all)
+      --runs N                                         (default: 5)
+      --profile                                        collect .prof files
+      --baseline <sha-or-path>                         override the frontmatter baseline
+      --skip-build                                     don't stack build first
+      --notes "..."                                    extra notes column
+      The purs binary is built automatically from the worktree unless
+      --skip-build is set.
+
+  exp report [<id>]
+      Print the results table for <id>, or the top-level index if omitted.
+
+  exp close <id> --verdict win|partial|no-win|abandoned
+      Set EXPERIMENT.md frontmatter to closed status and prompt for a
+      LESSONS.md entry.
+EOF
+    exit 1
+}
+
+################################################################################
+# Helpers — read YAML-ish frontmatter from EXPERIMENT.md
+################################################################################
+
+# Usage: fm_get <path-to-EXPERIMENT.md> <field>
+fm_get() {
+    awk -v f="$2" '
+        /^---$/ { state++; next }
+        state == 1 {
+            # strip leading whitespace
+            sub(/^[[:space:]]+/, "", $0)
+            if (match($0, "^" f ":[[:space:]]*")) {
+                val = substr($0, RLENGTH+1)
+                # strip trailing comments
+                sub(/[[:space:]]+#.*$/, "", val)
+                # strip surrounding quotes
+                gsub(/^"|"$/, "", val)
+                print val
+                exit
+            }
+        }
+    ' "$1"
+}
+
+# Usage: fm_set <path-to-EXPERIMENT.md> <field> <new-value>
+fm_set() {
+    local FILE="$1" FIELD="$2" VALUE="$3"
+    awk -v f="$FIELD" -v v="$VALUE" '
+        BEGIN { state = 0; updated = 0 }
+        /^---$/ { state++; print; next }
+        state == 1 && $0 ~ "^" f ":" {
+            printf "%s: %s\n", f, v
+            updated = 1
+            next
+        }
+        { print }
+    ' "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
+}
+
+################################################################################
+# exp new
+################################################################################
+
+cmd_new() {
+    local ID="${1:-}"
+    [[ -n "$ID" ]] || error "exp new <id> required"
+    shift
+    local FROM="restaumatic"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --from) FROM="$2"; shift 2;;
+            *) error "unknown option: $1";;
+        esac
+    done
+
+    local WORKTREE="$WORKTREE_BASE/$ID"
+    local EXP_DIR="$EXPERIMENTS_DIR/$ID"
+
+    [[ ! -d "$WORKTREE" ]] || error "worktree already exists: $WORKTREE"
+    [[ ! -d "$EXP_DIR" ]] || error "experiment folder already exists: $EXP_DIR"
+
+    log "creating branch $ID from $FROM"
+    log "creating worktree $WORKTREE"
+    git -C "$REPO_ROOT" worktree add -b "$ID" "$WORKTREE" "$FROM"
+
+    local RESOLVED_SHA
+    RESOLVED_SHA=$(git -C "$WORKTREE" rev-parse --short HEAD)
+
+    mkdir -p "$EXP_DIR/profiles"
+
+    cat > "$EXP_DIR/EXPERIMENT.md" <<EOF
+---
+id: $ID
+status: proposed
+verdict: tbd
+branch: $ID
+worktree: $WORKTREE
+baseline_sha: $RESOLVED_SHA
+head_sha: $RESOLVED_SHA
+hypothesis: >
+  (Fill in: what expensive thing are we making cheaper, and by what
+  mechanism?)
+headline_delta: tbd
+tags: []
+started: $(date '+%Y-%m-%d')
+closed: null
+---
+
+# $ID
+
+## Hypothesis
+
+_Expand the frontmatter hypothesis here._
+
+## Scope
+
+_What's in. What's out._
+
+## Links
+
+- Worktree: $WORKTREE
+- Plan: [TASK.md](TASK.md)
+- Live state: [HANDOFF.md](HANDOFF.md)
+- Results: [results.md](results.md)
+EOF
+
+    cat > "$EXP_DIR/TASK.md" <<EOF
+# Task: $ID
+
+## Goal
+
+_What are we trying to reduce, and by what mechanism?_
+
+## Background
+
+_What the compiler does today, where the cost lives._
+
+## Approach
+
+_The planned changes, at a high level._
+
+## Key files
+
+_Paths to modify with one-line descriptions._
+
+## How to measure
+
+See \`experiments/CLAUDE.md\` and \`run-profile.sh\`. Run all four
+scenarios (\`--scenarios all\`) — an optimisation isn't a win unless
+it holds on nochange and prelude too.
+
+## Tests
+
+\`\`\`bash
+stack test --fast  # all tests must pass
+\`\`\`
+
+## Risks / things to watch
+
+_Known pitfalls, ord-instance correctness traps, test-coverage gaps._
+EOF
+
+    cat > "$EXP_DIR/HANDOFF.md" <<EOF
+# Handoff: $ID
+
+_Live work log. Update as you go._
+
+## TL;DR
+
+_One-paragraph summary of current state. Rewrite as things change._
+
+## What's done
+
+-
+
+## What's blocked
+
+-
+
+## Next steps
+
+-
+EOF
+
+    cat > "$EXP_DIR/profiles/.gitignore" <<EOF
+*.prof
+*.hp
+!*.meta.md
+EOF
+
+    log "scaffold created at $EXP_DIR"
+    log "worktree at $WORKTREE"
+    log "next: cd $WORKTREE && (hack) && exp run $ID"
+}
+
+################################################################################
+# exp build-baseline
+################################################################################
+
+cmd_build_baseline() {
+    local SHA="${1:-}"
+    [[ -n "$SHA" ]] || error "exp build-baseline <sha-or-branch> required"
+    "$PROFILE_SH" build-baseline --sha "$SHA"
+}
+
+################################################################################
+# exp run
+################################################################################
+
+cmd_run() {
+    local ID="${1:-}"
+    [[ -n "$ID" ]] || error "exp run <id> required"
+    shift
+
+    local EXP_DIR="$EXPERIMENTS_DIR/$ID"
+    local EXP_FILE="$EXP_DIR/EXPERIMENT.md"
+    [[ -f "$EXP_FILE" ]] || error "no EXPERIMENT.md at $EXP_FILE"
+
+    local SCENARIOS="all"
+    local RUNS="5"
+    local PROFILE_FLAG=""
+    local BASELINE_OVERRIDE=""
+    local NOTES=""
+    local SKIP_BUILD=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --scenarios) SCENARIOS="$2"; shift 2;;
+            --runs)      RUNS="$2"; shift 2;;
+            --profile)   PROFILE_FLAG="--profile"; shift;;
+            --baseline)  BASELINE_OVERRIDE="$2"; shift 2;;
+            --skip-build) SKIP_BUILD="1"; shift;;
+            --notes)     NOTES="$2"; shift 2;;
+            *) error "unknown option: $1";;
+        esac
+    done
+
+    local WORKTREE
+    WORKTREE=$(fm_get "$EXP_FILE" "worktree")
+    [[ -d "$WORKTREE" ]] || error "worktree not found at $WORKTREE (from frontmatter)"
+
+    local BASELINE_SHA HEAD_SHA BASELINE_PURS
+    BASELINE_SHA=$(fm_get "$EXP_FILE" "baseline_sha")
+    HEAD_SHA=$(git -C "$WORKTREE" rev-parse --short HEAD)
+
+    # Resolve baseline binary
+    if [[ -n "$BASELINE_OVERRIDE" ]]; then
+        if [[ -x "$BASELINE_OVERRIDE" ]]; then
+            BASELINE_PURS="$BASELINE_OVERRIDE"
+        else
+            BASELINE_PURS="$BASELINES_DIR/$BASELINE_OVERRIDE/purs"
+            BASELINE_SHA="$BASELINE_OVERRIDE"
+        fi
+    else
+        BASELINE_PURS="$BASELINES_DIR/$BASELINE_SHA/purs"
+    fi
+    [[ -x "$BASELINE_PURS" ]] || error "baseline binary not found or not executable: $BASELINE_PURS
+    run: exp build-baseline $BASELINE_SHA"
+
+    # Build the current worktree's purs (unless --skip-build)
+    if [[ -z "$SKIP_BUILD" ]]; then
+        log "building purs in worktree $WORKTREE"
+        (cd "$WORKTREE" && stack build --system-ghc)
+    fi
+    local HEAD_PURS
+    HEAD_PURS=$(cd "$WORKTREE" && stack path --local-install-root)/bin/purs
+    [[ -x "$HEAD_PURS" ]] || error "head binary not found: $HEAD_PURS"
+
+    log "running experiment $ID"
+    log "  baseline: $BASELINE_PURS ($BASELINE_SHA)"
+    log "  head:     $HEAD_PURS ($HEAD_SHA)"
+
+    local NOTE_ARG=()
+    [[ -n "$NOTES" ]] && NOTE_ARG=(--notes "$NOTES")
+    local PROFILE_ARG=()
+    [[ -n "$PROFILE_FLAG" ]] && PROFILE_ARG=("$PROFILE_FLAG")
+
+    "$PROFILE_SH" run \
+        --experiment "$ID" \
+        --variant head \
+        --purs "$HEAD_PURS" \
+        --baseline-purs "$BASELINE_PURS" \
+        --scenarios "$SCENARIOS" \
+        --runs "$RUNS" \
+        --baseline-sha "$BASELINE_SHA" \
+        --head-sha "$HEAD_SHA" \
+        "${PROFILE_ARG[@]}" \
+        "${NOTE_ARG[@]}"
+
+    # Update head_sha in frontmatter
+    fm_set "$EXP_FILE" "head_sha" "$HEAD_SHA"
+    log "updated frontmatter head_sha → $HEAD_SHA"
+}
+
+################################################################################
+# exp report
+################################################################################
+
+cmd_report() {
+    local ID="${1:-}"
+    if [[ -z "$ID" ]]; then
+        # global index
+        if [[ -f "$EXPERIMENTS_DIR/README.md" ]]; then
+            cat "$EXPERIMENTS_DIR/README.md"
+        else
+            error "no README.md in $EXPERIMENTS_DIR"
+        fi
+        return
+    fi
+    local EXP_DIR="$EXPERIMENTS_DIR/$ID"
+    [[ -d "$EXP_DIR" ]] || error "no experiment: $ID"
+
+    echo "=== $ID ==="
+    if [[ -f "$EXP_DIR/EXPERIMENT.md" ]]; then
+        awk '/^---$/{s++; if(s==2)exit; next} s==1' "$EXP_DIR/EXPERIMENT.md"
+        echo
+    fi
+    if [[ -f "$EXP_DIR/results.md" ]]; then
+        echo "--- results.md ---"
+        cat "$EXP_DIR/results.md"
+    else
+        echo "(no results.md yet)"
+    fi
+}
+
+################################################################################
+# exp close
+################################################################################
+
+cmd_close() {
+    local ID="${1:-}"
+    [[ -n "$ID" ]] || error "exp close <id> required"
+    shift
+    local VERDICT=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --verdict) VERDICT="$2"; shift 2;;
+            *) error "unknown option: $1";;
+        esac
+    done
+    [[ -n "$VERDICT" ]] || error "--verdict win|partial|no-win|abandoned required"
+
+    local EXP_FILE="$EXPERIMENTS_DIR/$ID/EXPERIMENT.md"
+    [[ -f "$EXP_FILE" ]] || error "no EXPERIMENT.md at $EXP_FILE"
+
+    local STATUS
+    case "$VERDICT" in
+        win|partial) STATUS="shipped";;
+        no-win|abandoned) STATUS="abandoned";;
+        *) error "unknown verdict: $VERDICT";;
+    esac
+
+    fm_set "$EXP_FILE" "status" "$STATUS"
+    fm_set "$EXP_FILE" "verdict" "$VERDICT"
+    fm_set "$EXP_FILE" "closed" "$(date '+%Y-%m-%d')"
+    log "$ID set to status=$STATUS verdict=$VERDICT"
+
+    cat >&2 <<EOF
+
+Reminder: append a paragraph to experiments/LESSONS.md describing
+what was learned. For no-win / abandoned outcomes this is especially
+important — it prevents re-attempting a dead-end technique.
+
+Template:
+
+### $ID — $VERDICT
+**From:** \`$ID\` (see experiments/$ID/HANDOFF.md)
+
+_One paragraph: what was tried, what worked or didn't, and the
+transferable takeaway._
+
+**Takeaway:** _the one sentence a future experimenter should remember._
+EOF
+}
+
+################################################################################
+# Dispatch
+################################################################################
+
+[[ $# -ge 1 ]] || usage
+CMD="$1"; shift
+case "$CMD" in
+    new)             cmd_new "$@";;
+    build-baseline)  cmd_build_baseline "$@";;
+    run)             cmd_run "$@";;
+    report)          cmd_report "$@";;
+    close)           cmd_close "$@";;
+    -h|--help|help)  usage;;
+    *) error "unknown command: $CMD";;
+esac
