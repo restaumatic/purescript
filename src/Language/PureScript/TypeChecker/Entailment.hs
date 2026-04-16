@@ -266,7 +266,6 @@ entails SolverOptions{..} constraint context hints =
               startTag = "tc-entails " <> cn <> concatMap (\t -> " " <> briefType t) (take 3 tys') <> " start"
               endTag = "tc-entails " <> cn <> " end"
           in traceMarker startTag $
-          fmap (\r -> traceMarker endTag r) $
           WriterT . StateT . (withErrorMessageHint (ErrorSolvingConstraint con) .) . runStateT . runWriterT $ do
             -- We might have unified types by solving other constraints, so we need to
             -- apply the latest substitution.
@@ -339,6 +338,7 @@ entails SolverOptions{..} constraint context hints =
                                   initDict
                                   (tcdPath tcd)
 
+                let !_ = traceMarker endTag ()
                 return (if typeClassIsEmpty then Unused match else match)
               Unsolved unsolved -> do
                 -- Generate a fresh name for the unsolved constraint's new dictionary
@@ -351,10 +351,12 @@ entails SolverOptions{..} constraint context hints =
                 modify (combineContexts newContext)
                 -- Mark this constraint for generalization
                 tell (mempty, [(ident, context, unsolved)])
+                let !_ = traceMarker endTag ()
                 return (Var nullSourceSpan qident)
-              Deferred ->
+              Deferred -> do
                 -- Constraint was deferred, just return the dictionary unchanged,
                 -- with no unsolved constraints. Hopefully, we can solve this later.
+                let !_ = traceMarker endTag ()
                 return (TypeClassDictionary (srcConstraint className' kinds'' tys'' conInfo) context hints')
           where
             -- When checking functional dependencies, we need to use unification to make
