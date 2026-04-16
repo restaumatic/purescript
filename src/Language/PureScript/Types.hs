@@ -124,7 +124,13 @@ tfSynonymsFree = TypeFlags 0x04
 -- 'replaceAllTypeSynonyms' re-scan when asked.
 combineFlags :: TypeFlags -> TypeFlags -> TypeFlags
 combineFlags (TypeFlags a) (TypeFlags b) = TypeFlags ((a .|. b) .&. structuralMask)
-  where structuralMask = 0x03 -- bits 0 and 1 only
+
+-- | Mask of flags that propagate structurally from children to parents.
+-- Processing flags (like 'tfSynonymsFree') are excluded — see 'combineFlags'.
+structuralMask :: Word8
+structuralMask = w .|. w' where
+  TypeFlags w  = tfHasWildcards
+  TypeFlags w' = tfHasUnscopedForAlls
 
 -- | Test whether a specific flag is set.
 hasFlag :: TypeFlags -> TypeFlags -> Bool
@@ -156,7 +162,7 @@ typeFlags (ParensInType_ f _ _) = f
 
 -- | Mask to extract only structural flags (clearing processing flags).
 maskStructural :: TypeFlags -> TypeFlags
-maskStructural (TypeFlags w) = TypeFlags (w .&. 0x03)
+maskStructural (TypeFlags w) = TypeFlags (w .&. structuralMask)
 
 -- | Compute ForAll flags from its components.
 forAllNodeFlags :: Maybe (Type a) -> Type a -> Maybe SkolemScope -> TypeFlags
