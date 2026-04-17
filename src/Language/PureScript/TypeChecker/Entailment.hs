@@ -16,7 +16,7 @@ import Protolude (ordNub, headMay)
 import Control.Arrow (second, (&&&))
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State (MonadState(..), MonadTrans(..), StateT(..), evalStateT, execStateT, gets, modify)
-import Control.Monad (foldM, guard, join, zipWithM, zipWithM_, (<=<))
+import Control.Monad (foldM, guard, join, unless, zipWithM, zipWithM_, (<=<))
 import Control.Monad.Writer (MonadWriter(..), WriterT(..))
 import Data.Monoid (Any(..))
 
@@ -295,7 +295,8 @@ entails SolverOptions{..} constraint context hints =
                 subst' <- lift . lift $ withFreshTypes tcd (fmap (substituteType currentSubst) subst)
                 lift . lift $ zipWithM_ (\t1 t2 -> do
                   let inferredType = replaceAllTypeVars (M.toList subst') t1
-                  unifyTypes inferredType t2) (tcdInstanceTypes tcd) tys''
+                  unless (eqType inferredType t2) $
+                    unifyTypes inferredType t2) (tcdInstanceTypes tcd) tys''
                 currentSubst' <- lift . lift $ gets checkSubstitution
                 let subst'' = fmap (substituteType currentSubst') subst'
                 -- Solve any necessary subgoals
