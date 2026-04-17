@@ -170,11 +170,53 @@ unifyTypes t1 t2 = do
 --
 -- Common labels are identified and unified. Remaining labels and types are unified with a
 -- trailing row unification variable, if appropriate.
+--
+-- Fast path: when both rows have RCons entries with matching labels in order,
+-- unify field types directly without sorting. Falls back to sort + alignment
+-- on the first label mismatch or when one side is exhausted.
 unifyRows :: SourceType -> SourceType -> TypeCheckM ()
-unifyRows r1 r2 = sequence_ matches *> uncurry unifyTails rest where
-  unifyTypesWithLabel l t1 t2 = withErrorMessageHint (ErrorInRowLabel l) $ unifyTypes t1 t2
+unifyRows r1 r2 = fastPath r1 r2 where
+  -- Walk both RCons chains in parallel. When labels match, unify types
+  -- in O(1) per entry. On mismatch, fall back to sort+align on the
+  -- remaining (shorter) rows.
+  fastPath (RCons _ l1 t1 rest1) (RCons _ l2 t2 rest2)
+    | l1 == l2 = do
+        withErrorMessageHint (ErrorInRowLabel l1) $ unifyTypes t1 t2
+        fastPath rest1 rest2
+  -- Single-entry scan: when one side has exactly one RCons entry (tail
+  -- is not RCons), scan the other side linearly for the matching label.
+  -- O(n) instead of O(n log n). Common path for Row.Cons constraints.
+  fastPath r1'@(RCons _ l1 t1 tail1) r2'@RCons{}
+    | notRCons tail1
+    = case removeLabel l1 r2' of
+        Just (t2, rest2) -> do
+          withErrorMessageHint (ErrorInRowLabel l1) $ unifyTypes t1 t2
+          unifyTypes tail1 rest2
+        Nothing -> slowPath r1' r2'
+  fastPath r1'@RCons{} r2'@(RCons _ l2 t2 tail2)
+    | notRCons tail2
+    = case removeLabel l2 r1' of
+        Just (t1, rest1) -> do
+          withErrorMessageHint (ErrorInRowLabel l2) $ unifyTypes t1 t2
+          unifyTypes tail2 rest1
+        Nothing -> slowPath r1' r2'
+  fastPath rest1 rest2 = slowPath rest1 rest2
 
-  (matches, rest) = alignRowsWith unifyTypesWithLabel r1 r2
+  notRCons RCons{} = False
+  notRCons _ = True
+
+  -- Remove a label from a row, returning the matched field type and
+  -- the row with that entry removed. O(n) linear scan.
+  removeLabel target = go id where
+    go rebuild (RCons ann l t rest)
+      | l == target = Just (t, rebuild rest)
+      | otherwise   = go (rebuild . RCons ann l t) rest
+    go _ _ = Nothing
+
+  -- Sort both sides and do merge-join alignment (original algorithm).
+  slowPath r1' r2' = sequence_ matches *> uncurry unifyTails rest where
+    unifyTypesWithLabel l t1' t2' = withErrorMessageHint (ErrorInRowLabel l) $ unifyTypes t1' t2'
+    (matches, rest) = alignRowsWith unifyTypesWithLabel r1' r2'
 
   unifyTails :: ([RowListItem SourceAnn], SourceType) -> ([RowListItem SourceAnn], SourceType) -> TypeCheckM ()
   unifyTails ([], TUnknown _ u)    (sd, r)               = solveType u (rowFromList (sd, r))
