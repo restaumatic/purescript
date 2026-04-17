@@ -324,9 +324,21 @@ entails SolverOptions{..} constraint context hints =
                 let subst = fmap head substs
                 currentSubst <- lift . lift $ gets checkSubstitution
                 subst' <- lift . lift $ withFreshTypes tcd (fmap (substituteType currentSubst) subst)
-                lift . lift $ zipWithM_ (\t1 t2 -> do
-                  let inferredType = replaceAllTypeVars (M.toList subst') t1
-                  unifyTypes inferredType t2) (tcdInstanceTypes tcd) tys''
+                -- Row.Cons specialization: bypass sort+align, use O(n) linear scan.
+                -- For all other classes, use the generic fundep enforcement.
+                lift . lift $ case (className', tcdInstanceTypes tcd, tys'') of
+                  (cn', TypeLevelString _ sym : ty : r : _, _ : _ : _ : goalRow : _)
+                    | cn' == C.RowCons
+                    -> case removeRowLabel (Label sym) goalRow of
+                         Just (goalTy, restRow) -> do
+                           withErrorMessageHint (ErrorInRowLabel (Label sym)) $
+                             unifyTypes ty goalTy
+                           unifyTypes r restRow
+                         Nothing ->
+                           unifyTypes (srcRCons (Label sym) ty r) goalRow
+                  _ -> zipWithM_ (\t1 t2 -> do
+                    let inferredType = replaceAllTypeVars (M.toList subst') t1
+                    unifyTypes inferredType t2) (tcdInstanceTypes tcd) tys''
                 currentSubst' <- lift . lift $ gets checkSubstitution
                 let subst'' = fmap (substituteType currentSubst') subst'
                 -- Solve any necessary subgoals
@@ -706,6 +718,15 @@ entails SolverOptions{..} constraint context hints =
     solveRowCons kinds [TypeLevelString ann sym, ty, r, _] =
       Just [ TypeClassDictionaryInScope Nothing 0 EmptyClassInstance [] C.RowCons [] kinds [TypeLevelString ann sym, ty, r, srcRCons (Label sym) ty r] Nothing Nothing ]
     solveRowCons _ _ = Nothing
+
+    -- | Remove a label from a row type, returning the matched field type
+    -- and the row with that entry removed. O(n) linear scan.
+    -- Used by the Row.Cons specialization in fundep enforcement.
+    removeRowLabel target = go id where
+      go rebuild (RCons ann l t rest)
+        | l == target = Just (t, rebuild rest)
+        | otherwise   = go (rebuild . RCons ann l t) rest
+      go _ _ = Nothing
 
     solveRowToList :: [SourceType] -> [SourceType] -> Maybe [TypeClassDict]
     solveRowToList [kind] [r, _] = do
