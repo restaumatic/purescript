@@ -15,6 +15,7 @@ import Control.Monad (when, unless, void, forM, zipWithM_)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (modify, gets)
 import Control.Monad.Writer.Class (tell)
+import Debug.Trace (traceMarker)
 
 import Data.Foldable (for_, traverse_, toList)
 import Data.List (nubBy, (\\), sort, group)
@@ -35,7 +36,7 @@ import Language.PureScript.Environment (DataDeclType(..), Environment(..), Funct
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, errorMessage, errorMessage', positionedError, rethrow, warnAndRethrow, MultipleErrors)
 import Language.PureScript.Linter (checkExhaustiveExpr)
 import Language.PureScript.Linter.Wildcards (ignoreWildcardsUnderCompleteTypeSignatures)
-import Language.PureScript.Names (Ident, ModuleName, ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, isPlainIdent, mkQualified)
+import Language.PureScript.Names (Ident, ModuleName, ProperName, ProperNameType(..), Qualified(..), QualifiedBy(..), coerceProperName, disqualify, isPlainIdent, mkQualified, runIdent, runModuleName, runProperName, showQualified)
 import Language.PureScript.Roles (Role)
 import Language.PureScript.Sugar.Names.Env (Exports(..))
 import Language.PureScript.TypeChecker.Kinds as T
@@ -236,6 +237,18 @@ checkTypeSynonyms = void . replaceAllTypeSynonyms
 --
 --  * Process module imports
 --
+-- | Bracket a typechecking action with eventlog markers for per-declaration
+-- profiling. Markers appear as \"tc ModuleName kind:name start/end\" in the
+-- eventlog. Zero cost when the binary is not run with @+RTS -l@.
+-- See @debug\/README.md@ for the full profiling workflow.
+withDeclTrace :: ModuleName -> String -> TypeCheckM a -> TypeCheckM a
+withDeclTrace mn label action = do
+  let tag = "tc " <> T.unpack (runModuleName mn) <> " " <> label
+      !_ = traceMarker (tag <> " start") ()
+  result <- action
+  let !_ = traceMarker (tag <> " end") ()
+  return result
+
 typeCheckAll
   :: ModuleName
   -> [Declaration]
@@ -243,18 +256,20 @@ typeCheckAll
 typeCheckAll moduleName = traverse go
   where
   go :: Declaration -> TypeCheckM Declaration
-  go (DataDeclaration sa@(ss, _) dtype name args dctors) = do
-    warnAndRethrow (addHint (ErrorInTypeConstructor name) . addHint (positionedError ss)) $ do
-      when (dtype == Newtype) $ void $ checkNewtype name dctors
-      checkDuplicateTypeArguments $ map fst args
-      (dataCtors, ctorKind) <- kindOfData moduleName (sa, name, args, dctors)
-      let args' = args `withKinds` ctorKind
-      env <- getEnv
-      dctors' <- traverse (replaceTypeSynonymsInDataConstructor . fst) dataCtors
-      let args'' = args' `withRoles` inferRoles env moduleName name args' dctors'
-      addDataType moduleName dtype name args'' dataCtors ctorKind
-    return $ DataDeclaration sa dtype name args dctors
-  go d@(DataBindingGroupDeclaration tys) = do
+  go (DataDeclaration sa@(ss, _) dtype name args dctors) =
+    withDeclTrace moduleName ("data:" <> T.unpack (runProperName name)) $ do
+      warnAndRethrow (addHint (ErrorInTypeConstructor name) . addHint (positionedError ss)) $ do
+        when (dtype == Newtype) $ void $ checkNewtype name dctors
+        checkDuplicateTypeArguments $ map fst args
+        (dataCtors, ctorKind) <- kindOfData moduleName (sa, name, args, dctors)
+        let args' = args `withKinds` ctorKind
+        env <- getEnv
+        dctors' <- traverse (replaceTypeSynonymsInDataConstructor . fst) dataCtors
+        let args'' = args' `withRoles` inferRoles env moduleName name args' dctors'
+        addDataType moduleName dtype name args'' dataCtors ctorKind
+      return $ DataDeclaration sa dtype name args dctors
+  go d@(DataBindingGroupDeclaration tys) =
+    withDeclTrace moduleName (dataGroupLabel tys) $ do
     let tysList = NEL.toList tys
         syns = mapMaybe toTypeSynonym tysList
         dataDecls = mapMaybe toDataDecl tysList
@@ -295,85 +310,94 @@ typeCheckAll moduleName = traverse go
     toRoleDecl _ = Nothing
     toClassDecl (TypeClassDeclaration sa nm args implies deps decls) = Just (deps, (sa, nm, args, implies, decls))
     toClassDecl _ = Nothing
-  go (TypeSynonymDeclaration sa@(ss, _) name args ty) = do
-    warnAndRethrow (addHint (ErrorInTypeSynonym name) . addHint (positionedError ss) ) $ do
-      checkDuplicateTypeArguments $ map fst args
-      (elabTy, kind) <- kindOfTypeSynonym moduleName (sa, name, args, ty)
-      let args' = args `withKinds` kind
-      addTypeSynonym moduleName name args' elabTy kind
-    return $ TypeSynonymDeclaration sa name args ty
-  go (KindDeclaration sa@(ss, _) kindFor name ty) = do
-    warnAndRethrow (addHint (ErrorInKindDeclaration name) . addHint (positionedError ss)) $ do
-      elabTy <- withFreshSubstitution $ checkKindDeclaration moduleName ty
-      env <- getEnv
-      putEnv $ env { types = M.insert (Qualified (ByModuleName moduleName) name) (elabTy, LocalTypeVariable) (types env) }
-      return $ KindDeclaration sa kindFor name elabTy
-  go d@(RoleDeclaration rdd) = do
-    checkRoleDeclaration moduleName rdd
-    return d
+  go (TypeSynonymDeclaration sa@(ss, _) name args ty) =
+    withDeclTrace moduleName ("syn:" <> T.unpack (runProperName name)) $ do
+      warnAndRethrow (addHint (ErrorInTypeSynonym name) . addHint (positionedError ss) ) $ do
+        checkDuplicateTypeArguments $ map fst args
+        (elabTy, kind) <- kindOfTypeSynonym moduleName (sa, name, args, ty)
+        let args' = args `withKinds` kind
+        addTypeSynonym moduleName name args' elabTy kind
+      return $ TypeSynonymDeclaration sa name args ty
+  go (KindDeclaration sa@(ss, _) kindFor name ty) =
+    withDeclTrace moduleName ("kind:" <> T.unpack (runProperName name)) $ do
+      warnAndRethrow (addHint (ErrorInKindDeclaration name) . addHint (positionedError ss)) $ do
+        elabTy <- withFreshSubstitution $ checkKindDeclaration moduleName ty
+        env <- getEnv
+        putEnv $ env { types = M.insert (Qualified (ByModuleName moduleName) name) (elabTy, LocalTypeVariable) (types env) }
+        return $ KindDeclaration sa kindFor name elabTy
+  go d@(RoleDeclaration rdd) =
+    withDeclTrace moduleName ("role:" <> T.unpack (runProperName (rdeclIdent rdd))) $ do
+      checkRoleDeclaration moduleName rdd
+      return d
   go TypeDeclaration{} =
     internalError "Type declarations should have been removed before typeCheckAlld"
-  go (ValueDecl sa@(ss, _) name nameKind [] [MkUnguarded val]) = do
-    env <- getEnv
-    let declHint = if isPlainIdent name then addHint (ErrorInValueDeclaration name) else id
-    warnAndRethrow (declHint . addHint (positionedError ss)) $ do
-      val' <- checkExhaustiveExpr ss env moduleName val
-      valueIsNotDefined moduleName name
-      typesOf NonRecursiveBindingGroup moduleName [((sa, name), val')] >>= \case
-        [(_, (val'', ty))] -> do
-          addValue moduleName name ty nameKind
-          return $ ValueDecl sa name nameKind [] [MkUnguarded val'']
-        _ -> internalError "typesOf did not return a singleton"
+  go (ValueDecl sa@(ss, _) name nameKind [] [MkUnguarded val]) =
+    withDeclTrace moduleName ("val:" <> T.unpack (runIdent name)) $ do
+      env <- getEnv
+      let declHint = if isPlainIdent name then addHint (ErrorInValueDeclaration name) else id
+      warnAndRethrow (declHint . addHint (positionedError ss)) $ do
+        val' <- checkExhaustiveExpr ss env moduleName val
+        valueIsNotDefined moduleName name
+        typesOf NonRecursiveBindingGroup moduleName [((sa, name), val')] >>= \case
+          [(_, (val'', ty))] -> do
+            addValue moduleName name ty nameKind
+            return $ ValueDecl sa name nameKind [] [MkUnguarded val'']
+          _ -> internalError "typesOf did not return a singleton"
   go ValueDeclaration{} = internalError "Binders were not desugared"
   go BoundValueDeclaration{} = internalError "BoundValueDeclaration should be desugared"
-  go (BindingGroupDeclaration vals) = do
-    env <- getEnv
-    let sss = fmap (\(((ss, _), _), _, _) -> ss) vals
-    warnAndRethrow (addHint (ErrorInBindingGroup (fmap (\((_, ident), _, _) -> ident) vals)) . addHint (PositionedError sss)) $ do
-      for_ vals $ \((_, ident), _, _) -> valueIsNotDefined moduleName ident
-      vals' <- NEL.toList <$> traverse (\(sai@((ss, _), _), nk, expr) -> (sai, nk,) <$> checkExhaustiveExpr ss env moduleName expr) vals
-      tys <- typesOf RecursiveBindingGroup moduleName $ fmap (\(sai, _, ty) -> (sai, ty)) vals'
-      vals'' <- forM [ (sai, val, nameKind, ty)
-                     | (sai@(_, name), nameKind, _) <- vals'
-                     , ((_, name'), (val, ty)) <- tys
-                     , name == name'
-                     ] $ \(sai@(_, name), val, nameKind, ty) -> do
-        addValue moduleName name ty nameKind
-        return (sai, nameKind, val)
-      return . BindingGroupDeclaration $ NEL.fromList vals''
-  go d@(ExternDataDeclaration (ss, _) name kind) = do
-    warnAndRethrow (addHint (ErrorInForeignImportData name) . addHint (positionedError ss)) $ do
-      elabKind <- withFreshSubstitution $ checkKindDeclaration moduleName kind
+  go (BindingGroupDeclaration vals) =
+    withDeclTrace moduleName (valGroupLabel vals) $ do
       env <- getEnv
-      let qualName = Qualified (ByModuleName moduleName) name
-          roles = nominalRolesForKind elabKind
-      putEnv $ env { types = M.insert qualName (elabKind, ExternData roles) (types env) }
+      let sss = fmap (\(((ss, _), _), _, _) -> ss) vals
+      warnAndRethrow (addHint (ErrorInBindingGroup (fmap (\((_, ident), _, _) -> ident) vals)) . addHint (PositionedError sss)) $ do
+        for_ vals $ \((_, ident), _, _) -> valueIsNotDefined moduleName ident
+        vals' <- NEL.toList <$> traverse (\(sai@((ss, _), _), nk, expr) -> (sai, nk,) <$> checkExhaustiveExpr ss env moduleName expr) vals
+        tys <- typesOf RecursiveBindingGroup moduleName $ fmap (\(sai, _, ty) -> (sai, ty)) vals'
+        vals'' <- forM [ (sai, val, nameKind, ty)
+                       | (sai@(_, name), nameKind, _) <- vals'
+                       , ((_, name'), (val, ty)) <- tys
+                       , name == name'
+                       ] $ \(sai@(_, name), val, nameKind, ty) -> do
+          addValue moduleName name ty nameKind
+          return (sai, nameKind, val)
+        return . BindingGroupDeclaration $ NEL.fromList vals''
+  go d@(ExternDataDeclaration (ss, _) name kind) =
+    withDeclTrace moduleName ("externdata:" <> T.unpack (runProperName name)) $ do
+      warnAndRethrow (addHint (ErrorInForeignImportData name) . addHint (positionedError ss)) $ do
+        elabKind <- withFreshSubstitution $ checkKindDeclaration moduleName kind
+        env <- getEnv
+        let qualName = Qualified (ByModuleName moduleName) name
+            roles = nominalRolesForKind elabKind
+        putEnv $ env { types = M.insert qualName (elabKind, ExternData roles) (types env) }
+        return d
+  go d@(ExternDeclaration (ss, _) name ty) =
+    withDeclTrace moduleName ("extern:" <> T.unpack (runIdent name)) $ do
+      warnAndRethrow (addHint (ErrorInForeignImport name) . addHint (positionedError ss)) $ do
+        env <- getEnv
+        (elabTy, kind) <- withFreshSubstitution $ do
+          ((unks, ty'), kind) <- kindOfWithUnknowns ty
+          ty'' <- varIfUnknown unks ty'
+          pure (ty'', kind)
+        checkTypeKind elabTy kind
+        case M.lookup (Qualified (ByModuleName moduleName) name) (names env) of
+          Just _ -> throwError . errorMessage $ RedefinedIdent name
+          Nothing -> putEnv (env { names = M.insert (Qualified (ByModuleName moduleName) name) (elabTy, External, Defined) (names env) })
       return d
-  go d@(ExternDeclaration (ss, _) name ty) = do
-    warnAndRethrow (addHint (ErrorInForeignImport name) . addHint (positionedError ss)) $ do
-      env <- getEnv
-      (elabTy, kind) <- withFreshSubstitution $ do
-        ((unks, ty'), kind) <- kindOfWithUnknowns ty
-        ty'' <- varIfUnknown unks ty'
-        pure (ty'', kind)
-      checkTypeKind elabTy kind
-      case M.lookup (Qualified (ByModuleName moduleName) name) (names env) of
-        Just _ -> throwError . errorMessage $ RedefinedIdent name
-        Nothing -> putEnv (env { names = M.insert (Qualified (ByModuleName moduleName) name) (elabTy, External, Defined) (names env) })
-    return d
   go d@FixityDeclaration{} = return d
   go d@ImportDeclaration{} = return d
-  go d@(TypeClassDeclaration sa@(ss, _) pn args implies deps tys) = do
-    warnAndRethrow (addHint (ErrorInTypeClassDeclaration pn) . addHint (positionedError ss)) $ do
-      env <- getEnv
-      let qualifiedClassName = Qualified (ByModuleName moduleName) pn
-      guardWith (errorMessage (DuplicateTypeClass pn ss)) $
-        not (M.member qualifiedClassName (typeClasses env))
-      (args', implies', tys', kind) <- kindOfClass moduleName (sa, pn, args, implies, tys)
-      addTypeClass moduleName qualifiedClassName (fmap Just <$> args') implies' deps tys' kind
-      return d
+  go d@(TypeClassDeclaration sa@(ss, _) pn args implies deps tys) =
+    withDeclTrace moduleName ("class:" <> T.unpack (runProperName pn)) $ do
+      warnAndRethrow (addHint (ErrorInTypeClassDeclaration pn) . addHint (positionedError ss)) $ do
+        env <- getEnv
+        let qualifiedClassName = Qualified (ByModuleName moduleName) pn
+        guardWith (errorMessage (DuplicateTypeClass pn ss)) $
+          not (M.member qualifiedClassName (typeClasses env))
+        (args', implies', tys', kind) <- kindOfClass moduleName (sa, pn, args, implies, tys)
+        addTypeClass moduleName qualifiedClassName (fmap Just <$> args') implies' deps tys' kind
+        return d
   go (TypeInstanceDeclaration _ _ _ _ (Left _) _ _ _ _) = internalError "typeCheckAll: type class instance generated name should have been desugared"
   go d@(TypeInstanceDeclaration sa@(ss, _) _ ch idx (Right dictName) deps className tys body) =
+    withDeclTrace moduleName ("instance:" <> T.unpack (showQualified runProperName className) <> "_" <> T.unpack (runIdent dictName)) $
     rethrow (addHint (ErrorInInstance className tys) . addHint (positionedError ss)) $ do
       env <- getEnv
       let qualifiedDictName = Qualified (ByModuleName moduleName) dictName
@@ -398,6 +422,26 @@ typeCheckAll moduleName = traverse go
                   if isPlainIdent dictName then Nothing else Just $ srcInstanceType ss vars className tys''
           addTypeClassDictionaries (ByModuleName moduleName) . M.singleton className $ M.singleton (tcdValue dict) (pure dict)
           return d
+
+  -- Helpers for trace labels on binding groups
+  dataGroupLabel :: NEL.NonEmpty Declaration -> String
+  dataGroupLabel tys =
+    let names = mapMaybe dataGroupName (NEL.toList tys)
+        first = case names of { (x:_) -> T.unpack (runProperName x); [] -> "anon" }
+        n = length names
+    in "datagroup:" <> first <> if n > 1 then "+" <> show (n - 1) else ""
+    where
+    dataGroupName (DataDeclaration _ _ n _ _) = Just n
+    dataGroupName (TypeSynonymDeclaration _ n _ _) = Just n
+    dataGroupName (TypeClassDeclaration _ n _ _ _ _) = Just (coerceProperName n)
+    dataGroupName _ = Nothing
+
+  valGroupLabel :: NEL.NonEmpty ((SourceAnn, Ident), NameKind, Expr) -> String
+  valGroupLabel vals =
+    let idents = fmap (\((_, i), _, _) -> i) vals
+        first = T.unpack (runIdent (NEL.head idents))
+        n = NEL.length idents
+    in "bind:" <> first <> if n > 1 then "+" <> show (n - 1) else ""
 
   checkInstanceArity :: Ident -> Qualified (ProperName 'ClassName) -> TypeClassData -> [SourceType] -> TypeCheckM ()
   checkInstanceArity dictName className typeClass tys = do

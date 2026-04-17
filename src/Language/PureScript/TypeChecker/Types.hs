@@ -33,6 +33,7 @@ import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets)
 import Control.Monad.Supply.Class (MonadSupply)
 import Control.Monad.Writer.Class (MonadWriter(..))
+import Debug.Trace (traceMarker)
 
 import Data.Bifunctor (bimap)
 import Data.Either (partitionEithers)
@@ -40,6 +41,7 @@ import Data.Functor (($>))
 import Data.List (transpose, (\\), partition, delete)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Traversable (for)
 import Data.List.NonEmpty qualified as NEL
 import Data.Map qualified as M
@@ -50,7 +52,7 @@ import Language.PureScript.AST
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors, SimpleErrorMessage(..), errorMessage, errorMessage', escalateWarningWhen, internalCompilerError, onErrorMessages, onTypesInErrorMessage, parU)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, freshIdent)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, Name(..), ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, freshIdent, runIdent, runModuleName)
 import Language.PureScript.TypeChecker.Deriving (deriveInstance)
 import Language.PureScript.TypeChecker.Entailment (InstanceContext, newDictionaries, replaceTypeClassDictionaries)
 import Language.PureScript.TypeChecker.Kinds (checkConstraint, checkKind, checkTypeKind, kindOf, kindOfWithScopedVars, unifyKinds', unknownsWithKinds)
@@ -91,12 +93,20 @@ typesOf
   -> [((SourceAnn, Ident), Expr)]
   -> TypeCheckM [((SourceAnn, Ident), (Expr, SourceType))]
 typesOf bindingGroupType moduleName vals = withFreshSubstitution $ do
+    let traceLabel = case vals of
+          [((_, ident), _)] -> T.unpack (runIdent ident)
+          _ -> T.unpack (runIdent (snd (fst (head vals)))) <> "+" <> show (length vals - 1)
+        phase p = "tc-phase " <> T.unpack (runModuleName moduleName) <> " " <> traceLabel <> " " <> p
+
     (tys, wInfer) <- capturingSubstitution tidyUp $ do
+      let !_ = traceMarker (phase "infer start") ()
       (SplitBindingGroup untyped typed dict, w) <- withoutWarnings $ typeDictionaryForBindingGroup (Just moduleName) vals
       ds1 <- parU typed $ \e -> withoutWarnings $ checkTypedBindingGroupElement moduleName e dict
       ds2 <- forM untyped $ \e -> withoutWarnings $ typeForBindingGroupElement e dict
+      let !_ = traceMarker (phase "infer end") ()
       return (map (False, ) ds1 ++ map (True, ) ds2, w)
 
+    let !_ = traceMarker (phase "solve start") ()
     inferred <- forM tys $ \(shouldGeneralize, ((sai@((ss, _), ident), (val, ty)), _)) -> do
       -- Replace type class dictionary placeholders with actual dictionaries
       (val', unsolved) <- replaceTypeClassDictionaries shouldGeneralize val
@@ -177,6 +187,8 @@ typesOf bindingGroupType moduleName vals = withFreshSubstitution $ do
       -- Check skolem variables did not escape their scope
       skolemEscapeCheck val'
       return ((sai, (foldr (Abs . VarBinder nullSourceSpan . (\(x, _, _) -> x)) val' unsolved, generalized)), unsolved)
+
+    let !_ = traceMarker (phase "solve end") ()
 
     -- Show warnings here, since types in wildcards might have been solved during
     -- instance resolution (by functional dependencies).

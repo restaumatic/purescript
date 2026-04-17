@@ -15,6 +15,7 @@ import Protolude (ordNub, headMay)
 
 import Control.Arrow (second, (&&&))
 import Control.Monad.Error.Class (MonadError(..))
+import Debug.Trace (traceMarker)
 import Control.Monad.State (MonadState(..), MonadTrans(..), StateT(..), evalStateT, execStateT, gets, modify)
 import Control.Monad (foldM, guard, join, zipWithM, zipWithM_, (<=<))
 import Control.Monad.Writer (MonadWriter(..), WriterT(..))
@@ -39,7 +40,7 @@ import Language.PureScript.AST.Declarations (UnknownsHint(..))
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment (Environment(..), FunctionalDependency(..), TypeClassData(..), dictTypeName, kindRow, tyBoolean, tyInt, tyString)
 import Language.PureScript.Errors (SimpleErrorMessage(..), addHint, addHints, errorMessage, rethrow)
-import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual)
+import Language.PureScript.Names (pattern ByNullSourcePos, Ident(..), ModuleName, ProperName(..), ProperNameType(..), Qualified(..), QualifiedBy(..), byMaybeModuleName, coerceProperName, disqualify, freshIdent, getQual, showQualified, runProperName, runIdent)
 import Language.PureScript.TypeChecker.Entailment.Coercible (GivenSolverState(..), WantedSolverState(..), initialGivenSolverState, initialWantedSolverState, insoluble, solveGivens, solveWanteds)
 import Language.PureScript.TypeChecker.Entailment.IntCompare (mkFacts, mkRelation, solveRelation)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, unifyKinds')
@@ -175,6 +176,30 @@ instance Semigroup t => Semigroup (Matched t) where
 instance Monoid t => Monoid (Matched t) where
   mempty = Match mempty
 
+-- | Abbreviated type representation for eventlog markers.
+briefType :: SourceType -> String
+briefType (TypeConstructor _ (Qualified _ n)) = T.unpack (runProperName n)
+briefType (TypeApp _ f _) = briefType f
+briefType (KindApp _ f _) = briefType f
+briefType (KindedType _ t _) = briefType t
+briefType (TypeLevelString _ s) = "'" <> maybe "?" (take 20 . T.unpack) (decodeString s) <> "'"
+briefType (TypeLevelInt _ i) = show i
+briefType (TypeVar _ v) = T.unpack v
+briefType (RCons _ _ _ _) = "{..}"
+briefType (REmpty _) = "()"
+briefType (ForAll _ _ _ _ _ _) = "forall.."
+briefType (ConstrainedType _ _ _) = "=>.."
+briefType (TUnknown _ _) = "?"
+briefType _ = "_"
+
+-- | Abbreviated evidence representation for eventlog markers.
+briefEvidence :: Evidence -> String
+briefEvidence (NamedInstance (Qualified _ i)) = T.unpack (runIdent i)
+briefEvidence EmptyClassInstance = "empty"
+briefEvidence (IsSymbolInstance _) = "IsSymbol"
+briefEvidence (ReflectableInstance _) = "Reflectable"
+briefEvidence (WarnInstance _) = "Warn"
+
 -- | Check that the current set of type class dictionaries entail the specified type class goal, and, if so,
 -- return a type class dictionary reference.
 entails
@@ -236,7 +261,12 @@ entails SolverOptions{..} constraint context hints =
       where
         go :: Int -> [ErrorMessageHint] -> SourceConstraint -> WriterT (Any, [(Ident, InstanceContext, SourceConstraint)]) (StateT InstanceContext TypeCheckM) Expr
         go work _ (Constraint _ className' _ tys' _) | work > 1000 = throwError . errorMessage $ PossiblyInfiniteInstance className' tys'
-        go work hints' con@(Constraint _ className' kinds' tys' conInfo) = WriterT . StateT . (withErrorMessageHint (ErrorSolvingConstraint con) .) . runStateT . runWriterT $ do
+        go work hints' con@(Constraint _ className' kinds' tys' conInfo) =
+          let cn = T.unpack (showQualified runProperName className')
+              startTag = "tc-entails " <> cn <> concatMap (\t -> " " <> briefType t) (take 3 tys') <> " start"
+              endTag = "tc-entails " <> cn <> " end"
+          in traceMarker startTag $
+          WriterT . StateT . (withErrorMessageHint (ErrorSolvingConstraint con) .) . runStateT . runWriterT $ do
             -- We might have unified types by solving other constraints, so we need to
             -- apply the latest substitution.
             latestSubst <- lift . lift $ gets checkSubstitution
@@ -283,6 +313,7 @@ entails SolverOptions{..} constraint context hints =
               $ unknownsInAllCoveringSets (fst . (typeClassArguments !!)) typeClassMembers tys'' typeClassCoveringSets
             case solution of
               Solved substs tcd -> do
+                let !_ = traceMarker ("tc-entails-instance " <> cn <> " " <> briefEvidence (tcdValue tcd)) ()
                 -- Note that we solved something.
                 tell (Any True, mempty)
                 -- Make sure the substitution is valid:
@@ -307,6 +338,7 @@ entails SolverOptions{..} constraint context hints =
                                   initDict
                                   (tcdPath tcd)
 
+                let !_ = traceMarker endTag ()
                 return (if typeClassIsEmpty then Unused match else match)
               Unsolved unsolved -> do
                 -- Generate a fresh name for the unsolved constraint's new dictionary
@@ -319,10 +351,12 @@ entails SolverOptions{..} constraint context hints =
                 modify (combineContexts newContext)
                 -- Mark this constraint for generalization
                 tell (mempty, [(ident, context, unsolved)])
+                let !_ = traceMarker endTag ()
                 return (Var nullSourceSpan qident)
-              Deferred ->
+              Deferred -> do
                 -- Constraint was deferred, just return the dictionary unchanged,
                 -- with no unsolved constraints. Hopefully, we can solve this later.
+                let !_ = traceMarker endTag ()
                 return (TypeClassDictionary (srcConstraint className' kinds'' tys'' conInfo) context hints')
           where
             -- When checking functional dependencies, we need to use unification to make

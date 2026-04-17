@@ -1,17 +1,16 @@
 // Debug compilation times of modules from eventlog profiling
 //
-// Build and run purs with profiling enabled:
-//     cabal build --enable-profiling
-//     cabal exec -- purs ......
-// Or with stack:
-//     stack build --profile
-//     stack --profile exec -- purs ......
+// Build with stack:
+//     stack build
 // Run a command like this to generate purs.eventlog:
-//     purs +RTS -l-agu -i1.5 -hc -RTS compile -g corefn $(spago sources)
-// (If you want accurate stats for individual modules, add -N1.)
+//     purs +RTS -l-agu -N1 -RTS compile $(spago sources)
+// (Use -N1 for accurate per-declaration timings.)
 // Process it with
 //     eventlog2html --json purs.eventlog
 //     node eventlog.js purs.eventlog.json
+//
+// This shows per-module timing and concurrency stats.
+// For per-declaration flamegraphs, see eventlog-speedscope.js.
 //
 // See the GHC docs for descriptions of the RTS flags:
 //   - https://downloads.haskell.org/ghc/latest/docs/users_guide/profiling.html#rts-options-for-heap-profiling
@@ -184,7 +183,82 @@ for (let [name, time] of timings) {
     console.log(name.padEnd(name_length, " "), time);
 }
 
-//require("fs").writeFileSync("concurrencies.json", JSON.stringify(concurrencies, null, 2), "utf-8");
+// Per-declaration breakdown (from "tc Module kind:name start/end" markers)
+var declRe = /^tc ([\w.]+) ([\w:+]+) (start|end)$/;
+// Phase markers: "tc-phase Module bindName infer|solve start|end"
+var phaseRe = /^tc-phase ([\w.]+) ([\w+]+) (infer|solve) (start|end)$/;
+var declTraces = {};
+var phaseTraces = {};
+var rawEventlog = JSON.parse(require("fs").readFileSync(mainFile, "utf-8"));
+for (let trace of rawEventlog.traces) {
+    var d = declRe.exec(trace.desc);
+    if (d) {
+        var key = d[1] + " " + d[2];
+        if (!(key in declTraces)) declTraces[key] = { module: d[1], label: d[2] };
+        declTraces[key][d[3]] = trace.tx;
+        continue;
+    }
+    var p = phaseRe.exec(trace.desc);
+    if (p) {
+        var pkey = p[1] + " " + p[2] + " " + p[3];
+        if (!(pkey in phaseTraces)) phaseTraces[pkey] = { module: p[1], bind: p[2], phase: p[3] };
+        phaseTraces[pkey][p[4]] = trace.tx;
+    }
+}
+
+// Build phase timing lookup: "Module bind" -> { infer: ms, solve: ms }
+var phaseLookup = {};
+for (let key in phaseTraces) {
+    let pt = phaseTraces[key];
+    if ("start" in pt && "end" in pt) {
+        var lkey = pt.module + " " + pt.bind;
+        if (!(lkey in phaseLookup)) phaseLookup[lkey] = {};
+        phaseLookup[lkey][pt.phase] = (pt.end - pt.start) * 1000;
+    }
+}
+
+var declTimings = [];
+for (let key in declTraces) {
+    let dt = declTraces[key];
+    if ("start" in dt && "end" in dt) {
+        // Try to find matching phase data
+        var bindName = dt.label.replace(/^(val|bind):/, "");
+        var phases = phaseLookup[dt.module + " " + bindName] || {};
+        declTimings.push([dt.module, dt.label, dt.end - dt.start, phases]);
+    }
+}
+
+if (declTimings.length > 0) {
+    declTimings.sort(([,,t1], [,,t2]) => t2 - t1);
+    var totalDeclTime = declTimings.reduce((s, [,,t]) => s + t, 0);
+    var maxModLen = Math.max(...declTimings.slice(0, 50).map(([m]) => m.length));
+    var maxLabelLen = Math.max(...declTimings.slice(0, 50).map(([,l]) => l.length));
+
+    console.log("");
+    console.log("=== Per-declaration typecheck timing (top " + Math.min(50, declTimings.length) + " of " + declTimings.length + ") ===");
+    console.log("");
+    for (let [mod, label, time, phases] of declTimings.slice(0, 50)) {
+        var ms = (time * 1000).toFixed(1);
+        var pct = (time / totalDeclTime * 100).toFixed(1);
+        var phaseStr = "";
+        if (phases.infer !== undefined || phases.solve !== undefined) {
+            var inferMs = (phases.infer || 0).toFixed(0);
+            var solveMs = (phases.solve || 0).toFixed(0);
+            phaseStr = "  [infer:" + inferMs + " solve:" + solveMs + "]";
+        }
+        console.log(
+            mod.padEnd(maxModLen) + "  " +
+            label.padEnd(maxLabelLen) + "  " +
+            ms.padStart(8) + "ms  " +
+            pct.padStart(5) + "%" +
+            phaseStr
+        );
+    }
+    var topTime = declTimings.slice(0, 50).reduce((s, [,,t]) => s + t, 0);
+    console.log("");
+    console.log("Total declaration time: " + (totalDeclTime * 1000).toFixed(0) + "ms across " + declTimings.length + " declarations");
+    console.log("Top 50 account for " + (topTime / totalDeclTime * 100).toFixed(1) + "%");
+}
 
 
 function space(v) {
