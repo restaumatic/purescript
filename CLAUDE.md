@@ -147,17 +147,18 @@ To see which specific declarations are slow (e.g., complex type-level
 row-list computations, heavy instance resolution):
 
 ```sh
-# Build normally, then run with eventlog
+# Within an experiment: before/after profiles
+experiments/scripts/exp profile <id> --phase before   # profile baseline
+# ... make changes ...
+experiments/scripts/exp profile <id> --phase after    # profile head
+
+# Manual workflow (outside experiments)
 stack build
 purs +RTS -l-agu -N1 -RTS compile $(spago sources)
-
-# Text report with declaration breakdown
 eventlog2html --json purs.eventlog
-node debug/eventlog.js purs.eventlog.json
-
-# Flamegraph (module > declaration hierarchy)
-node debug/eventlog-speedscope.js purs.eventlog.json > profile.json
-# Open at https://www.speedscope.app/ or chrome://tracing
+node debug/eventlog.js purs.eventlog.json              # text report
+node debug/eventlog-chrome-trace.js purs.eventlog.json > profile.json
+# Open profile.json in chrome://tracing
 ```
 
 See `debug/README.md` for details on RTS flags and tools.

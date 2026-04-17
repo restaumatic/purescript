@@ -25,7 +25,7 @@ eventlog2html --json purs.eventlog
 node /path/to/purescript/debug/eventlog.js purs.eventlog.json
 
 # 4b. Flamegraph (Chrome trace format — works in speedscope and chrome://tracing)
-node /path/to/purescript/debug/eventlog-speedscope.js purs.eventlog.json > profile.json
+node /path/to/purescript/debug/eventlog-chrome-trace.js purs.eventlog.json > profile.json
 # Open profile.json at https://www.speedscope.app/ or chrome://tracing
 ```
 
@@ -54,10 +54,10 @@ Prints per-module timing (sorted ascending), concurrency stats, and
 a per-declaration breakdown showing the top 50 slowest declarations
 with module name, declaration kind, wall-clock time, and percentage.
 
-### `eventlog-speedscope.js` — flamegraph
+### `eventlog-chrome-trace.js` — flamegraph
 
 ```
-node debug/eventlog-speedscope.js purs.eventlog.json > profile.json
+node debug/eventlog-chrome-trace.js purs.eventlog.json > profile.json
 ```
 
 Outputs Chrome trace format JSON. Open in:

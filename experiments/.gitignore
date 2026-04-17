@@ -1,0 +1,4 @@
+# Profile traces are large (100-150MB) — don't commit them.
+# Upload to the PR as attachments instead.
+*-profile-before.json
+*-profile-after.json

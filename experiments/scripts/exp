@@ -51,6 +51,15 @@ exp — experiment lifecycle driver
   exp report [<id>]
       Print the results table for <id>, or the top-level index if omitted.
 
+  exp profile <id> --phase before|after [--skip-build]
+      Generate a chrome-trace profile for the experiment.
+      --phase before   profile the baseline binary
+      --phase after    profile the experiment's worktree binary
+      --skip-build     don't stack build first (after phase only)
+      Output: experiments/<id>/<id>-profile-{before,after}.json
+      The profile is a full -N1 eventlog build of pr-admin, converted
+      to Chrome trace format. Open in chrome://tracing.
+
   exp close <id> --verdict win|partial|no-win|abandoned
       Set EXPERIMENT.md frontmatter to closed status and prompt for a
       LESSONS.md entry.
@@ -413,6 +422,103 @@ EOF
 }
 
 ################################################################################
+# exp profile
+################################################################################
+
+cmd_profile() {
+    local ID="${1:-}"
+    [[ -n "$ID" ]] || error "exp profile <id> required"
+    shift
+
+    local PHASE=""
+    local SKIP_BUILD=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --phase) PHASE="$2"; shift 2;;
+            --skip-build) SKIP_BUILD="1"; shift;;
+            *) error "unknown option: $1";;
+        esac
+    done
+    [[ "$PHASE" == "before" || "$PHASE" == "after" ]] || error "--phase before|after required"
+
+    local EXP_DIR="$EXPERIMENTS_DIR/$ID"
+    local EXP_FILE="$EXP_DIR/EXPERIMENT.md"
+    [[ -f "$EXP_FILE" ]] || error "no EXPERIMENT.md at $EXP_FILE"
+
+    local WORKTREE BASELINE_SHA PURS_BIN
+    WORKTREE=$(fm_get "$EXP_FILE" "worktree")
+    BASELINE_SHA=$(fm_get "$EXP_FILE" "baseline_sha")
+
+    if [[ "$PHASE" == "before" ]]; then
+        # Use the baseline binary
+        PURS_BIN="$BASELINES_DIR/$BASELINE_SHA/purs"
+        [[ -x "$PURS_BIN" ]] || error "baseline binary not found: $PURS_BIN
+  run: exp build-baseline $BASELINE_SHA"
+        log "profiling baseline ($BASELINE_SHA)"
+    else
+        # Build and use the experiment binary
+        if [[ -z "$SKIP_BUILD" ]]; then
+            log "building purs in worktree $WORKTREE"
+            (cd "$WORKTREE" && stack build --system-ghc)
+        fi
+        PURS_BIN=$(cd "$WORKTREE" && stack path --local-install-root)/bin/purs
+        [[ -x "$PURS_BIN" ]] || error "head binary not found: $PURS_BIN"
+        log "profiling head ($(git -C "$WORKTREE" rev-parse --short HEAD))"
+    fi
+
+    local PR_ADMIN="/workspace/restaumatic/apps/pr-admin"
+    [[ -d "$PR_ADMIN" ]] || error "pr-admin not found at $PR_ADMIN"
+
+    # App-only rebuild with eventlog, single-threaded for clean nesting.
+    # Remove only Restaumatic.* output to skip rebuilding the dependency
+    # tree — makes the trace smaller and profiling faster.
+    if [[ ! -d "$PR_ADMIN/output" ]] || [[ -z "$(ls "$PR_ADMIN/output/" 2>/dev/null)" ]]; then
+        log "output/ empty — doing a full build first to populate deps..."
+        ( set -f; cd "$PR_ADMIN" && "$PURS_BIN" compile $SOURCES 1>/dev/null 2>&1 ) \
+            || error "initial full build failed"
+    fi
+    log "clearing Restaumatic.* modules for app-only rebuild..."
+    find "$PR_ADMIN/output" -maxdepth 1 -name 'Restaumatic.*' -type d -exec rm -rf {} + 2>/dev/null || true
+
+    local SOURCES
+    SOURCES=$(cd "$PR_ADMIN" && spago sources 2>/dev/null | grep -v '^\[' || true)
+    [[ -n "$SOURCES" ]] || error "spago sources returned nothing"
+
+    log "running eventlog build (-N1)..."
+    # Disable glob expansion so spago's **/*.purs globs pass through to purs
+    ( set -f
+      cd "$PR_ADMIN" && "$PURS_BIN" +RTS -l-agu -N1 -RTS compile $SOURCES 1>/dev/null 2>&1
+    ) || error "purs compile failed"
+
+    local EVENTLOG="$PR_ADMIN/purs.eventlog"
+    [[ -f "$EVENTLOG" ]] || error "no eventlog produced at $EVENTLOG"
+    log "eventlog: $(du -h "$EVENTLOG" | cut -f1)"
+
+    # Convert to JSON
+    log "converting eventlog to JSON..."
+    eventlog2html --json "$EVENTLOG" 2>/dev/null \
+        || error "eventlog2html failed — install with: cabal install eventlog2html"
+
+    local EVENTLOG_JSON="$EVENTLOG.json"
+    [[ -f "$EVENTLOG_JSON" ]] || error "eventlog2html produced no JSON"
+
+    # Convert to Chrome trace format
+    local OUT_NAME="${ID}-profile-${PHASE}.json"
+    local OUT_PATH="$EXP_DIR/$OUT_NAME"
+    log "generating chrome trace..."
+    node "$REPO_ROOT/debug/eventlog-chrome-trace.js" "$EVENTLOG_JSON" > "$OUT_PATH" 2>/dev/null
+
+    local SIZE
+    SIZE=$(du -h "$OUT_PATH" | cut -f1)
+    log "profile → $OUT_PATH ($SIZE)"
+
+    # Clean up intermediate files
+    rm -f "$EVENTLOG" "$EVENTLOG_JSON"
+
+    log "open in chrome://tracing or upload to a PR"
+}
+
+################################################################################
 # Dispatch
 ################################################################################
 
@@ -422,6 +528,7 @@ case "$CMD" in
     new)             cmd_new "$@";;
     build-baseline)  cmd_build_baseline "$@";;
     run)             cmd_run "$@";;
+    profile)         cmd_profile "$@";;
     report)          cmd_report "$@";;
     close)           cmd_close "$@";;
     -h|--help|help)  usage;;

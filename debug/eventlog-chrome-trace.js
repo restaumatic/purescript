@@ -3,8 +3,8 @@
 // Usage:
 //   purs +RTS -l-agu -N1 -RTS compile $(spago sources)
 //   eventlog2html --json purs.eventlog
-//   node debug/eventlog-speedscope.js purs.eventlog.json > profile.json
-//   # Open profile.json in https://www.speedscope.app/ or chrome://tracing
+//   node debug/eventlog-chrome-trace.js purs.eventlog.json > profile.json
+//   # Open profile.json in chrome://tracing (or https://www.speedscope.app/)
 //
 // The output contains two levels of nesting:
 //   - Module-level spans (from traceMarkerIO in Make.hs): "ModuleName start/end"
@@ -16,7 +16,7 @@ var fs = require("fs");
 
 var inputFile = process.argv[2];
 if (!inputFile) {
-    console.error("Usage: node eventlog-speedscope.js <purs.eventlog.json> [--top N] [--cap CAP]");
+    console.error("Usage: node eventlog-chrome-trace.js <purs.eventlog.json> [--top N] [--cap CAP]");
     console.error("");
     console.error("Options:");
     console.error("  --top N    Also print top N slowest declarations to stderr (default: 50)");

@@ -21,6 +21,11 @@ exp run <id> [--scenarios all] [--runs 5] [--profile]
     Run baseline + current across the chosen scenarios and append to
     experiments/<id>/results.md.
 
+exp profile <id> --phase before|after [--skip-build]
+    Generate a chrome-trace profile (full -N1 eventlog build of
+    pr-admin). Output: experiments/<id>/<id>-profile-{before,after}.json
+    Open in chrome://tracing. Upload both to the PR for review.
+
 exp report [<id>]
     Print the per-experiment results table, or the global index.
 

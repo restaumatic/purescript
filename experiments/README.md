@@ -15,9 +15,15 @@ known dead end.
 # start a new experiment
 experiments/scripts/exp new <id> [--from <baseline-sha>]
 
+# profile the baseline (before)
+experiments/scripts/exp profile <id> --phase before
+
 # ...hack in /workspace/p/<id>...
 
-# measure
+# profile the result (after)
+experiments/scripts/exp profile <id> --phase after
+
+# measure all scenarios
 experiments/scripts/exp run <id> --scenarios all --runs 5
 
 # close it out
