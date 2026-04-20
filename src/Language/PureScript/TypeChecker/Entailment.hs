@@ -293,6 +293,14 @@ entails SolverOptions{..} constraint context hints =
                 let subst = fmap head substs
                 currentSubst <- lift . lift $ gets checkSubstitution
                 subst' <- lift . lift $ withFreshTypes tcd (fmap (substituteType currentSubst) subst)
+                -- Skip unification when inferredType and t2 are structurally equal:
+                -- identical types always unify with no new bindings, so the call
+                -- is a no-op. For wide row types (e.g. a 667-field record in a
+                -- HasField constraint), unifyTypes dispatches to unifyRows which
+                -- sorts both sides, allocates intermediate RowListItem lists, and
+                -- walks the merge-join — all wasted work. eqType walks the type
+                -- trees in lockstep without allocation and short-circuits on the
+                -- first mismatch.
                 lift . lift $ zipWithM_ (\t1 t2 -> do
                   let inferredType = replaceAllTypeVars (M.toList subst') t1
                   unless (eqType inferredType t2) $
