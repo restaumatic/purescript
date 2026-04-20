@@ -151,9 +151,10 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: "sdist-test"
         run: |
-          if [ $(ldd $(../ci/fix-home stack --haddock --no-haddock-deps path --local-doc-root)/../bin/purs | grep 'libtinfo' | wc -l) -ge 1 ]; then
+          purs_bin=$(../ci/fix-home stack --haddock --no-haddock-deps exec -- which purs)
+          if [ $(ldd "$purs_bin" | grep 'libtinfo' | wc -l) -ge 1 ]; then
             echo "libtinfo detected"
-            ldd $(../ci/fix-home stack --haddock --no-haddock-deps path --local-doc-root)/../bin/purs | grep 'libtinfo'
+            ldd "$purs_bin" | grep 'libtinfo'
             exit 1
           fi
 

@@ -13,7 +13,7 @@
 set -eu -o pipefail
 shopt -s nullglob
 
-PURS="$(stack path --local-doc-root)/../bin/purs"
+PURS="$(command -v purs)"
 
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
