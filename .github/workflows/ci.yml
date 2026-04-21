@@ -128,7 +128,7 @@ jobs:
         # launch `stack exec`. The actual glob checks happen in a temporary directory.
         run: |
           apt-get install -y tree
-          ../ci/fix-home stack exec bash ../glob-test.sh
+          ../ci/fix-home stack --haddock --no-haddock-deps exec bash ../glob-test.sh
 
       - name: "(Linux only) Build the entire package set"
         if: startsWith(matrix.image, 'haskell')
@@ -145,15 +145,16 @@ jobs:
         # We upgrade npm to fix this
         run: |
           apt-get install -y jq
-          ../ci/fix-home stack --haddock exec ../ci/build-package-set.sh
+          ../ci/fix-home stack --haddock --no-haddock-deps exec ../ci/build-package-set.sh
 
       - name: Verify that 'libtinfo' isn't in binary
         if: runner.os == 'Linux'
         working-directory: "sdist-test"
         run: |
-          if [ $(ldd $(../ci/fix-home stack path --local-doc-root)/../bin/purs | grep 'libtinfo' | wc -l) -ge 1 ]; then
+          purs_bin=$(../ci/fix-home stack --haddock --no-haddock-deps exec -- which purs)
+          if [ $(ldd "$purs_bin" | grep 'libtinfo' | wc -l) -ge 1 ]; then
             echo "libtinfo detected"
-            ldd $(../ci/fix-home stack path --local-doc-root)/../bin/purs | grep 'libtinfo'
+            ldd "$purs_bin" | grep 'libtinfo'
             exit 1
           fi
 
