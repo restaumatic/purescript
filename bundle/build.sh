@@ -26,7 +26,7 @@ then
 else
   BIN="purs"
 fi
-FULL_BIN="$(stack path --local-doc-root)/../bin/$BIN"
+FULL_BIN="$(stack --haddock --no-haddock-deps path --local-doc-root)/../bin/$BIN"
 if [ "$OS" != "win64" ]
 then
   strip "$FULL_BIN"
