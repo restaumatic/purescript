@@ -10,6 +10,7 @@ module Language.PureScript.TypeChecker.Skolems
 
 import Prelude
 
+import Control.Exception (assert)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets, modify)
 import Data.Foldable (traverse_)
@@ -21,7 +22,7 @@ import Language.PureScript.Crash (internalError)
 import Language.PureScript.Errors (ErrorMessage(..), MultipleErrors, SimpleErrorMessage(..), positionedError, singleError)
 import Language.PureScript.Traversals (defS)
 import Language.PureScript.TypeChecker.Monad (CheckState(..))
-import Language.PureScript.Types (SkolemScope(..), SourceType, Type(..), everythingOnTypes, everywhereOnTypesM, replaceTypeVars)
+import Language.PureScript.Types (SkolemScope(..), SourceType, Type(..), everythingOnTypes, everywhereOnTypesM, hasFlag, replaceTypeVars, tfHasUnscopedForAlls, typeFlags)
 
 -- | Generate a new skolem constant
 newSkolemConstant :: MonadState CheckState m => m Int
@@ -30,12 +31,26 @@ newSkolemConstant = do
   modify $ \st -> st { checkNextSkolem = s + 1 }
   return s
 
--- | Introduce skolem scope at every occurrence of a ForAll
+-- | Introduce skolem scope at every occurrence of a ForAll.
+-- Short-circuits if the type has no unscoped ForAlls.
 introduceSkolemScope :: MonadState CheckState m => Type a -> m (Type a)
-introduceSkolemScope = everywhereOnTypesM go
+introduceSkolemScope ty
+  -- Sanity check in debug builds: the flag says no unscoped ForAlls exist,
+  -- so a scan should agree. 'assert' is compiled away with -O.
+  | not (hasFlag tfHasUnscopedForAlls (typeFlags ty)) =
+      return $! assert (not (containsUnscopedForAlls ty)) ty
+  | otherwise = everywhereOnTypesM go ty
   where
-  go (ForAll ann vis ident mbK ty Nothing) = ForAll ann vis ident mbK ty <$> (Just <$> newSkolemScope)
+  go (ForAll ann vis ident mbK t Nothing) = ForAll ann vis ident mbK t <$> (Just <$> newSkolemScope)
   go other = return other
+
+-- | Scan a type for ForAll nodes missing a SkolemScope.
+-- Used as a correctness check for the 'tfHasUnscopedForAlls' flag.
+containsUnscopedForAlls :: Type a -> Bool
+containsUnscopedForAlls = everythingOnTypes (||) isUnscoped
+  where
+    isUnscoped (ForAll _ _ _ _ _ Nothing) = True
+    isUnscoped _ = False
 
 -- | Generate a new skolem scope
 newSkolemScope :: MonadState CheckState m => m SkolemScope

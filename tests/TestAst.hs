@@ -12,7 +12,7 @@ import Test.QuickCheck (Arbitrary(..), Gen, Property, Testable, counterexample, 
 import Language.PureScript.Label (Label(..))
 import Language.PureScript.Names (pattern ByNullSourcePos, OpName(..), OpNameType(..), ProperName(..), ProperNameType(..), Qualified(..))
 import Language.PureScript.PSString (PSString)
-import Language.PureScript.Types (Constraint, ConstraintData, SkolemScope(..), Type(..), TypeVarVisibility(..), WildcardData, annForType, everythingOnTypes, everythingWithContextOnTypes, everywhereOnTypes, everywhereOnTypesM, everywhereOnTypesTopDownM, getAnnForType)
+import Language.PureScript.Types (Constraint, ConstraintData, SkolemScope(..), Type(..), TypeFlags(..), TypeVarVisibility(..), WildcardData, annForType, everythingOnTypes, everythingWithContextOnTypes, everywhereOnTypes, everywhereOnTypesM, everywhereOnTypesTopDownM, getAnnForType)
 
 spec :: Spec
 spec = do
@@ -66,6 +66,7 @@ genTypeAnnotatedWith genTypeAnn genConstraintAnn = genType where
     :+ maybeOf genType
     :+ genWildcardData
     :+ genVisibility
+    :+ genTypeFlags
 
   genConstraint :: Gen (Constraint a)
   genConstraint = genericArbitraryUG (genConstraintAnn :+ generatorEnvironment)
@@ -75,6 +76,9 @@ genTypeAnnotatedWith genTypeAnn genConstraintAnn = genType where
 
   genQualified :: forall b. (Text -> b) -> Gen (Qualified b)
   genQualified ctor = Qualified ByNullSourcePos . ctor <$> genText
+
+  genTypeFlags :: Gen TypeFlags
+  genTypeFlags = TypeFlags <$> arbitrary
 
   genSkolemScope :: Gen SkolemScope
   genSkolemScope = SkolemScope <$> arbitrary

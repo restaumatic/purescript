@@ -1,7 +1,10 @@
 -- |
 -- Data types for types
 --
-module Language.PureScript.Types where
+module Language.PureScript.Types
+  ( module Language.PureScript.Types
+  , Type(TUnknown, TypeVar, TypeLevelString, TypeLevelInt, TypeWildcard, TypeConstructor, TypeOp, TypeApp, KindApp, ForAll, ConstrainedType, Skolem, REmpty, RCons, KindedType, BinaryNoParensType, ParensInType)
+  ) where
 
 import Prelude
 import Protolude (ordNub, fromMaybe)
@@ -15,12 +18,14 @@ import Control.Monad ((<=<), (>=>))
 import Data.Aeson ((.:), (.:?), (.!=), (.=))
 import Data.Aeson qualified as A
 import Data.Aeson.Types qualified as A
+import Data.Bits ((.&.), (.|.))
 import Data.Foldable (fold, foldl')
 import Data.IntSet qualified as IS
 import Data.List (sortOn)
 import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Word (Word8)
 import GHC.Generics (Generic)
 
 import Language.PureScript.AST.SourcePos (pattern NullSourceAnn, SourceAnn, SourceSpan)
@@ -66,54 +71,215 @@ typeVarVisibilityPrefix = \case
   TypeVarVisible -> "@"
   TypeVarInvisible -> mempty
 
--- |
--- The type of types
+-- ---------------------------------------------------------------------------
+-- Type flags: cached structural properties of a type subtree
+-- ---------------------------------------------------------------------------
+
+-- | Cached information about what a type subtree contains. Stored per-node
+-- so that traversals can short-circuit when a subtree is known to not
+-- contain the nodes they are looking for.
+newtype TypeFlags = TypeFlags Word8
+  deriving (Show, Eq, Ord, Generic)
+
+instance NFData TypeFlags
+instance Serialise TypeFlags
+
+-- | No flags set.
+noFlags :: TypeFlags
+noFlags = TypeFlags 0
+
+-- | Subtree contains a 'TypeWildcard'.
+tfHasWildcards :: TypeFlags
+tfHasWildcards = TypeFlags 0x01
+
+-- | Subtree contains a 'ForAll' without a 'SkolemScope'.
+tfHasUnscopedForAlls :: TypeFlags
+tfHasUnscopedForAlls = TypeFlags 0x02
+
+-- | Subtree has been fully synonym-expanded by 'replaceAllTypeSynonyms'.
+tfSynonymsFree :: TypeFlags
+tfSynonymsFree = TypeFlags 0x04
+
+-- | Combine flags from child subtrees. Only structural flags
+-- ('tfHasWildcards', 'tfHasUnscopedForAlls') propagate; the processing flag
+-- 'tfSynonymsFree' is always cleared.
 --
+-- Why clear 'tfSynonymsFree'? Constructing a new type from synonym-free
+-- children can still create a new synonym application at the parent, even
+-- when both children are themselves synonym-free. Example:
+--
+-- @
+--   Before substitution: TypeApp (TUnknown u) someArg    -- no synonyms
+--   Substitution:        u -> TypeConstructor SomeAlias  -- standalone, fine
+--   After substitution:  TypeApp (TypeConstructor SomeAlias) someArg
+--                        -- now a fully-applied synonym that needs expansion!
+-- @
+--
+-- In PureScript the convention is to expand synonyms before unification, so
+-- the substitution /values/ are synonym-free in isolation. But when a
+-- 'TUnknown' in function position is substituted with a synonym constructor,
+-- the /resulting/ parent @TypeApp@ is a synonym application that must be
+-- expanded. We can't detect this from the children's flags alone without
+-- inspecting the spine, so we conservatively clear the flag and let
+-- 'replaceAllTypeSynonyms' re-scan when asked.
+combineFlags :: TypeFlags -> TypeFlags -> TypeFlags
+combineFlags (TypeFlags a) (TypeFlags b) = TypeFlags ((a .|. b) .&. structuralMask)
+
+-- | Mask of flags that propagate structurally from children to parents.
+-- Processing flags (like 'tfSynonymsFree') are excluded — see 'combineFlags'.
+structuralMask :: Word8
+structuralMask = w .|. w' where
+  TypeFlags w  = tfHasWildcards
+  TypeFlags w' = tfHasUnscopedForAlls
+
+-- | Test whether a specific flag is set.
+hasFlag :: TypeFlags -> TypeFlags -> Bool
+hasFlag (TypeFlags mask) (TypeFlags w) = w .&. mask /= 0
+
+-- | Set a flag.
+setFlag :: TypeFlags -> TypeFlags -> TypeFlags
+setFlag (TypeFlags f) (TypeFlags w) = TypeFlags (w .|. f)
+
+-- | Extract the flags from a Type node.
+typeFlags :: Type a -> TypeFlags
+typeFlags (TUnknown_ f _ _) = f
+typeFlags (TypeVar_ f _ _) = f
+typeFlags (TypeLevelString_ f _ _) = f
+typeFlags (TypeLevelInt_ f _ _) = f
+typeFlags (TypeWildcard_ f _ _) = f
+typeFlags (TypeConstructor_ f _ _) = f
+typeFlags (TypeOp_ f _ _) = f
+typeFlags (TypeApp_ f _ _ _) = f
+typeFlags (KindApp_ f _ _ _) = f
+typeFlags (ForAll_ f _ _ _ _ _ _) = f
+typeFlags (ConstrainedType_ f _ _ _) = f
+typeFlags (Skolem_ f _ _ _ _ _) = f
+typeFlags (REmpty_ f _) = f
+typeFlags (RCons_ f _ _ _ _) = f
+typeFlags (KindedType_ f _ _ _) = f
+typeFlags (BinaryNoParensType_ f _ _ _ _) = f
+typeFlags (ParensInType_ f _ _) = f
+
+-- | Mask to extract only structural flags (clearing processing flags).
+maskStructural :: TypeFlags -> TypeFlags
+maskStructural (TypeFlags w) = TypeFlags (w .&. structuralMask)
+
+-- | Compute ForAll flags from its components.
+forAllNodeFlags :: Maybe (Type a) -> Type a -> Maybe SkolemScope -> TypeFlags
+forAllNodeFlags mbK ty Nothing = maybe noFlags (maskStructural . typeFlags) mbK `combineFlags` maskStructural (typeFlags ty) `combineFlags` tfHasUnscopedForAlls
+forAllNodeFlags mbK ty (Just _) = maybe noFlags (maskStructural . typeFlags) mbK `combineFlags` maskStructural (typeFlags ty)
+
+-- | Compute ConstrainedType flags from its components.
+constraintNodeFlags :: Constraint a -> Type a -> TypeFlags
+constraintNodeFlags c ty = foldl' combineFlags (maskStructural (typeFlags ty)) (map (maskStructural . typeFlags) (constraintKindArgs c) ++ map (maskStructural . typeFlags) (constraintArgs c))
+
+-- | Compute Skolem flags from its components.
+skolemNodeFlags :: Maybe (Type a) -> TypeFlags
+skolemNodeFlags = maybe noFlags (maskStructural . typeFlags)
+
+-- ---------------------------------------------------------------------------
+-- The type of types
+-- ---------------------------------------------------------------------------
+
+-- | The type of types. The actual constructors have a @_@ suffix and carry
+-- a 'TypeFlags' field. Use the pattern synonyms (without suffix) which
+-- auto-compute flags on construction and ignore them on matching.
 data Type a
-  -- | A unification variable of type Type
-  = TUnknown a Int
-  -- | A named type variable
-  | TypeVar a Text
-  -- | A type-level string
-  | TypeLevelString a PSString
-  -- | A type-level natural
-  | TypeLevelInt a Integer
-  -- | A type wildcard, as would appear in a partial type synonym
-  | TypeWildcard a WildcardData
-  -- | A type constructor
-  | TypeConstructor a (Qualified (ProperName 'TypeName))
-  -- | A type operator. This will be desugared into a type constructor during the
-  -- "operators" phase of desugaring.
-  | TypeOp a (Qualified (OpName 'TypeOpName))
-  -- | A type application
-  | TypeApp a (Type a) (Type a)
-  -- | Explicit kind application
-  | KindApp a (Type a) (Type a)
-  -- | Forall quantifier
-  | ForAll a TypeVarVisibility Text (Maybe (Type a)) (Type a) (Maybe SkolemScope)
-  -- | A type with a set of type class constraints
-  | ConstrainedType a (Constraint a) (Type a)
-  -- | A skolem constant
-  | Skolem a Text (Maybe (Type a)) Int SkolemScope
-  -- | An empty row
-  | REmpty a
-  -- | A non-empty row
-  | RCons a Label (Type a) (Type a)
-  -- | A type with a kind annotation
-  | KindedType a (Type a) (Type a)
-  -- | Binary operator application. During the rebracketing phase of desugaring,
-  -- this data constructor will be removed.
-  | BinaryNoParensType a (Type a) (Type a) (Type a)
-  -- | Explicit parentheses. During the rebracketing phase of desugaring, this
-  -- data constructor will be removed.
-  --
-  -- Note: although it seems this constructor is not used, it _is_ useful,
-  -- since it prevents certain traversals from matching.
-  | ParensInType a (Type a)
+  = TUnknown_ !TypeFlags a Int
+  | TypeVar_ !TypeFlags a Text
+  | TypeLevelString_ !TypeFlags a PSString
+  | TypeLevelInt_ !TypeFlags a Integer
+  | TypeWildcard_ !TypeFlags a WildcardData
+  | TypeConstructor_ !TypeFlags a (Qualified (ProperName 'TypeName))
+  | TypeOp_ !TypeFlags a (Qualified (OpName 'TypeOpName))
+  | TypeApp_ !TypeFlags a (Type a) (Type a)
+  | KindApp_ !TypeFlags a (Type a) (Type a)
+  | ForAll_ !TypeFlags a TypeVarVisibility Text (Maybe (Type a)) (Type a) (Maybe SkolemScope)
+  | ConstrainedType_ !TypeFlags a (Constraint a) (Type a)
+  | Skolem_ !TypeFlags a Text (Maybe (Type a)) Int SkolemScope
+  | REmpty_ !TypeFlags a
+  | RCons_ !TypeFlags a Label (Type a) (Type a)
+  | KindedType_ !TypeFlags a (Type a) (Type a)
+  | BinaryNoParensType_ !TypeFlags a (Type a) (Type a) (Type a)
+  | ParensInType_ !TypeFlags a (Type a)
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
 instance NFData a => NFData (Type a)
 instance Serialise a => Serialise (Type a)
+
+-- ---------------------------------------------------------------------------
+-- Pattern synonyms: auto-compute flags on construction, ignore on match
+-- ---------------------------------------------------------------------------
+
+pattern TUnknown :: a -> Int -> Type a
+pattern TUnknown a i <- TUnknown_ _ a i
+  where TUnknown a i = TUnknown_ noFlags a i
+
+pattern TypeVar :: a -> Text -> Type a
+pattern TypeVar a t <- TypeVar_ _ a t
+  where TypeVar a t = TypeVar_ noFlags a t
+
+pattern TypeLevelString :: a -> PSString -> Type a
+pattern TypeLevelString a s <- TypeLevelString_ _ a s
+  where TypeLevelString a s = TypeLevelString_ noFlags a s
+
+pattern TypeLevelInt :: a -> Integer -> Type a
+pattern TypeLevelInt a n <- TypeLevelInt_ _ a n
+  where TypeLevelInt a n = TypeLevelInt_ noFlags a n
+
+pattern TypeWildcard :: a -> WildcardData -> Type a
+pattern TypeWildcard a w <- TypeWildcard_ _ a w
+  where TypeWildcard a w = TypeWildcard_ tfHasWildcards a w
+
+pattern TypeConstructor :: a -> Qualified (ProperName 'TypeName) -> Type a
+pattern TypeConstructor a q <- TypeConstructor_ _ a q
+  where TypeConstructor a q = TypeConstructor_ noFlags a q
+
+pattern TypeOp :: a -> Qualified (OpName 'TypeOpName) -> Type a
+pattern TypeOp a q <- TypeOp_ _ a q
+  where TypeOp a q = TypeOp_ noFlags a q
+
+pattern TypeApp :: a -> Type a -> Type a -> Type a
+pattern TypeApp a t1 t2 <- TypeApp_ _ a t1 t2
+  where TypeApp a t1 t2 = TypeApp_ (typeFlags t1 `combineFlags` typeFlags t2) a t1 t2
+
+pattern KindApp :: a -> Type a -> Type a -> Type a
+pattern KindApp a t1 t2 <- KindApp_ _ a t1 t2
+  where KindApp a t1 t2 = KindApp_ (typeFlags t1 `combineFlags` typeFlags t2) a t1 t2
+
+pattern ForAll :: a -> TypeVarVisibility -> Text -> Maybe (Type a) -> Type a -> Maybe SkolemScope -> Type a
+pattern ForAll a vis ident mbK ty sco <- ForAll_ _ a vis ident mbK ty sco
+  where ForAll a vis ident mbK ty sco = ForAll_ (forAllNodeFlags mbK ty sco) a vis ident mbK ty sco
+
+pattern ConstrainedType :: a -> Constraint a -> Type a -> Type a
+pattern ConstrainedType a c ty <- ConstrainedType_ _ a c ty
+  where ConstrainedType a c ty = ConstrainedType_ (constraintNodeFlags c ty) a c ty
+
+pattern Skolem :: a -> Text -> Maybe (Type a) -> Int -> SkolemScope -> Type a
+pattern Skolem a t mbK i s <- Skolem_ _ a t mbK i s
+  where Skolem a t mbK i s = Skolem_ (skolemNodeFlags mbK) a t mbK i s
+
+pattern REmpty :: a -> Type a
+pattern REmpty a <- REmpty_ _ a
+  where REmpty a = REmpty_ noFlags a
+
+pattern RCons :: a -> Label -> Type a -> Type a -> Type a
+pattern RCons a l ty rest <- RCons_ _ a l ty rest
+  where RCons a l ty rest = RCons_ (typeFlags ty `combineFlags` typeFlags rest) a l ty rest
+
+pattern KindedType :: a -> Type a -> Type a -> Type a
+pattern KindedType a ty k <- KindedType_ _ a ty k
+  where KindedType a ty k = KindedType_ (typeFlags ty `combineFlags` typeFlags k) a ty k
+
+pattern BinaryNoParensType :: a -> Type a -> Type a -> Type a -> Type a
+pattern BinaryNoParensType a t1 t2 t3 <- BinaryNoParensType_ _ a t1 t2 t3
+  where BinaryNoParensType a t1 t2 t3 = BinaryNoParensType_ (typeFlags t1 `combineFlags` typeFlags t2 `combineFlags` typeFlags t3) a t1 t2 t3
+
+pattern ParensInType :: a -> Type a -> Type a
+pattern ParensInType a t <- ParensInType_ _ a t
+  where ParensInType a t = ParensInType_ (maskStructural (typeFlags t)) a t
+
+{-# COMPLETE TUnknown, TypeVar, TypeLevelString, TypeLevelInt, TypeWildcard, TypeConstructor, TypeOp, TypeApp, KindApp, ForAll, ConstrainedType, Skolem, REmpty, RCons, KindedType, BinaryNoParensType, ParensInType #-}
 
 srcTUnknown :: Int -> SourceType
 srcTUnknown = TUnknown NullSourceAnn
@@ -763,24 +929,25 @@ everythingWithContextOnTypes s0 r0 (<+>) f = go' s0 where
   go _ _ = r0
 {-# INLINE everythingWithContextOnTypes #-}
 
+-- | Lens to access the annotation. Uses raw constructors to preserve flags.
 annForType :: Lens' (Type a) a
-annForType k (TUnknown a b) = (\z -> TUnknown z b) <$> k a
-annForType k (TypeVar a b) = (\z -> TypeVar z b) <$> k a
-annForType k (TypeLevelString a b) = (\z -> TypeLevelString z b) <$> k a
-annForType k (TypeLevelInt a b) = (\z -> TypeLevelInt z b) <$> k a
-annForType k (TypeWildcard a b) = (\z -> TypeWildcard z b) <$> k a
-annForType k (TypeConstructor a b) = (\z -> TypeConstructor z b) <$> k a
-annForType k (TypeOp a b) = (\z -> TypeOp z b) <$> k a
-annForType k (TypeApp a b c) = (\z -> TypeApp z b c) <$> k a
-annForType k (KindApp a b c) = (\z -> KindApp z b c) <$> k a
-annForType k (ForAll a b c d e f) = (\z -> ForAll z b c d e f) <$> k a
-annForType k (ConstrainedType a b c) = (\z -> ConstrainedType z b c) <$> k a
-annForType k (Skolem a b c d e) = (\z -> Skolem z b c d e) <$> k a
-annForType k (REmpty a) = REmpty <$> k a
-annForType k (RCons a b c d) = (\z -> RCons z b c d) <$> k a
-annForType k (KindedType a b c) = (\z -> KindedType z b c) <$> k a
-annForType k (BinaryNoParensType a b c d) = (\z -> BinaryNoParensType z b c d) <$> k a
-annForType k (ParensInType a b) = (\z -> ParensInType z b) <$> k a
+annForType k (TUnknown_ f a b) = (\z -> TUnknown_ f z b) <$> k a
+annForType k (TypeVar_ f a b) = (\z -> TypeVar_ f z b) <$> k a
+annForType k (TypeLevelString_ f a b) = (\z -> TypeLevelString_ f z b) <$> k a
+annForType k (TypeLevelInt_ f a b) = (\z -> TypeLevelInt_ f z b) <$> k a
+annForType k (TypeWildcard_ f a b) = (\z -> TypeWildcard_ f z b) <$> k a
+annForType k (TypeConstructor_ f a b) = (\z -> TypeConstructor_ f z b) <$> k a
+annForType k (TypeOp_ f a b) = (\z -> TypeOp_ f z b) <$> k a
+annForType k (TypeApp_ f a b c) = (\z -> TypeApp_ f z b c) <$> k a
+annForType k (KindApp_ f a b c) = (\z -> KindApp_ f z b c) <$> k a
+annForType k (ForAll_ f a b c d e g) = (\z -> ForAll_ f z b c d e g) <$> k a
+annForType k (ConstrainedType_ f a b c) = (\z -> ConstrainedType_ f z b c) <$> k a
+annForType k (Skolem_ f a b c d e) = (\z -> Skolem_ f z b c d e) <$> k a
+annForType k (REmpty_ f a) = (\z -> REmpty_ f z) <$> k a
+annForType k (RCons_ f a b c d) = (\z -> RCons_ f z b c d) <$> k a
+annForType k (KindedType_ f a b c) = (\z -> KindedType_ f z b c) <$> k a
+annForType k (BinaryNoParensType_ f a b c d) = (\z -> BinaryNoParensType_ f z b c d) <$> k a
+annForType k (ParensInType_ f a b) = (\z -> ParensInType_ f z b) <$> k a
 
 getAnnForType :: Type a -> a
 getAnnForType = (^. annForType)
