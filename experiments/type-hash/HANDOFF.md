@@ -4,12 +4,14 @@
 
 **Win, ready to ship.** Step 3 (HashSet for `unificationCache`)
 delivers **-15.4% on full builds** of pr-admin against baseline
-`799e8208`, neutral on the three incremental scenarios. Two
+`799e8208`, neutral on the three incremental scenarios. Three
 commits on the `type-hash` branch:
 
 - `c4001ef4` — step 1, extend TypeFlags with hash (foundation)
 - `0c4c614e` — step 3, HashSet for unificationCache + INLINE on
   Hashable Type (the headline win)
+- `43f6b613` — post-review cleanup: hide underscore constructors,
+  add `modifyFlags`, uniform `hashWithSalt` chains, drop dead helpers
 
 Step 2 (hash short-circuit `eqType`) was tried and reverted; it was
 a small net loss because the hot eqType callers compare equal types.
@@ -64,6 +66,33 @@ each hash call and HashSet measures **worse** than Set (+102% on full).
 With INLINE, GHC specializes the instance for `Type SourceAnn` and the
 chain `hashWithSalt → typeHash → field read` collapses to direct memory
 access.
+
+## Post-review cleanup (commit `43f6b613`)
+
+After review, two judgement calls came back as "do both":
+
+1. **Uniform `hashWithSalt` chains.** The node-flag helpers (rconsNodeFlags,
+   binaryNodeFlags, ternaryNodeFlags, unaryNodeFlags, constraintNodeFlags)
+   used a custom `mixHash` (multiply-add with golden-ratio constant)
+   intermixed with `hashWithSalt`. Switched everything to uniform
+   `hashWithSalt` chains. `hashWithSalt` is `infixl 0` so chains read
+   left-to-right without parens. Slight hash-distribution change but
+   negligible for our use.
+2. **Hide the underscore constructors.** Replaced the
+   `module Language.PureScript.Types` self-export with an explicit list
+   that excludes the `_`-suffixed data constructors. Combined with a
+   new `modifyFlags :: (TypeFlags -> TypeFlags) -> Type a -> Type a`
+   helper, this makes wrong-hash construction structurally impossible
+   instead of relying on convention. Synonyms.hs (the only external
+   user that touched the underscore form) was refactored to use
+   pattern synonyms + `modifyFlags`. GHC's case-of-known-constructor
+   fuses pattern-synonym builder + `modifyFlags` (both INLINE) into
+   the same single allocation the explicit form had.
+
+`stack test --fast` still passes. Re-measurement on full was disturbed
+by concurrent profiling on the host (baseline range 64.4–68.4 s vs
+typical ~57 s); head was tight at 50.5 s (49429-50884 ms), consistent
+with the prior -15.4% measurement against a clean ~57 s baseline.
 
 ## Open follow-ups
 
