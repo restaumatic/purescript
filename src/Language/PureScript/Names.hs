@@ -12,6 +12,7 @@ import Control.Applicative ((<|>))
 import Control.Monad.Supply.Class (MonadSupply(..))
 import Control.DeepSeq (NFData)
 import Data.Functor.Contravariant (contramap)
+import Data.Hashable (Hashable(..))
 import Data.Vector qualified as V
 
 import GHC.Generics (Generic)
@@ -36,6 +37,7 @@ data Name
 
 instance NFData Name
 instance Serialise Name
+instance Hashable Name
 
 getIdentName :: Name -> Maybe Ident
 getIdentName (IdentName name) = Just name
@@ -75,6 +77,7 @@ data InternalIdentData
 
 instance NFData InternalIdentData
 instance Serialise InternalIdentData
+instance Hashable InternalIdentData
 
 -- |
 -- Names for value identifiers
@@ -100,6 +103,7 @@ data Ident
 
 instance NFData Ident
 instance Serialise Ident
+instance Hashable Ident
 
 unusedIdent :: Text
 unusedIdent = "$__unused"
@@ -132,6 +136,8 @@ newtype OpName (a :: OpNameType) = OpName { runOpName :: Text }
 
 instance NFData (OpName a)
 instance Serialise (OpName a)
+instance Hashable (OpName a) where
+  hashWithSalt s (OpName t) = hashWithSalt s t
 
 instance ToJSON (OpName a) where
   toJSON = toJSON . runOpName
@@ -161,6 +167,8 @@ newtype ProperName (a :: ProperNameType) = ProperName { runProperName :: Text }
 
 instance NFData (ProperName a)
 instance Serialise (ProperName a)
+instance Hashable (ProperName a) where
+  hashWithSalt s (ProperName t) = hashWithSalt s t
 
 instance ToJSON (ProperName a) where
   toJSON = toJSON . runProperName
@@ -193,6 +201,8 @@ newtype ModuleName = ModuleName Text
   deriving newtype Serialise
 
 instance NFData ModuleName
+instance Hashable ModuleName where
+  hashWithSalt s (ModuleName t) = hashWithSalt s t
 
 runModuleName :: ModuleName -> Text
 runModuleName (ModuleName name) = name
@@ -213,6 +223,7 @@ pattern ByNullSourcePos = BySourcePos (SourcePos 0 0)
 
 instance NFData QualifiedBy
 instance Serialise QualifiedBy
+instance Hashable QualifiedBy
 
 isBySourcePos :: QualifiedBy -> Bool
 isBySourcePos (BySourcePos _) = True
@@ -234,6 +245,7 @@ data Qualified a = Qualified QualifiedBy a
 
 instance NFData a => NFData (Qualified a)
 instance Serialise a => Serialise (Qualified a)
+instance Hashable a => Hashable (Qualified a)
 
 showQualified :: (a -> Text) -> Qualified a -> Text
 showQualified f (Qualified (BySourcePos  _) a) = f a

@@ -22,9 +22,11 @@ import Language.PureScript.Names (ProperName, ProperNameType(..), Qualified)
 import Language.PureScript.TypeChecker.Monad (getEnv, TypeCheckM)
 import Language.PureScript.Types
   ( SourceType, Type(..), TypeFlags
-  , combineFlags, completeBinderList, constraintNodeFlags, everythingOnTypes, forAllNodeFlags
-  , getAnnForType, hasFlag, overConstraintArgsAll, replaceAllTypeVars
-  , setFlag, skolemNodeFlags, tfSynonymsFree, typeFlags
+  , binaryNodeFlags, completeBinderList, constraintNodeFlags, ctorSalt_BinaryNoParensType, ctorSalt_KindApp, ctorSalt_KindedType, ctorSalt_TypeApp
+  , everythingOnTypes, forAllNodeFlags
+  , getAnnForType, hasFlag, overConstraintArgsAll, rconsNodeFlags, replaceAllTypeVars
+  , setFlag, skolemNodeFlags, ternaryNodeFlags, tfSynonymsFree, typeFlags
+  , unaryNodeFlags, ctorSalt_ParensInType
   )
 
 -- | Type synonym information (arguments with kinds, aliased type), indexed by name
@@ -106,31 +108,31 @@ replaceAllTypeSynonyms' syns kinds
   walkChildren :: SourceType -> Either MultipleErrors SourceType
   walkChildren (TypeApp_ _ ann t1 t2) = do
     t1' <- walk t1; t2' <- walk t2
-    return $! TypeApp_ (sf (typeFlags t1' `combineFlags` typeFlags t2')) ann t1' t2'
+    return $! TypeApp_ (sf (binaryNodeFlags ctorSalt_TypeApp t1' t2')) ann t1' t2'
   walkChildren (KindApp_ _ ann t1 t2) = do
     t1' <- walk t1; t2' <- walk t2
-    return $! KindApp_ (sf (typeFlags t1' `combineFlags` typeFlags t2')) ann t1' t2'
+    return $! KindApp_ (sf (binaryNodeFlags ctorSalt_KindApp t1' t2')) ann t1' t2'
   walkChildren (ForAll_ _ ann vis ident mbK ty sco) = do
     mbK' <- traverse walk mbK; ty' <- walk ty
-    return $! ForAll_ (sf (forAllNodeFlags mbK' ty' sco)) ann vis ident mbK' ty' sco
+    return $! ForAll_ (sf (forAllNodeFlags vis ident mbK' ty' sco)) ann vis ident mbK' ty' sco
   walkChildren (ConstrainedType_ _ ann c ty) = do
     c' <- overConstraintArgsAll (mapM walk) c; ty' <- walk ty
     return $! ConstrainedType_ (sf (constraintNodeFlags c' ty')) ann c' ty'
   walkChildren (Skolem_ _ ann name mbK i sc) = do
     mbK' <- traverse walk mbK
-    return $! Skolem_ (sf (skolemNodeFlags mbK')) ann name mbK' i sc
+    return $! Skolem_ (sf (skolemNodeFlags name mbK' i sc)) ann name mbK' i sc
   walkChildren (RCons_ _ ann name ty rest) = do
     ty' <- walk ty; rest' <- walk rest
-    return $! RCons_ (sf (typeFlags ty' `combineFlags` typeFlags rest')) ann name ty' rest'
+    return $! RCons_ (sf (rconsNodeFlags name ty' rest')) ann name ty' rest'
   walkChildren (KindedType_ _ ann ty k) = do
     ty' <- walk ty; k' <- walk k
-    return $! KindedType_ (sf (typeFlags ty' `combineFlags` typeFlags k')) ann ty' k'
+    return $! KindedType_ (sf (binaryNodeFlags ctorSalt_KindedType ty' k')) ann ty' k'
   walkChildren (BinaryNoParensType_ _ ann t1 t2 t3) = do
     t1' <- walk t1; t2' <- walk t2; t3' <- walk t3
-    return $! BinaryNoParensType_ (sf (typeFlags t1' `combineFlags` typeFlags t2' `combineFlags` typeFlags t3')) ann t1' t2' t3'
+    return $! BinaryNoParensType_ (sf (ternaryNodeFlags ctorSalt_BinaryNoParensType t1' t2' t3')) ann t1' t2' t3'
   walkChildren (ParensInType_ _ ann t) = do
     t' <- walk t
-    return $! ParensInType_ (sf (typeFlags t')) ann t'
+    return $! ParensInType_ (sf (unaryNodeFlags ctorSalt_ParensInType t')) ann t'
   walkChildren other = return $! markSF other
 
   lookupKindArgs :: Qualified (ProperName 'TypeName) -> [Text]

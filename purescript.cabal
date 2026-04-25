@@ -168,7 +168,7 @@ common defaults
     clock >=0.8.3 && <0.9,
     containers >=0.6.5.1 && <0.7,
     -- unordered-containers,
-    -- hashable,
+    hashable >=1.4.2.0 && <1.5,
     cryptonite ==0.30.*,
     data-ordlist >=0.4.7.0 && <0.5,
     deepseq >=1.4.6.1 && <1.5,
