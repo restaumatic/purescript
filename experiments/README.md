@@ -40,6 +40,7 @@ agent-facing overview.
 | [tc-queries](tc-queries/EXPERIMENT.md)         | blocked      | no-win  | 2e89bd4f   | +0.1% full, +9% prelude-edit         | incrementality, rock, caching  |
 | [rust-interning](rust-interning/EXPERIMENT.md) | in-progress  | tbd     | (varies)   | conflicting — see EXPERIMENT.md      | interning, psstring, label     |
 | [row-cons-opt](row-cons-opt/EXPERIMENT.md)     | in-progress  | tbd     | e0125163   | -2.2% full, neutral others           | unification, rows, entailment  |
+| [type-hash](type-hash/EXPERIMENT.md)           | in-progress  | tbd     | 799e8208   | tbd                                   | typechecker, hashing, type-flags |
 
 ## Closed experiments
 
@@ -52,18 +53,22 @@ agent-facing overview.
 
 ## Hotspots being tracked
 
-Updated after each profile run. Numbers below are from `p/tc-queries/PROFILING.md:105–112`,
-captured on the pre-merges restaumatic baseline (~73s full build). After the
-synonym-opt + skip-redundant-entailment-unify ship (-22.9% full to ~56s), this
-table is **stale** and a fresh profile is needed before picking the next
-experiment.
+Updated after each profile run. Current snapshot: post-merges baseline
+`799e8208` (synonym-opt + skip-redundant-entailment-unify shipped),
+profiled run on pr-admin from 2026-04-25 (see
+`experiments/type-hash/profiles/baseline.meta.md`).
 
-| Cost Centre                      | Module                    | % time (stale) | Status                                   |
-| -------------------------------- | ------------------------- | -------------- | ---------------------------------------- |
-| `compare` (Qualified a)          | Names.hs:234              | 20.8%          | unattacked                               |
-| `replaceAllTypeSynonyms'.go`     | TypeChecker.Synonyms      | 16.9%          | shipped via `synonym-opt`                |
-| `compare` (PSString)             | PSString.hs:52            | 8.6%           | unattacked                               |
-| `compareType`                    | Types.hs                  | 4.2%           | unattacked                               |
-| `everywhereOnTypes.go`           | Types.hs                  | 3.0%           | unattacked                               |
-| `introduceSkolemScope`           | TypeChecker.Skolems       | 2.4%           | shipped via `synonym-opt` (tfScoped flag) |
-| `replaceTypeWildcards`           | TypeChecker.Unify         | 2.2%           | shipped via `synonym-opt` (tfWildcardsFree) |
+| Cost Centre                      | Module                    | % time | Status                                       |
+| -------------------------------- | ------------------------- | ------ | -------------------------------------------- |
+| `compareType`                    | Types.hs:990–1027         | 7.7%   | being attacked in `type-hash`                |
+| `compare` (PSString)             | PSString.hs:52            | 4.6%   | unattacked                                   |
+| `compare` (Qualified a)          | Names.hs:233              | 4.1%   | unattacked (was 20.8%, fell out as side effect of synonym-opt) |
+| `everywhereOnValuesTopDownM.g'`  | AST.Traversals            | 2.9%   | unattacked                                   |
+| `compare` (ProperName)           | Names.hs:192              | 1.3%   | unattacked                                   |
+| `replaceAllTypeSynonyms'.go`     | TypeChecker.Synonyms      | 0.2%   | shipped via `synonym-opt` (was 16.9%)        |
+
+The pattern-synonym matcher cluster (`$mTypeApp.\`, `$mKindApp.\`, …)
+shows up at ~36% combined in the cost-centre summary, but that's a
+profile-build artifact — GHC suppresses inlining of bidirectional
+pattern synonyms when SCC annotations are present. In optimised
+builds those costs fold back into their callers (mostly `compareType`).
