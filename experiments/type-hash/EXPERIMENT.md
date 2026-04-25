@@ -1,19 +1,18 @@
 ---
 id: type-hash
-status: in-progress
-verdict: tbd
+status: ready-to-ship
+verdict: win
 branch: type-hash
 worktree: /workspace/p/type-hash
 baseline_sha: 799e8208
-head_sha: 799e8208
+head_sha: 0c4c614e
 hypothesis: >
   Cache a structural hash on every Type node (alongside the existing
-  TypeFlags), computed at construction. Use it to short-circuit eqType
-  on hash mismatch, and to provide a Hashable Type instance so hot
-  Type-keyed containers — first the unificationCache, possibly more —
-  can switch from Set/Map to HashSet/HashMap, eliminating compareType
-  from the hot path.
-headline_delta: tbd
+  TypeFlags), computed at construction. Use it to provide a Hashable
+  Type instance so hot Type-keyed containers — first the
+  unificationCache — can switch from Set/Map to HashSet/HashMap,
+  eliminating compareType from the hot path.
+headline_delta: "-15.4% full, neutral incremental"
 tags: [typechecker, hashing, type-flags, unification]
 started: 2026-04-25
 closed: null

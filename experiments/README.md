@@ -40,7 +40,7 @@ agent-facing overview.
 | [tc-queries](tc-queries/EXPERIMENT.md)         | blocked      | no-win  | 2e89bd4f   | +0.1% full, +9% prelude-edit         | incrementality, rock, caching  |
 | [rust-interning](rust-interning/EXPERIMENT.md) | in-progress  | tbd     | (varies)   | conflicting — see EXPERIMENT.md      | interning, psstring, label     |
 | [row-cons-opt](row-cons-opt/EXPERIMENT.md)     | in-progress  | tbd     | e0125163   | -2.2% full, neutral others           | unification, rows, entailment  |
-| [type-hash](type-hash/EXPERIMENT.md)           | in-progress  | tbd     | 799e8208   | tbd                                   | typechecker, hashing, type-flags |
+| [type-hash](type-hash/EXPERIMENT.md)           | ready-to-ship | win    | 799e8208   | -15.4% full, neutral incremental      | typechecker, hashing, type-flags |
 
 ## Closed experiments
 
