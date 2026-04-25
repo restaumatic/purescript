@@ -34,7 +34,7 @@ import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, un
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, hasFlag, mkForAll, rowFromList, srcTUnknown, tfHasWildcards, typeFlags)
-import Data.Set qualified as S
+import Data.HashSet qualified as HS
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: TypeCheckM SourceType
@@ -119,8 +119,8 @@ unifyTypes t1 t2 = do
   where
   unifyTypes'' t1' t2'= do
     cache <- gets unificationCache
-    when (S.notMember (t1', t2') cache) $ do
-      modify $ \st -> st { unificationCache = S.insert (t1', t2') cache }
+    when (not (HS.member (t1', t2') cache)) $ do
+      modify $ \st -> st { unificationCache = HS.insert (t1', t2') cache }
       unifyTypes' t1' t2'
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()
   unifyTypes' (TUnknown _ u) t = solveType u t

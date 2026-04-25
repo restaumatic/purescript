@@ -143,6 +143,12 @@ setFlag :: TypeFlags -> TypeFlags -> TypeFlags
 setFlag (TypeFlags f _) (TypeFlags w h) = TypeFlags (w .|. f) h
 
 -- | Extract the flags from a Type node.
+--
+-- Note: with the @UNPACK@ pragma on @TypeFlags@ in every 'Type' constructor,
+-- this function reconstructs a 'TypeFlags' value from the unpacked Word8 +
+-- Int fields, which means each call boxes if not inlined. Hot paths that
+-- only need one of the two fields should use 'typeHash' or 'typeBits'
+-- directly to avoid the box.
 typeFlags :: Type a -> TypeFlags
 typeFlags (TUnknown_ f _ _) = f
 typeFlags (TypeVar_ f _ _) = f
@@ -161,6 +167,51 @@ typeFlags (RCons_ f _ _ _ _) = f
 typeFlags (KindedType_ f _ _ _) = f
 typeFlags (BinaryNoParensType_ f _ _ _ _) = f
 typeFlags (ParensInType_ f _ _) = f
+{-# INLINE typeFlags #-}
+
+-- | Direct accessor for a Type's cached hash, avoiding TypeFlags boxing.
+-- Hot paths that read the hash should use this rather than
+-- @tfHash . typeFlags@.
+typeHash :: Type a -> Int
+typeHash (TUnknown_ (TypeFlags _ h) _ _) = h
+typeHash (TypeVar_ (TypeFlags _ h) _ _) = h
+typeHash (TypeLevelString_ (TypeFlags _ h) _ _) = h
+typeHash (TypeLevelInt_ (TypeFlags _ h) _ _) = h
+typeHash (TypeWildcard_ (TypeFlags _ h) _ _) = h
+typeHash (TypeConstructor_ (TypeFlags _ h) _ _) = h
+typeHash (TypeOp_ (TypeFlags _ h) _ _) = h
+typeHash (TypeApp_ (TypeFlags _ h) _ _ _) = h
+typeHash (KindApp_ (TypeFlags _ h) _ _ _) = h
+typeHash (ForAll_ (TypeFlags _ h) _ _ _ _ _ _) = h
+typeHash (ConstrainedType_ (TypeFlags _ h) _ _ _) = h
+typeHash (Skolem_ (TypeFlags _ h) _ _ _ _ _) = h
+typeHash (REmpty_ (TypeFlags _ h) _) = h
+typeHash (RCons_ (TypeFlags _ h) _ _ _ _) = h
+typeHash (KindedType_ (TypeFlags _ h) _ _ _) = h
+typeHash (BinaryNoParensType_ (TypeFlags _ h) _ _ _ _) = h
+typeHash (ParensInType_ (TypeFlags _ h) _ _) = h
+{-# INLINE typeHash #-}
+
+-- | Direct accessor for a Type's bit flags, avoiding TypeFlags boxing.
+typeBits :: Type a -> Word8
+typeBits (TUnknown_ (TypeFlags w _) _ _) = w
+typeBits (TypeVar_ (TypeFlags w _) _ _) = w
+typeBits (TypeLevelString_ (TypeFlags w _) _ _) = w
+typeBits (TypeLevelInt_ (TypeFlags w _) _ _) = w
+typeBits (TypeWildcard_ (TypeFlags w _) _ _) = w
+typeBits (TypeConstructor_ (TypeFlags w _) _ _) = w
+typeBits (TypeOp_ (TypeFlags w _) _ _) = w
+typeBits (TypeApp_ (TypeFlags w _) _ _ _) = w
+typeBits (KindApp_ (TypeFlags w _) _ _ _) = w
+typeBits (ForAll_ (TypeFlags w _) _ _ _ _ _ _) = w
+typeBits (ConstrainedType_ (TypeFlags w _) _ _ _) = w
+typeBits (Skolem_ (TypeFlags w _) _ _ _ _ _) = w
+typeBits (REmpty_ (TypeFlags w _) _) = w
+typeBits (RCons_ (TypeFlags w _) _ _ _ _) = w
+typeBits (KindedType_ (TypeFlags w _) _ _ _) = w
+typeBits (BinaryNoParensType_ (TypeFlags w _) _ _ _ _) = w
+typeBits (ParensInType_ (TypeFlags w _) _ _) = w
+{-# INLINE typeBits #-}
 
 -- | Mask to extract only structural flags (clearing processing flags).
 -- Preserves the hash.
@@ -1097,8 +1148,10 @@ instance Ord (Type a) where
 -- | Hashing uses the cached hash on the node — O(1) and ignores the
 -- annotation, matching 'eqType'.
 instance Hashable (Type a) where
-  hash = tfHash . typeFlags
-  hashWithSalt s t = s `hashWithSalt` tfHash (typeFlags t)
+  hash = typeHash
+  {-# INLINE hash #-}
+  hashWithSalt s t = s `hashWithSalt` typeHash t
+  {-# INLINE hashWithSalt #-}
 
 eqType :: Type a -> Type b -> Bool
 eqType (TUnknown _ a) (TUnknown _ a') = a == a'
