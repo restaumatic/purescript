@@ -38,26 +38,32 @@ agent-facing overview.
 | Id                                             | Status       | Verdict | Baseline   | Headline Δ                           | Tags                           |
 | ---------------------------------------------- | ------------ | ------- | ---------- | ------------------------------------ | ------------------------------ |
 | [tc-queries](tc-queries/EXPERIMENT.md)         | blocked      | no-win  | 2e89bd4f   | +0.1% full, +9% prelude-edit         | incrementality, rock, caching  |
-| [synonym-opt](synonym-opt/EXPERIMENT.md)       | in-progress  | tbd     | 3fcac773   | (unmeasured under framework)         | typechecker, synonyms, flags   |
 | [rust-interning](rust-interning/EXPERIMENT.md) | in-progress  | tbd     | (varies)   | conflicting — see EXPERIMENT.md      | interning, psstring, label     |
-| [entailment-memo](entailment-memo/EXPERIMENT.md) | in-progress | tbd   | ebb0a6bb   | -15.5% full, 0% others              | entailment, unification, rows  |
+| [row-cons-opt](row-cons-opt/EXPERIMENT.md)     | in-progress  | tbd     | e0125163   | -2.2% full, neutral others           | unification, rows, entailment  |
 
 ## Closed experiments
 
 | Id                                             | Status  | Verdict | Baseline | Headline Δ                          | Tags            |
 | ---------------------------------------------- | ------- | ------- | -------- | ----------------------------------- | --------------- |
+| [synonym-opt](synonym-opt/EXPERIMENT.md)       | shipped | win     | 3fcac773 | combined w/ skip-redundant: -22.9% full | typechecker, synonyms, flags |
+| [skip-redundant-entailment-unify](skip-redundant-entailment-unify/EXPERIMENT.md) | shipped | win | ebb0a6bb | -15.5% full, ~0% others | entailment, unification, rows |
+| [measure-merges](measure-merges/EXPERIMENT.md) | shipped | win     | e0125163 | -22.9% full (combined synonym-opt + skip-redundant) | measurement, baseline |
 | [noise-check](noise-check/EXPERIMENT.md)       | shipped | win     | 3fcac773 | +0.1% full (within noise — harness OK) | meta, framework |
 
 ## Hotspots being tracked
 
-Updated after each profile run. Source: `p/tc-queries/PROFILING.md:105–112`.
+Updated after each profile run. Numbers below are from `p/tc-queries/PROFILING.md:105–112`,
+captured on the pre-merges restaumatic baseline (~73s full build). After the
+synonym-opt + skip-redundant-entailment-unify ship (-22.9% full to ~56s), this
+table is **stale** and a fresh profile is needed before picking the next
+experiment.
 
-| Cost Centre                      | Module                    | % time | Status                                   |
-| -------------------------------- | ------------------------- | ------ | ---------------------------------------- |
-| `compare` (Qualified a)          | Names.hs:234              | 20.8%  | unattacked                               |
-| `replaceAllTypeSynonyms'.go`     | TypeChecker.Synonyms      | 16.9%  | see `synonym-opt`                        |
-| `compare` (PSString)             | PSString.hs:52            | 8.6%   | unattacked                               |
-| `compareType`                    | Types.hs                  | 4.2%   | unattacked                               |
-| `everywhereOnTypes.go`           | Types.hs                  | 3.0%   | unattacked                               |
-| `introduceSkolemScope`           | TypeChecker.Skolems       | 2.4%   | unattacked                               |
-| `replaceTypeWildcards`           | TypeChecker.Unify         | 2.2%   | unattacked                               |
+| Cost Centre                      | Module                    | % time (stale) | Status                                   |
+| -------------------------------- | ------------------------- | -------------- | ---------------------------------------- |
+| `compare` (Qualified a)          | Names.hs:234              | 20.8%          | unattacked                               |
+| `replaceAllTypeSynonyms'.go`     | TypeChecker.Synonyms      | 16.9%          | shipped via `synonym-opt`                |
+| `compare` (PSString)             | PSString.hs:52            | 8.6%           | unattacked                               |
+| `compareType`                    | Types.hs                  | 4.2%           | unattacked                               |
+| `everywhereOnTypes.go`           | Types.hs                  | 3.0%           | unattacked                               |
+| `introduceSkolemScope`           | TypeChecker.Skolems       | 2.4%           | shipped via `synonym-opt` (tfScoped flag) |
+| `replaceTypeWildcards`           | TypeChecker.Unify         | 2.2%           | shipped via `synonym-opt` (tfWildcardsFree) |

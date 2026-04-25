@@ -130,14 +130,57 @@ them. Re-serialising dep externs for every module with any cached
 decl was a 10s+ cost on pr-admin. See `externHashRef` on the
 `tc-queries` branch.
 
+### Per-node TypeFlags short-circuits hot traversals
+**From:** `synonym-opt` (shipped — combined with skip-redundant-entailment-unify
+gave -22.9% full build on pr-admin)
+
+`replaceAllTypeSynonyms'`, `replaceTypeWildcards`, `introduceSkolemScope`,
+and `substituteType` walk every node of every type tree at ~40 call sites
+per typecheck. Most subtrees are already clean — synonym-free, wildcard-free,
+scoped, unknown-free. Adding a small `Int` bitfield to every `Type`
+constructor (`TypeFlags`) with auto-computation via pattern synonyms lets
+each traversal short-circuit on already-clean subtrees. Crucially, the flag
+is computed once at construction and combined from children's flags, so
+there is no per-call recomputation cost.
+
+The biggest single contributor is `tfHasUnknowns` for `substituteType`:
+every `unifyTypes` call substitutes both sides before unifying, and most
+types in flight contain no unknowns at all. Walking them was pure overhead.
+
+**Takeaway:** when a hot traversal's body is "do nothing in 90% of subtrees",
+caching the property that triggers the no-op on the constructor is cheap
+and effective. Use pattern synonyms so callers don't have to thread the flag.
+
+### Looking for redundant work, not just expensive work
+**From:** `skip-redundant-entailment-unify` (shipped — -15.5% full build alone)
+
+Original hypothesis was a within-module memo table for entailment results
+(87% redundancy on wide-row HasField calls in pr-admin). While instrumenting,
+we noticed the actual redundant work isn't repeated *solves* — it's individual
+solves whose final unification step does no useful work because both sides
+are structurally equal already. A two-line `unless (eqType inferredType t2)`
+guard captures this without any cache, keying logic, or invalidation concerns.
+
+**Takeaway:** when profiling shows "this hot path is expensive AND repeated",
+the impulse is to memoize. But check first whether each call is producing
+information at all — sometimes the cheaper fix is to short-circuit the
+no-op cases. `eqType` walks lockstep with no allocation; `unifyTypes` on
+identical wide rows does sort + allocate + merge-join. Same outcome, very
+different cost.
+
 ## Open territory (no experiment yet)
 
-- **`compare (Qualified a)` at 20.8% of time** — the single biggest
+These hotspot percentages are from the **pre-merges** profile (~73s full
+build baseline). After synonym-opt + skip-redundant-entailment-unify shipped
+(-22.9% full to ~56s), the relative contribution of each remaining hotspot
+has shifted. **Re-profile before picking the next target.**
+
+- **`compare (Qualified a)` at 20.8% of time (stale)** — the single biggest
   cost centre. Interning, switching to a smaller key type, or using
   `HashMap` instead of `Map` for `Environment` lookups are candidates.
-- **`compare (PSString) at 8.6%`** — row labels and type-level string
+- **`compare (PSString) at 8.6% (stale)`** — row labels and type-level string
   comparisons. Interning or a precomputed-hash wrapper.
-- **`compareType` at 4.2%** — likely related to the above two via
+- **`compareType` at 4.2% (stale)** — likely related to the above two via
   structural comparison of type trees.
 
 Evaluate these against the "dead-end" lessons above before planning.
