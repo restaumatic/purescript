@@ -168,6 +168,102 @@ no-op cases. `eqType` walks lockstep with no allocation; `unifyTypes` on
 identical wide rows does sort + allocate + merge-join. Same outcome, very
 different cost.
 
+### Per-node structural hash + HashSet for ordered-key caches
+**From:** `type-hash` (shipped — -15.4% full build on pr-admin)
+
+After synonym-opt + skip-redundant-entailment-unify shipped, `compareType`
+became the new top hotspot at 7.7%, mostly from `Set (Type, Type)` lookups
+in the `unificationCache` at `Unify.hs:121–123`. Caching a structural hash
+on every Type node (alongside the existing `TypeFlags`, computed at
+construction by combining children's hashes with a per-constructor salt)
+gives a `Hashable Type` instance with O(1) hash. Switching the cache to
+`HashSet (Type, Type)` then drops `compareType` from the hot path entirely:
+HashSet does O(1) hash + ~1 `eqType` per op, vs Set's O(log n) `compareType`.
+
+Two non-obvious implementation details are load-bearing — see the GHC
+representation pitfalls section below.
+
+**Takeaway:** when a `compare`-based container shows up high in profile
+and you can compute a cheap, cached hash for the keys, the right move is
+usually to switch the container to a HashMap/HashSet rather than try to
+make the compare function itself faster. The win lives in the algorithmic
+change (O(1) vs O(log n)), not in micro-optimising the comparison.
+
+## Performance representation pitfalls (GHC-specific)
+
+These bit us hard during `type-hash` and would bite again on any similar
+work. Both look like "minor codegen hints" but have 2× swings on full
+builds when missed.
+
+### `{-# UNPACK #-}` on strict multi-field structural fields
+**From:** `type-hash` (shipped)
+
+Going from `newtype TypeFlags = TypeFlags Word8` to
+`data TypeFlags = TypeFlags { tfBits :: !Word8, tfHash :: !Int }` measured
+**+107% on full builds** without `{-# UNPACK #-}` on the `!TypeFlags`
+field of every `Type` constructor. The newtype was zero-cost (the `Word8`
+sat directly inside `Type`); the new data type is a separate boxed heap
+object reached via pointer. Each `Type` allocation gained an extra heap
+object and an extra indirection. Adding `{-# UNPACK #-} !TypeFlags`
+unpacks the `Word8 + Int` pair into the parent constructor and the
+regression collapses to ~+1.8%.
+
+Note that `typeFlags :: Type a -> TypeFlags` then has to *reconstruct*
+the box at every call — for hot paths that only need one of the two
+fields, write a direct accessor (`typeHash`, `typeBits`) that pattern-
+matches `Type` and returns the unboxed Int/Word8. The same boxing trap
+that bit us on construction also bites on extraction.
+
+**Takeaway:** when changing a strict structural field from a newtype
+single-byte/word wrapper to a multi-field record, **always** UNPACK both
+the outer field and the inner fields. And budget for boxing-on-read at
+every accessor call — if a hot path only needs one field, don't go via
+the typed wrapper.
+
+### `{-# INLINE #-}` on `Hashable` instance methods
+**From:** `type-hash` (shipped)
+
+The first attempt at `HashSet (Type, Type)` for the `unificationCache`
+measured **+102% on full builds**. The Hashable instance was
+
+```haskell
+instance Hashable (Type a) where
+  hash = typeHash
+  hashWithSalt s t = s `hashWithSalt` typeHash t
+```
+
+Without `{-# INLINE #-}` on `hash`/`hashWithSalt`, GHC dispatches through
+the class dictionary at every call, which (a) prevents specialisation of
+the `(Type, Type)` tuple Hashable through to `typeHash`, and (b) allocates
+dictionary thunks. Adding INLINE on both methods turned the +102%
+regression into a -15.4% win — same code, same cache, same data structure;
+just a codegen hint.
+
+**Takeaway:** `Hashable` instances on hot Map/Set keys must mark their
+methods INLINE (or INLINABLE) so the dictionary collapses through to the
+underlying field read at the call site. The generic tuple instance
+`Hashable (a, b)` won't specialise through unless the inner instances
+inline. Same lesson likely applies to any other class instance used in
+HAMT-style containers.
+
+## Dead-end techniques (do not re-attempt without new evidence)
+
+### Hash-prefix short-circuit on `eqType`
+**From:** `type-hash` (step 2, reverted)
+
+Adding `eqType t1 t2 = typeHash t1 == typeHash t2 && eqTypeStructural t1 t2`
+measured a small *net loss* (~+0.7% on full vs the no-shortcut baseline).
+For unequal types the hash check is a clear win, but the hot eqType
+callers in this codebase compare *equal* types most of the time — e.g.
+the `unless (eqType inferredType t2)` guard in `Entailment.hs:295`
+exists precisely to skip work when types are already equal. So the
+hash check fires on a True case, falls through to structural anyway,
+and only adds work.
+
+**Takeaway:** before adding a fast path keyed on hash equality, profile
+whether the hot callers are the equal-types or unequal-types case.
+Short-circuiting only helps the side you're not already on.
+
 ## Open territory (no experiment yet)
 
 These hotspot percentages are from the **pre-merges** profile (~73s full
