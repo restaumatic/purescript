@@ -28,3 +28,7 @@ Append-only. See experiments/SCHEMA.md for format.
 | 2026-04-25 | prelude  | 799e8208     | c4001ef4 |      4.0 |      4.0 |   -0.3% | median of 4, 3971-5326 ms; step 3 v3: HashSet + INLINE Hashable, all scenarios |
 | 2026-04-25 | leaf     | 799e8208     | c4001ef4 |      1.6 |      1.6 |   -1.1% | median of 4, 1550-8576 ms; step 3 v3: HashSet + INLINE Hashable, all scenarios |
 | 2026-04-25 | full     | 799e8208     | 43f6b613 |     67.2 |     50.5 |  -24.9% | post-cleanup (modifyFlags + tightened exports + uniform hashWithSalt). Head tight (49429-50884 ms); baseline elevated (range 64.4–68.4 s vs typical ~57 s) — concurrent profiling on host inflated baseline. Head-side numbers consistent with the prior -15.4% measurement; re-measure under clean conditions for a definitive before/after. |
+| 2026-04-25 | full     | 799e8208     | 43f6b613 |     57.8 |     49.1 |  -15.1% | median of 4, 48714-49291 ms |
+| 2026-04-25 | nochange | 799e8208     | 43f6b613 |      0.6 |      0.6 |   -1.5% | median of 4, 509-595 ms |
+| 2026-04-25 | prelude  | 799e8208     | 43f6b613 |      4.1 |      4.0 |   -1.5% | median of 4, 3978-5468 ms |
+| 2026-04-25 | leaf     | 799e8208     | 43f6b613 |      1.7 |      1.6 |   -1.9% | median of 4, 1550-8455 ms |

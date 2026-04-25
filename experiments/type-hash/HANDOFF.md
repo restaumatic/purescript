@@ -18,16 +18,19 @@ a small net loss because the hot eqType callers compare equal types.
 
 ## Final results
 
-Median of 4, baseline `799e8208`, pr-admin (1758 modules):
+Median of 4, baseline `799e8208`, head `43f6b613` (post-cleanup),
+pr-admin (1758 modules):
 
 | Scenario | Base (s) | Head (s) | Δ | Notes |
 |----------|---------:|---------:|---|-------|
-| full | 57.0 | 48.2 | **-15.4%** | tight, 47515-49155 ms |
-| nochange | 0.6 | 0.6 | -1.9% | tight, 564-594 ms |
-| prelude | 4.0 | 4.0 | -0.3% | within noise |
-| leaf | 1.6 | 1.6 | -1.1% | very noisy (1550-8576 ms) |
+| full | 57.8 | 49.1 | **-15.1%** | tight, 48714-49291 ms |
+| nochange | 0.6 | 0.6 | -1.5% | tight on baseline (576-610), one outlier on head (509-595 ms) |
+| prelude | 4.06 | 4.00 | -1.5% | tight (3978-5468 ms) |
+| leaf | 1.66 | 1.63 | -1.9% | one head outlier (1550-8455 ms) |
 
-See `results.md` for the full append log including the dead-end runs.
+Same shape as the pre-cleanup measurement (-15.4% / -1.9% / -0.3% /
+-1.1%) — the cleanup commit was perf-neutral as intended. See
+`results.md` for the full append log including the dead-end runs.
 
 ## What landed
 
