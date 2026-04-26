@@ -35,6 +35,8 @@ import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), 
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, hasFlag, mkForAll, rowFromList, srcTUnknown, tfHasWildcards, typeFlags)
 import Data.HashSet qualified as HS
+import Language.PureScript.TypeChecker.UnifyPatternSurvey qualified as Survey
+import System.IO.Unsafe (unsafePerformIO)
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: TypeCheckM SourceType
@@ -119,7 +121,9 @@ unifyTypes t1 t2 = do
   where
   unifyTypes'' t1' t2'= do
     cache <- gets unificationCache
-    when (not (HS.member (t1', t2') cache)) $ do
+    let inCache = HS.member (t1', t2') cache
+        !_ = unsafePerformIO (Survey.recordPair t1' t2' inCache)
+    when (not inCache) $ do
       modify $ \st -> st { unificationCache = HS.insert (t1', t2') cache }
       unifyTypes' t1' t2'
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()

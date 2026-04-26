@@ -17,6 +17,7 @@ import Language.PureScript.CST qualified as CST
 import Language.PureScript.Errors.JSON (JSONResult(..), toJSONErrors)
 import Language.PureScript.Glob (toInputGlobs, PSCGlobs(..), warnFileTypeNotFound)
 import Language.PureScript.Make (buildMakeActions, inferForeignModules, runMake)
+import Language.PureScript.TypeChecker.UnifyPatternSurvey qualified as Survey
 import Options.Applicative qualified as Opts
 import SharedCLI qualified
 import System.Console.ANSI qualified as ANSI
@@ -75,6 +76,7 @@ compile PSCMakeOptions{..} = do
     let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix
     P.make_ makeActions (map snd ms)
   printWarningsAndErrors (P.optionsVerboseErrors pscmOpts) pscmJSONErrors moduleFiles makeWarnings makeErrors
+  Survey.dumpSurvey
   exitSuccess
 
 outputDirectory :: Opts.Parser FilePath

@@ -30,6 +30,7 @@ module Language.PureScript.Types
   , setFlag
   , modifyFlags
   , typeFlags
+  , typeHash
     -- * Smart constructors
   , srcTUnknown
   , srcTypeVar
