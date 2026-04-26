@@ -317,3 +317,34 @@ The `unify-cache` experiment itself ended no-win (the cache is net
 positive: dropping it costs +24% on full; specialised `Hashable
 UnifyKey` is a wash), but the measurement-discipline lesson is the
 load-bearing finding.
+
+## The unification cache is a hash-equal memoizer (`unify-pattern-survey`)
+
+Survey on pr-admin (1.05M lookups, 39.3% hit rate): **412,311 of
+412,727 cache hits — 99.9% — are hash-equal pairs.** Only 416 hits
+involved hash-distinct pairs (mostly with synonym differences).
+
+This means the cache's job is essentially "skip a unification we
+already decided is `t ~ t`." Any cheaper replacement has to either
+walk the structure (`eqType`, regresses prelude +7%) or trust the
+hash (sound only modulo 64-bit collisions, which makes the
+compiler unsound in principle).
+
+Phases tried, all on baseline 43f6b613:
+
+| Scheme | full | nochange | prelude | leaf | Soundness |
+|--------|-----:|---------:|--------:|-----:|-----------|
+| HashSet (orig) | — | — | — | — | sound (Eq fallback) |
+| `typeHash ==` + `eqType`, no cache | -2.8% | -2.0% | **+7.1%** | -0.3% | sound |
+| IntSet of `mix(h1,h2)`, cache kept | +0.1% | +0.4% | +0.7% | -3.3% | unsound |
+| `typeHash ==` only, no cache | -0.9% | -0.7% | -0.6% | -2.8% | unsound |
+
+**Takeaway:** the cache earns its keep precisely by being a hash-equal
+memoizer, and the original HashSet+Eq pair is essentially optimal
+for this discipline. The ~19% Hashable cost is the unavoidable
+price of sound pair memoization. Real wins here would need either
+a fundamentally different structure (small-LRU, bloom-filter
+front-end, per-module reset) or upstream reduction of redundant
+unification calls (extending the work `skip-redundant-entailment-unify`
+started). Don't re-attempt hash-only replacement of the cache —
+the soundness loss isn't worth the marginal speed.
