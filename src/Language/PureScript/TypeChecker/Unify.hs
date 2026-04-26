@@ -17,7 +17,7 @@ module Language.PureScript.TypeChecker.Unify
 import Prelude
 
 import Control.Exception (assert)
-import Control.Monad (forM_, void, when)
+import Control.Monad (forM_, void)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets, modify, state)
 import Control.Monad.Writer.Class (MonadWriter(..))
@@ -33,10 +33,7 @@ import Language.PureScript.Errors (ErrorMessageHint(..), SimpleErrorMessage(..),
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, unifyKinds')
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
-import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, hasFlag, mkForAll, rowFromList, srcTUnknown, tfHasWildcards, typeFlags)
-import Data.HashSet qualified as HS
-import Language.PureScript.TypeChecker.UnifyPatternSurvey qualified as Survey
-import System.IO.Unsafe (unsafePerformIO)
+import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, eqType, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, hasFlag, mkForAll, rowFromList, srcTUnknown, tfHasWildcards, typeFlags, typeHash)
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: TypeCheckM SourceType
@@ -119,13 +116,9 @@ unifyTypes t1 t2 = do
   sub <- gets checkSubstitution
   withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes'' (substituteType sub t1) (substituteType sub t2)
   where
-  unifyTypes'' t1' t2'= do
-    cache <- gets unificationCache
-    let inCache = HS.member (t1', t2') cache
-        !_ = unsafePerformIO (Survey.recordPair t1' t2' inCache)
-    when (not inCache) $ do
-      modify $ \st -> st { unificationCache = HS.insert (t1', t2') cache }
-      unifyTypes' t1' t2'
+  unifyTypes'' t1' t2'
+    | typeHash t1' == typeHash t2' && eqType t1' t2' = pure ()
+    | otherwise = unifyTypes' t1' t2'
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()
   unifyTypes' (TUnknown _ u) t = solveType u t
   unifyTypes' t (TUnknown _ u) = solveType u t
