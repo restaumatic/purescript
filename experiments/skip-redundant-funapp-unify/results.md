@@ -35,43 +35,17 @@ All four scenarios within ±2.3% — within harness noise. Tests pass
 (1340/1340). Binary size 48,622,080 bytes vs baseline 48,617,920 —
 +4 KB, no inlining shift.
 
-## Verdict
+### Phase 1 reading (incomplete)
 
-**No-win.** Eliminating ~75% of unification-cache hits at the three
-concentrated sites (`funAppHead`, `checkAbsArrow`, `checkArrayHead`)
-produces no measurable speed change on any of the four scenarios.
-
-### Why no win, despite survey suggesting one
-
-The dominant pairs at these sites are tiny constants —
-`(tyFunction, tyFunction)` is a 1-node-vs-1-node `TypeConstructor`
-comparison. The cache (`S.Set` on baseline 799e8208, ordered by
-structural compare) handles these in O(log n) tree-depth × O(1)
-per compare. For ~M-pair caches, log₂(M) ≈ 20 root-comparisons,
-each terminating immediately on the constructor tag.
-
-The `eqType` call I substitute is functionally identical work: one
-constructor-tag comparison. Trading `S.member`'s 20 root-compares
-for one `eqType` saves microseconds per call × 212K calls — a
-small absolute cost, dwarfed by per-decl typecheck work elsewhere.
-
-The `unify-pattern-survey` lesson — that the cache is essentially
-optimal *for what it does* — held. Even removing 75% of its hits
-upstream doesn't reveal a hidden cost, because there isn't one to
-reveal: the cache lookups on these sites were already ~free.
-
-### Implication for follow-ups
-
-- **Don't pursue more eqType-guard sites for cache reduction.** The
-  remaining cache traffic (Subsumption:default at 17.6% of hits,
-  etc.) is on larger types where the cache is more useful and an
-  eqType short-circuit would also be more expensive (longer walks).
-- **Cache structure remains essentially optimal at this scale.**
-  unify-pattern-survey + this experiment together close the
-  "reduce cache cost upstream" path — there's no win available.
-- **Look at unattacked hotspots.** `compare` (Qualified a) is still
-  the largest unattacked cost centre at ~20% per the README. That's
-  where to spend the next experiment.
+Phase 1 alone — neutral on all four scenarios — looked like a clean
+no-win, with a tidy explanation: the cache lookups at these sites
+are already O(1) on `S.Set`, so eqType saves nothing. **That
+reading was incomplete.** The hypothesis came from
+unify-pattern-survey's measurement of the *post-type-hash* cache
+(HashSet keyed via Hashable, ~19% of compile time), but I baselined
+on `799e8208` which still has the pre-type-hash `S.Set`. The "75%
+of cache hits" survey was on a different cache implementation than
+the experiment baseline. Phase 2 below uses the right baseline.
 
 ## Process lesson — incremental builds can mislead
 
@@ -94,3 +68,83 @@ slower binary than a clean build of the same source. Adding
 implausible — and binary size is a primary signal: a >1 MB delta
 without proportional source change means GHC compiled differently,
 making timing comparisons invalid.
+
+## Phase 2 — re-baselined on 43f6b613 (post-type-hash)
+
+The Phase 1 measurement above was on the wrong baseline. The
+hypothesis came from `unify-pattern-survey` LESSONS, which measured
+the cache as ~19% of compile time on the **type-hash branch**
+(`HashSet (SourceType, SourceType)` with a Hashable instance that
+walks the type structure). Baseline `799e8208` is *pre-type-hash*
+and uses `S.Set` ordered by structural compare — no Hashable cost.
+On that baseline the cache lookups on tiny pairs are already
+essentially free, so the eqType guards have nothing to save.
+
+To actually test the original hypothesis, re-run on `43f6b613`
+where the HashSet cache is in place.
+
+### Phase 2 measurements
+
+| Date       | Scenario | Baseline SHA | Head SHA | Base (s) | Head (s) | Δ       | Notes |
+| ---------- | -------- | ------------ | -------- | -------- | -------- | ------- | ----- |
+| 2026-04-26 | full     | 43f6b613     | 9ad7c523 |     48.3 |     48.3 |   -0.2% | median of 4, 47953-48491 ms |
+| 2026-04-26 | nochange | 43f6b613     | 9ad7c523 |      0.6 |      0.6 |   -1.2% | median of 4, 571-587 ms |
+| 2026-04-26 | prelude  | 43f6b613     | 9ad7c523 |      4.0 |      4.2 |   +6.4% | median of 4, 4155-4262 ms |
+| 2026-04-26 | leaf     | 43f6b613     | 9ad7c523 |      1.6 |      1.7 |   +2.5% | median of 4, 1635-1736 ms |
+
+Binary 49,106,272 bytes vs baseline 49,106,176 — +96 B, no
+inlining shift.
+
+### Phase 2 verdict: **regresses prelude**
+
+The eqType guards on `43f6b613` (HashSet cache) produce **+6.4% on
+prelude** — same shape as `unify-pattern-survey` Phase 2 (typeHash
++ eqType + no cache: +7.1% prelude). Both `full` and `nochange` are
+neutral; `leaf` is +2.5% (right at noise floor).
+
+The shape `prelude regresses, others don't` recurs across two
+independent experiments now. The plausible mechanism: the prelude
+cascade rebuild typechecks 1,342 modules against a long-lived
+substitution + cache. Each module re-asks the same trivial
+"function applied to function" pairs. The cache catches them all
+in one HashSet hit. Replacing that hit with an eqType +
+"don't insert" path means subsequent recursive `unifyTypes
+tyFunction tyFunction` calls (from `unifyTypes' (TypeApp _ a b)
+(TypeApp _ a' b')` traversal) miss the cache, run the full
+unifyTypes' path, and re-insert. Net: more work overall, but only
+on the cascade-heavy scenario where the same pairs flow through
+many times.
+
+### Combined verdict (both baselines)
+
+| Baseline | full | nochange | prelude | leaf | Verdict |
+|---|---:|---:|---:|---:|---|
+| 799e8208 (S.Set) | -0.0% | -1.9% | +2.3% | -1.6% | neutral |
+| 43f6b613 (HashSet) | -0.2% | -1.2% | **+6.4%** | +2.5% | regresses prelude |
+
+The hypothesis (eliminate 75% of cache hits → meaningful win) is
+**falsified on both baselines**:
+- On S.Set the cache lookup is already O(1) on tiny constants —
+  nothing to save.
+- On HashSet the cache is doing real work, but skipping it
+  upstream regresses prelude — the cascade rebuild scenario
+  re-uses the same hits enough that catching them in the HashSet
+  is cheaper than re-walking via eqType + cache miss.
+
+This **closes the "skip redundant unifyTypes calls upstream" path**
+for the post-type-hash branch — the cache plus Hashable is
+essentially optimal across all scenarios, and the upstream-skip
+pattern that worked at the entailment fundep site (the precedent
+for this experiment) does not generalise to the funApp / array /
+abs sites.
+
+## Final verdict
+
+**No-win on both baselines.** The eqType-guard pattern from
+skip-redundant-entailment-unify is site-specific — it ships when
+the call site has *unique* redundancy (one entailment-fundep call
+per dictionary, executed once), but the funApp / array / abs sites
+fire repeatedly across modules and benefit from the cache's
+amortisation. Removing the cache hits at those sites either does
+nothing (S.Set baseline, lookup already cheap) or actively hurts
+prelude (HashSet baseline, cascade re-uses the cache).

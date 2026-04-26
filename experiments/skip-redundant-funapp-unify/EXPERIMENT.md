@@ -2,10 +2,10 @@
 id: skip-redundant-funapp-unify
 status: abandoned
 verdict: no-win
-branch: skip-redundant-funapp-unify
-worktree: /workspace/p/skip-redundant-funapp-unify
-baseline_sha: 799e8208
-head_sha: 15540bba
+branch: skip-redundant-funapp-unify (799e8208 phase 1) + skip-redundant-funapp-unify-th (43f6b613 phase 2)
+worktree: /workspace/p/skip-redundant-funapp-unify (phase 1) + /workspace/p/skip-redundant-funapp-unify-th (phase 2)
+baseline_sha: 799e8208 (phase 1) / 43f6b613 (phase 2)
+head_sha: 15540bba (phase 1) / 9ad7c523 (phase 2)
 hypothesis: >
   unify-callsite-survey identified three sites in Types.hs that
   produce 75% of all unification-cache hits with 97-99% hit rates.
@@ -15,7 +15,7 @@ hypothesis: >
   guards at each site should eliminate those calls before the cache
   ever sees them, mirroring skip-redundant-entailment-unify's
   approach for fundep enforcement (-15.5% full).
-headline_delta: "all 4 scenarios within ±2.3% noise (full -0.0%, nochange -1.9%, prelude +2.3%, leaf -1.6%); -75% cache hits but no measurable speed change"
+headline_delta: "phase 1 (799e8208 S.Set): neutral on all 4. phase 2 (43f6b613 HashSet, the right baseline): prelude +6.4%, others neutral. Hypothesis falsified — cache amortises tiny-pair traffic across prelude cascade better than upstream eqType skip."
 tags: [unification, redundancy, types, skip]
 started: 2026-04-26
 closed: 2026-04-26

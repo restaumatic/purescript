@@ -2,59 +2,94 @@
 
 ## TL;DR
 
-**Closed: no-win.** Three `unless (eqType x const) $ unifyTypes x const`
-guards at the survey-identified concentrated sites (funAppHead,
-checkAbsArrow, checkArrayHead) eliminated ~75% of unification-cache
-hits but produced no measurable speed change on any scenario.
+**Closed: no-win on both baselines, but for different reasons.**
+The hypothesis (eliminate ~75% of unification-cache hits at the
+three survey-identified concentrated sites in `Types.hs` with
+`unless (eqType x const) $ unifyTypes x const` guards) is
+falsified.
 
-| Scenario | Δ |
-|---|---:|
-| full | -0.0% |
-| nochange | -1.9% |
-| prelude | +2.3% |
-| leaf | -1.6% |
+| Baseline | full | nochange | prelude | leaf | Verdict |
+|---|---:|---:|---:|---:|---|
+| 799e8208 (S.Set, pre-type-hash) | -0.0% | -1.9% | +2.3% | -1.6% | neutral |
+| 43f6b613 (HashSet, post-type-hash) | -0.2% | -1.2% | **+6.4%** | +2.5% | regresses prelude |
 
-All within ±2.3% noise. Tests pass (1340/1340). Binary +4 KB —
-no inlining shift after `stack clean`.
+Tests pass on both branches (1340/1340).
 
-## Why no win
+## Why both phases were needed
 
-The dominant pairs at these sites are 1-node `TypeConstructor`
-constants. The cache's S.member is O(log n × O(1)-per-compare); the
-eqType I substitute is also O(1) per compare. We trade one trivial
-check for another. Cache lookups on tiny pairs were already
-essentially free, so removing them produces no measurable saving.
+I baselined Phase 1 on `799e8208` (the current shipped tip), but
+the survey that identified the 3 sites measured the cache cost on
+the *post-type-hash* branch (`HashSet` keyed via `Hashable
+(SourceType, SourceType)`, ~19% of compile time). On `799e8208`
+the cache is `S.Set` ordered by structural compare — no Hashable
+walk, lookups already O(1) on tiny constants, nothing to save.
 
-This closes the "reduce cache cost upstream" path opened by
-`unify-pattern-survey` (cache is hash-equal memoizer) and explored
-by `unify-callsite-survey` (75% of hits at 3 sites). The cache is
-essentially optimal for tiny-pair memoization; removing its inputs
-doesn't help because they weren't expensive in the first place.
+Phase 2 re-runs the same 3-line patch on `43f6b613` (post-type-hash
+HashSet cache) where the hypothesis is actually testable. There
+the result is prelude +6.4% — the **same shape** as
+`unify-pattern-survey` Phase 2 (typeHash + eqType + no cache:
+prelude +7.1%).
 
-## Process lesson
+## The mechanism on the HashSet baseline
 
-The first benchmark run showed +74% on full, +164% on prelude with
-the head binary 2 MB *smaller* than baseline (46.6 MB vs 48.6 MB) —
-classic stale-incremental-build symptom. `stack clean` + rebuild
-fixed it: binary returned to 48.6 MB and timings to neutral.
+Plausible: the prelude cascade rebuild typechecks 1,342 modules
+against a long-lived substitution + cache. The same trivial pairs
+(`tyFunction`, `tyFunction`) flow through repeatedly. The HashSet
+catches them in one bucket walk per call. With my upstream eqType
+skip, recursive `unifyTypes` calls (e.g. through
+`unifyTypes' (TypeApp _ a b) (TypeApp _ a' b')`) miss the cache,
+re-run unifyTypes' on the constants, and re-insert. Net more work,
+but only on the cascade scenario where the same pairs flow many
+times.
 
-Same shape as the Unify.hs inlining sensitivity LESSON, but
-manifesting via stale `.stack-work/dist` artifacts rather than a
-deliberate Unify.hs edit. **Always `stack clean` before
-benchmarking when results look implausible.**
+## The cross-experiment shape
 
-## What's left in the worktree
+`unify-pattern-survey` already showed eqType-based replacement of
+the cache lookup regresses prelude (+7.1%). My experiment narrows
+that finding: even at the 3 sites where the cache is *most*
+exercised, the eqType-upstream-skip pattern still regresses
+prelude. The cache plus Hashable infrastructure on the type-hash
+branch is essentially optimal across all four scenarios — it's
+not just amortising the cost of itself, it's earning real value
+on prelude through pair re-use.
 
-- Branch `skip-redundant-funapp-unify` at commit `15540bba`
-  contains the three eqType guards.
-- The change is sound (tests pass), neutral on perf, and tiny
-  (3 lines). No reason to ship it; no reason not to either.
-- If a future change makes the cache more expensive (e.g.,
-  switching to a slower data structure), these guards become
-  net positive again. Keep the branch around as a parking lot.
+The `skip-redundant-entailment-unify` precedent (-15.5% full)
+ships because the entailment fundep site has *unique*
+redundancy (one call per dictionary, executed once). The funApp /
+array / abs sites fire repeatedly across modules and benefit from
+cache amortisation that a per-site eqType skip can't replicate.
+
+## What's left
+
+- Branch `skip-redundant-funapp-unify` (commit 15540bba) — Phase 1
+  patch on the 799e8208 baseline.
+- Branch `skip-redundant-funapp-unify-th` (commit 9ad7c523) —
+  Phase 2 patch on the 43f6b613 baseline. **This is the one to
+  cite as the falsifier**, since it's the post-type-hash branch
+  where the hypothesis was supposed to apply.
+- Both branches parked. Don't merge either.
+- Don't repeat this experiment on top of any
+  HashSet-cache baseline; the prelude regression is structural.
+
+## Lessons captured
+
+In `experiments/LESSONS.md`:
+1. **"Survey vs ship is two different questions"** — added to the
+   `unify-callsite-survey` lesson. "75% of hits" doesn't imply
+   "75% of cost" when the hits are on tiny pairs.
+2. **`skip-redundant-funapp-unify` lesson rewritten** to cover
+   both baselines and the prelude-regression mechanism.
+3. **Stack incremental builds can produce slow binaries** — first
+   benchmark on Phase 1 saw +74%/+164% from a stale incremental
+   build that produced a 2 MB-smaller binary; `stack clean` fixed
+   it. Always clean before benchmarking when results look
+   implausible.
 
 ## Implications for next experiment
 
-- Skip cache-redundancy paths — already exhausted.
-- Largest remaining unattacked hotspot per README: `compare`
-  (Qualified a) at ~20%. That's where to look next.
+- Don't pursue more eqType-guard sites at hot recurring call points.
+- The cache earns its keep on the post-type-hash branch precisely
+  because the prelude cascade re-uses pairs; cache-replacement
+  schemes have to handle that re-use or they regress prelude.
+- Largest unattacked hotspot per README: `compare` (Qualified a)
+  at ~20%. That's where to look next.
