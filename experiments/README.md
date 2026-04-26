@@ -46,6 +46,7 @@ agent-facing overview.
 
 | Id                                             | Status  | Verdict | Baseline | Headline Δ                          | Tags            |
 | ---------------------------------------------- | ------- | ------- | -------- | ----------------------------------- | --------------- |
+| [unify-cache](unify-cache/EXPERIMENT.md)       | abandoned | no-win | 43f6b613 | drop = +24%, UnifyKey wrap = +8% (no-win) | unification, caching, measurement |
 | [synonym-opt](synonym-opt/EXPERIMENT.md)       | shipped | win     | 3fcac773 | combined w/ skip-redundant: -22.9% full | typechecker, synonyms, flags |
 | [skip-redundant-entailment-unify](skip-redundant-entailment-unify/EXPERIMENT.md) | shipped | win | ebb0a6bb | -15.5% full, ~0% others | entailment, unification, rows |
 | [measure-merges](measure-merges/EXPERIMENT.md) | shipped | win     | e0125163 | -22.9% full (combined synonym-opt + skip-redundant) | measurement, baseline |

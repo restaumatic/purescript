@@ -5,7 +5,7 @@ verdict: win
 branch: type-hash
 worktree: /workspace/p/type-hash
 baseline_sha: 799e8208
-head_sha: 0c4c614e
+head_sha: 43f6b613
 hypothesis: >
   Cache a structural hash on every Type node (alongside the existing
   TypeFlags), computed at construction. Use it to provide a Hashable

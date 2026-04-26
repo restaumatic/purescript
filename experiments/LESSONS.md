@@ -280,3 +280,40 @@ has shifted. **Re-profile before picking the next target.**
   structural comparison of type trees.
 
 Evaluate these against the "dead-end" lessons above before planning.
+
+## Instrumentation in Unify.hs contaminates measurement (`unify-cache`)
+
+Adding ~50 lines of `NOINLINE`-marked top-level definitions to
+`Unify.hs` — IORef counters, `unsafePerformIO` wrappers, a
+`dumpUnifyCacheStats :: IO ()` callable from `Command.Compile` — caused
+**+135% on full** even though the new definitions were never called from
+the hot path. Binary shrank from 49.1 MB → 46.7 MB, signalling that GHC
+made significantly different inlining decisions for the rest of the
+module.
+
+The hot path itself was unchanged. The only signal during iteration was
+the absurd absolute timing (full builds inflating from ~50 s to ~120 s)
+and the binary-size shrink. Once the instrumentation was pulled out,
+timing returned to baseline immediately.
+
+This is a much bigger effect than the previously documented Unify.hs
+inlining sensitivity (the `eqType` guard story under
+`entailment-memo`'s -31% / 2 MB-shrink result). The trigger here is the
+*module-level* presence of `unsafePerformIO` IORef CAFs, not a hot-path
+edit.
+
+**Takeaway:**
+- Never put instrumentation infrastructure in `Unify.hs`. Put IORefs,
+  unsafePerformIO state, and any debug dumps in a *separate* module
+  imported only when measurement is needed.
+- Binary size is a primary signal. A >1 MB delta on `Unify.hs`-touching
+  changes means GHC's inlining decisions changed; treat the timing as
+  uninterpretable until the size delta is understood.
+- Manual single-shot `time purs compile $(spago sources)` against the
+  worktree binary is the fastest way to spot contamination — do this
+  before kicking off a multi-scenario harness run.
+
+The `unify-cache` experiment itself ended no-win (the cache is net
+positive: dropping it costs +24% on full; specialised `Hashable
+UnifyKey` is a wash), but the measurement-discipline lesson is the
+load-bearing finding.
