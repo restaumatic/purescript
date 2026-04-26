@@ -17,7 +17,6 @@ import Language.PureScript.CST qualified as CST
 import Language.PureScript.Errors.JSON (JSONResult(..), toJSONErrors)
 import Language.PureScript.Glob (toInputGlobs, PSCGlobs(..), warnFileTypeNotFound)
 import Language.PureScript.Make (buildMakeActions, inferForeignModules, runMake)
-import Language.PureScript.TypeChecker.Unify (dumpUnifyCacheStats)
 import Options.Applicative qualified as Opts
 import SharedCLI qualified
 import System.Console.ANSI qualified as ANSI
@@ -75,7 +74,6 @@ compile PSCMakeOptions{..} = do
     foreigns <- inferForeignModules filePathMap
     let makeActions = buildMakeActions pscmOutputDir filePathMap foreigns pscmUsePrefix
     P.make_ makeActions (map snd ms)
-  dumpUnifyCacheStats
   printWarningsAndErrors (P.optionsVerboseErrors pscmOpts) pscmJSONErrors moduleFiles makeWarnings makeErrors
   exitSuccess
 

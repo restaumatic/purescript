@@ -12,7 +12,6 @@ module Language.PureScript.TypeChecker.Unify
   , alignRowsWith
   , replaceTypeWildcards
   , varIfUnknown
-  , dumpUnifyCacheStats
   ) where
 
 import Prelude
@@ -24,22 +23,18 @@ import Control.Monad.State.Class (MonadState(..), gets, modify, state)
 import Control.Monad.Writer.Class (MonadWriter(..))
 
 import Data.Foldable (traverse_)
-import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef, writeIORef)
 import Data.Maybe (fromMaybe)
 import Data.IntMap.Lazy qualified as IM
 import Data.Text qualified as T
-
-import System.IO (hPutStrLn, stderr)
-import System.IO.Unsafe (unsafePerformIO)
+import Data.HashSet qualified as HS
 
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.Environment qualified as E
 import Language.PureScript.Errors (ErrorMessageHint(..), SimpleErrorMessage(..), SourceAnn, errorMessage, internalCompilerError, onErrorMessages, rethrow, warnWithPosition, withoutPosition)
 import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, unifyKinds')
-import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint, TypeCheckM)
+import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnifyKey(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, hasFlag, mkForAll, rowFromList, srcTUnknown, tfHasWildcards, typeFlags)
-import Data.HashSet qualified as HS
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: TypeCheckM SourceType
@@ -122,12 +117,10 @@ unifyTypes t1 t2 = do
   sub <- gets checkSubstitution
   withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes'' (substituteType sub t1) (substituteType sub t2)
   where
-  unifyTypes'' t1' t2'= do
+  unifyTypes'' t1' t2' = do
     cache <- gets unificationCache
-    let !key = (t1', t2')
-        !inCache = HS.member key cache
-        !_ = unsafePerformIO (recordCacheCheck inCache)
-    when (not inCache) $ do
+    let !key = UnifyKey (t1', t2')
+    when (not (HS.member key cache)) $ do
       modify $ \st -> st { unificationCache = HS.insert key cache }
       unifyTypes' t1' t2'
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()
@@ -254,39 +247,3 @@ varIfUnknown unks ty = do
     (TUnknown ann u) ->
       TypeVar ann <$> toName u
     t -> pure t
-
--- ---------------------------------------------------------------------------
--- Unification-cache instrumentation (TEMPORARY — for unify-cache experiment).
---
--- IORef counters incremented on every cache check in 'unifyTypes'''. Atomic
--- to be safe under multi-threaded compilation. Dumped via 'dumpUnifyCacheStats'
--- after `purs compile` returns.
--- ---------------------------------------------------------------------------
-
-unifyCacheHits :: IORef Int
-unifyCacheHits = unsafePerformIO (newIORef 0)
-{-# NOINLINE unifyCacheHits #-}
-
-unifyCacheMisses :: IORef Int
-unifyCacheMisses = unsafePerformIO (newIORef 0)
-{-# NOINLINE unifyCacheMisses #-}
-
-recordCacheCheck :: Bool -> IO ()
-recordCacheCheck True  = atomicModifyIORef' unifyCacheHits   (\n -> (n + 1, ()))
-recordCacheCheck False = atomicModifyIORef' unifyCacheMisses (\n -> (n + 1, ()))
-{-# NOINLINE recordCacheCheck #-}
-
--- | Print and reset the cache hit/miss counters. Call after `runMake`.
-dumpUnifyCacheStats :: IO ()
-dumpUnifyCacheStats = do
-  h <- readIORef unifyCacheHits
-  m <- readIORef unifyCacheMisses
-  let total = h + m
-      pct n = if total == 0 then 0 :: Double
-              else 100 * fromIntegral n / fromIntegral total
-  hPutStrLn stderr $ "[unify-cache] hits=" <> show h
-                  <> " misses=" <> show m
-                  <> " total=" <> show total
-                  <> " hit-rate=" <> show (pct h) <> "%"
-  writeIORef unifyCacheHits 0
-  writeIORef unifyCacheMisses 0

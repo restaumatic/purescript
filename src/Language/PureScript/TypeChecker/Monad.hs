@@ -27,7 +27,8 @@ import Language.PureScript.Names (Ident(..), ModuleName, ProperName(..), ProperN
 import Language.PureScript.Pretty.Types (prettyPrintType)
 import Language.PureScript.Pretty.Values (prettyPrintValue)
 import Language.PureScript.TypeClassDictionaries (NamedDict, TypeClassDictionaryInScope(..))
-import Language.PureScript.Types (Constraint(..), SourceType, Type(..), srcKindedType, srcTypeVar)
+import Data.Hashable (Hashable(..))
+import Language.PureScript.Types (Constraint(..), SourceType, Type(..), srcKindedType, srcTypeVar, typeHash)
 import Text.PrettyPrint.Boxes (render)
 import Control.Monad.Supply (SupplyT (unSupplyT))
 import Control.Monad.Supply.Class (MonadSupply)
@@ -134,8 +135,23 @@ data CheckState = CheckState
   , checkConstructorImportsForCoercible :: S.Set (ModuleName, Qualified (ProperName 'ConstructorName))
   -- ^ Newtype constructors imports required to solve Coercible constraints.
   -- We have to keep track of them so that we don't emit unused import warnings.
-  , unificationCache :: HS.HashSet (SourceType, SourceType)
+  , unificationCache :: HS.HashSet UnifyKey
   }
+
+-- | Cache key for the unification cache. Wraps a pair of types so we can
+-- provide a Hashable instance that bypasses the lifted-tuple machinery
+-- ('liftHashWithSalt' / 'defaultHashWithSalt') and reads the cached
+-- 'typeHash' on each side directly.
+newtype UnifyKey = UnifyKey { unUnifyKey :: (SourceType, SourceType) }
+  deriving newtype Eq
+
+instance Hashable UnifyKey where
+  hashWithSalt s (UnifyKey (t1, t2)) =
+    s `hashWithSalt` typeHash t1 `hashWithSalt` typeHash t2
+  {-# INLINE hashWithSalt #-}
+  hash (UnifyKey (t1, t2)) =
+    0 `hashWithSalt` typeHash t1 `hashWithSalt` typeHash t2
+  {-# INLINE hash #-}
 
 -- | Create an empty @CheckState@
 emptyCheckState :: Environment -> CheckState
