@@ -383,3 +383,80 @@ can be skipped without any caching at all. The next experiment to
 try: `skip-redundant-funapp-unify`, mirroring
 `skip-redundant-entailment-unify` at these three sites, then
 re-survey to decide whether to drop the cache.
+
+## Cache-hit reduction ≠ speed win when hits are on tiny pairs (`skip-redundant-funapp-unify`)
+
+The follow-up to `unify-callsite-survey`: added three
+`unless (eqType x const) $ unifyTypes x const` guards at the
+identified concentrated sites (funAppHead, checkAbsArrow,
+checkArrayHead, 75.5% of all cache hits between them).
+
+Result: **all four scenarios within ±2.3% — no measurable
+speed change.** Tests pass, semantics preserved, ~75% of
+unification-cache hits now skipped upstream — and zero perf
+movement.
+
+| Scenario | Δ |
+|---|---:|
+| full | -0.0% |
+| nochange | -1.9% |
+| prelude | +2.3% |
+| leaf | -1.6% |
+
+**Why no win.** The dominant pairs at the three sites are
+1-node `TypeConstructor` constants (`tyFunction`, `tyArray`).
+The cache (`S.Set` on this baseline, ordered by structural
+compare) handles these in O(log n × O(1)-per-compare) — each
+comparison terminates immediately on the constructor tag. The
+`eqType` substitute is also one constructor-tag comparison.
+We trade ~20 trivial root-compares per S.member for one
+trivial eqType — the absolute cost on tiny pairs was already
+microseconds, not milliseconds.
+
+Combined with the `unify-pattern-survey` finding that the
+cache is essentially optimal, this **closes the
+"reduce cache cost upstream" path entirely.** The cache is fast
+on its dominant input. Removing 75% of its inputs doesn't help
+because they were already nearly free. There's no concentrated
+upstream win here.
+
+**Implication for future work:**
+- Don't pursue more eqType-guard sites for cache reduction. The
+  remaining cache traffic is on larger types where the cache is
+  more useful, but eqType guards there would also be more
+  expensive (longer walks).
+- If a future change makes the cache more expensive (different
+  data structure, larger pairs), revisit — the guards would
+  become net positive again. Branch `skip-redundant-funapp-unify`
+  is parked for that.
+
+## Stack incremental builds can produce slow binaries (`skip-redundant-funapp-unify`)
+
+The first benchmark of skip-redundant-funapp-unify produced
+catastrophic apparent regressions:
+
+| Scenario | Δ (incremental build) | Δ (after stack clean) |
+|---|---:|---:|
+| full | +74.1% | -0.0% |
+| prelude | +164.2% | +2.3% |
+| leaf | +51.5% | -1.6% |
+| nochange | +39.4% | -1.9% |
+
+**Diagnostic signal:** the head binary was 46.6 MB vs baseline
+48.6 MB — *2 MB smaller*. Same shape as the documented Unify.hs
+inlining-cliff (binary shrinks, perf collapses), but here
+triggered by stale incremental compilation under
+`.stack-work/dist/`, not by a hot-path source edit. A
+`stack clean` + full rebuild produced a 48.6 MB binary matching
+baseline at neutral perf.
+
+**Takeaways:**
+- **Always `stack clean` before a benchmark when results look
+  implausible.** Don't trust incremental builds for perf measurement.
+- **Binary size is a primary signal.** A >1 MB delta without a
+  proportional source change means GHC compiled differently —
+  treat timing as uninterpretable until the size is explained.
+- **A single manual `time purs compile $(spago sources)` on the
+  worktree binary** is the fastest way to spot contamination,
+  before kicking off a 5-run × 4-scenario harness invocation.
+  (Same recipe as the Unify.hs lesson, but applies generally.)
