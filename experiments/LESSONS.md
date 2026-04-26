@@ -348,3 +348,38 @@ front-end, per-module reset) or upstream reduction of redundant
 unification calls (extending the work `skip-redundant-entailment-unify`
 started). Don't re-attempt hash-only replacement of the cache —
 the soundness loss isn't worth the marginal speed.
+
+## Most cache hits are constructor assertions (`unify-callsite-survey`)
+
+Follow-up call-site survey on pr-admin (641,991 external `unifyTypes`
+calls, 43.8% cache-hit rate measured against the live cache):
+**75.5% of all cache hits originate at three "extract a head
+constructor from a TypeApp shape, then unify with a constant"
+sites in `Types.hs`**, all with 97–99% hit rates.
+
+| Site | Code shape | Hits | Hit% | Share |
+|---|---|---:|---:|---:|
+| `Types:funAppHead` | `unifyTypes tyFunction' tyFunction` (line 1015) | 174,161 | 99.4% | 62.0% |
+| `Types:checkAbsArrow` | `unifyTypes t tyFunction` (line 841) | 29,067 | 97.8% | 10.3% |
+| `Types:checkArrayHead` | `unifyTypes a tyArray` (line 835) | 9,009 | 97.0% | 3.2% |
+
+Each of these is a structural assertion — once the outer pattern
+matches `(TypeApp _ (TypeApp _ tc _) _)`, the inner `tc` is
+practically always the function/array constructor already, and the
+unify is a no-op the cache then short-circuits.
+
+**Implication for future work:** an `unless (eqType x const)` guard
+at the call site eliminates the work *upstream*, costing one
+pattern-match-against-constant per call instead of a Set-membership
+check. `eqType const1 const2` against a single-node constant is
+one constructor-tag comparison — strictly cheaper than the cache
+path. The remaining cache hits are spread thinly across 15+ sites
+and may not justify the cache structure on their own.
+
+This is the lever `unify-pattern-survey` couldn't see — its cache-hit
+characterization said "all hits are hash-equal" but didn't reveal
+that almost all of them are at three specific assertion sites that
+can be skipped without any caching at all. The next experiment to
+try: `skip-redundant-funapp-unify`, mirroring
+`skip-redundant-entailment-unify` at these three sites, then
+re-survey to decide whether to drop the cache.

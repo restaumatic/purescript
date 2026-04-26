@@ -41,6 +41,7 @@ agent-facing overview.
 | [rust-interning](rust-interning/EXPERIMENT.md) | in-progress  | tbd     | (varies)   | conflicting — see EXPERIMENT.md      | interning, psstring, label     |
 | [row-cons-opt](row-cons-opt/EXPERIMENT.md)     | in-progress  | tbd     | e0125163   | -2.2% full, neutral others           | unification, rows, entailment  |
 | [type-hash](type-hash/EXPERIMENT.md)           | ready-to-ship | win    | 799e8208   | -15.4% full, neutral incremental      | typechecker, hashing, type-flags |
+| [unify-callsite-survey](unify-callsite-survey/EXPERIMENT.md) | done (research) | tbd | 799e8208 | survey: 75% of cache hits at 3 sites in Types.hs (97-99% hit rate) | unification, callsites, characterization |
 
 ## Closed experiments
 
