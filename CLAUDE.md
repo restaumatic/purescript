@@ -165,17 +165,12 @@ See `debug/README.md` for details on RTS flags and tools.
 
 ### Hotspot reference
 
-From the most recent profile on the `restaumatic` branch (see
-`experiments/README.md` for the live table):
+The live hotspot table is in `experiments/README.md` under
+"Hotspots being tracked" — it's updated after each profile run.
+Don't snapshot it here; it'll drift.
 
-| Cost Centre                  | Module                | % time | Status                   |
-| ---------------------------- | --------------------- | ------ | ------------------------ |
-| `compare` (Qualified a)      | Names.hs:234          | 20.8%  | unattacked               |
-| `replaceAllTypeSynonyms'.go` | TypeChecker.Synonyms  | 16.9%  | see `synonym-opt`        |
-| `compare` (PSString)         | PSString.hs:52        | 8.6%   | unattacked               |
-| `compareType`                | Types.hs              | 4.2%   | unattacked               |
-
-When selecting a new experiment, pick an unattacked hotspot, or a
-previously-attacked one whose experiment reached `no-win` with a
-clear path to a different approach. **Don't re-attempt a dead-end
-technique without new evidence** — check `LESSONS.md` first.
+When selecting a new experiment, pick an unattacked hotspot from
+that table, or a previously-attacked one whose experiment reached
+`no-win` with a clear path to a different approach. **Don't
+re-attempt a dead-end technique without new evidence** — check
+`LESSONS.md` first.
