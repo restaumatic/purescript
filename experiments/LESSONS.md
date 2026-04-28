@@ -264,23 +264,6 @@ and only adds work.
 whether the hot callers are the equal-types or unequal-types case.
 Short-circuiting only helps the side you're not already on.
 
-## Open territory (no experiment yet)
-
-These hotspot percentages are from the **pre-merges** profile (~73s full
-build baseline). After synonym-opt + skip-redundant-entailment-unify shipped
-(-22.9% full to ~56s), the relative contribution of each remaining hotspot
-has shifted. **Re-profile before picking the next target.**
-
-- **`compare (Qualified a)` at 20.8% of time (stale)** — the single biggest
-  cost centre. Interning, switching to a smaller key type, or using
-  `HashMap` instead of `Map` for `Environment` lookups are candidates.
-- **`compare (PSString) at 8.6% (stale)`** — row labels and type-level string
-  comparisons. Interning or a precomputed-hash wrapper.
-- **`compareType` at 4.2% (stale)** — likely related to the above two via
-  structural comparison of type trees.
-
-Evaluate these against the "dead-end" lessons above before planning.
-
 ## Instrumentation in Unify.hs contaminates measurement (`unify-cache`)
 
 Adding ~50 lines of `NOINLINE`-marked top-level definitions to
