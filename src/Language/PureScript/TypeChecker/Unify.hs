@@ -1,3 +1,4 @@
+{-# LANGUAGE MagicHash #-}
 -- |
 -- Functions and instances relating to unification
 --
@@ -18,6 +19,7 @@ import Prelude
 
 import Control.Exception (assert)
 import Control.Monad (forM_, unless, void)
+import GHC.Exts (reallyUnsafePtrEquality#, isTrue#)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets, modify, state)
 import Control.Monad.Writer.Class (MonadWriter(..))
@@ -113,7 +115,13 @@ unknownsInType t = everythingOnTypes (.) go t []
 
 -- | Unify two types, updating the current substitution
 unifyTypes :: SourceType -> SourceType -> TypeCheckM ()
-unifyTypes t1 t2 = do
+unifyTypes t1 t2
+  -- Pointer-equal arguments are structurally equal, so unifyTypes is a
+  -- no-op: no fresh TUnknowns to solve, no errors. Skip substituteType,
+  -- the hint stack push, and the cache lookup. Sound regardless of the
+  -- ptr-eq result (False just falls through to the existing path).
+  | isTrue# (reallyUnsafePtrEquality# t1 t2) = pure ()
+  | otherwise = do
   sub <- gets checkSubstitution
   withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes'' (substituteType sub t1) (substituteType sub t2)
   where
