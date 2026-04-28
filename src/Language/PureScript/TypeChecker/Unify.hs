@@ -17,7 +17,7 @@ module Language.PureScript.TypeChecker.Unify
 import Prelude
 
 import Control.Exception (assert)
-import Control.Monad (forM_, void, when)
+import Control.Monad (forM_, unless, void)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets, modify, state)
 import Control.Monad.Writer.Class (MonadWriter(..))
@@ -119,7 +119,7 @@ unifyTypes t1 t2 = do
   where
   unifyTypes'' t1' t2'= do
     cache <- gets unificationCache
-    when (not (HS.member (t1', t2') cache)) $ do
+    unless (HS.member (t1', t2') cache) $ do
       modify $ \st -> st { unificationCache = HS.insert (t1', t2') cache }
       unifyTypes' t1' t2'
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()

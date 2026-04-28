@@ -301,29 +301,29 @@ modifyFlags f = \case
 -- | Per-constructor salt. Distinct so two leaves with the same payload but
 -- different constructors get different hashes (e.g. @TypeVar "x"@ vs
 -- @TypeLevelString "x"@). Values are arbitrary primes.
-ctorSalt_TUnknown, ctorSalt_TypeVar, ctorSalt_TypeLevelString,
-  ctorSalt_TypeLevelInt, ctorSalt_TypeWildcard, ctorSalt_TypeConstructor,
-  ctorSalt_TypeOp, ctorSalt_TypeApp, ctorSalt_KindApp, ctorSalt_ForAll,
-  ctorSalt_ConstrainedType, ctorSalt_Skolem, ctorSalt_REmpty, ctorSalt_RCons,
-  ctorSalt_KindedType, ctorSalt_BinaryNoParensType, ctorSalt_ParensInType
+ctorSaltTUnknown, ctorSaltTypeVar, ctorSaltTypeLevelString,
+  ctorSaltTypeLevelInt, ctorSaltTypeWildcard, ctorSaltTypeConstructor,
+  ctorSaltTypeOp, ctorSaltTypeApp, ctorSaltKindApp, ctorSaltForAll,
+  ctorSaltConstrainedType, ctorSaltSkolem, ctorSaltREmpty, ctorSaltRCons,
+  ctorSaltKindedType, ctorSaltBinaryNoParensType, ctorSaltParensInType
   :: Int
-ctorSalt_TUnknown            = 1009
-ctorSalt_TypeVar             = 1013
-ctorSalt_TypeLevelString     = 1019
-ctorSalt_TypeLevelInt        = 1021
-ctorSalt_TypeWildcard        = 1031
-ctorSalt_TypeConstructor     = 1033
-ctorSalt_TypeOp              = 1039
-ctorSalt_TypeApp             = 1049
-ctorSalt_KindApp             = 1051
-ctorSalt_ForAll              = 1061
-ctorSalt_ConstrainedType     = 1063
-ctorSalt_Skolem              = 1069
-ctorSalt_REmpty              = 1087
-ctorSalt_RCons               = 1091
-ctorSalt_KindedType          = 1093
-ctorSalt_BinaryNoParensType  = 1097
-ctorSalt_ParensInType        = 1103
+ctorSaltTUnknown            = 1009
+ctorSaltTypeVar             = 1013
+ctorSaltTypeLevelString     = 1019
+ctorSaltTypeLevelInt        = 1021
+ctorSaltTypeWildcard        = 1031
+ctorSaltTypeConstructor     = 1033
+ctorSaltTypeOp              = 1039
+ctorSaltTypeApp             = 1049
+ctorSaltKindApp             = 1051
+ctorSaltForAll              = 1061
+ctorSaltConstrainedType     = 1063
+ctorSaltSkolem              = 1069
+ctorSaltREmpty              = 1087
+ctorSaltRCons               = 1091
+ctorSaltKindedType          = 1093
+ctorSaltBinaryNoParensType  = 1097
+ctorSaltParensInType        = 1103
 
 -- | Build TypeFlags for a leaf node, hashing one payload value.
 leafFlags1 :: Hashable x => Word8 -> Int -> x -> TypeFlags
@@ -333,7 +333,7 @@ leafFlags1 bits salt x = TypeFlags bits (salt `hashWithSalt` x)
 -- | Compute hash of a 'Constraint' from its already-hashed children.
 constraintHash :: Constraint a -> Int
 constraintHash c =
-  ctorSalt_ConstrainedType
+  ctorSaltConstrainedType
     `hashWithSalt` constraintClass c
     `hashWithSalt` constraintData c
     `hashWithSalt` map (tfHash . typeFlags) (constraintKindArgs c)
@@ -350,7 +350,7 @@ forAllNodeFlags vis ident mbK ty sco =
         .|. unscoped
     unscoped = case sco of Nothing -> tfBits tfHasUnscopedForAlls; _ -> 0
     hash_ =
-      ctorSalt_ForAll
+      ctorSaltForAll
         `hashWithSalt` vis
         `hashWithSalt` ident
         `hashWithSalt` fmap (tfHash . typeFlags) mbK
@@ -379,7 +379,7 @@ skolemNodeFlags name mbK i sco =
   where
     bits = maybe 0 (tfBits . typeFlags) mbK .&. structuralMask
     hash_ =
-      ctorSalt_Skolem
+      ctorSaltSkolem
         `hashWithSalt` name
         `hashWithSalt` fmap (tfHash . typeFlags) mbK
         `hashWithSalt` i
@@ -402,7 +402,7 @@ rconsNodeFlags :: Label -> Type a -> Type a -> TypeFlags
 rconsNodeFlags l ty rest =
     TypeFlags
       ((tfBits f1 .|. tfBits f2) .&. structuralMask)
-      (ctorSalt_RCons `hashWithSalt` l `hashWithSalt` tfHash f1 `hashWithSalt` tfHash f2)
+      (ctorSaltRCons `hashWithSalt` l `hashWithSalt` tfHash f1 `hashWithSalt` tfHash f2)
   where
     f1 = typeFlags ty
     f2 = typeFlags rest
@@ -462,39 +462,39 @@ instance Serialise a => Serialise (Type a)
 
 pattern TUnknown :: a -> Int -> Type a
 pattern TUnknown a i <- TUnknown_ _ a i
-  where TUnknown a i = TUnknown_ (leafFlags1 0 ctorSalt_TUnknown i) a i
+  where TUnknown a i = TUnknown_ (leafFlags1 0 ctorSaltTUnknown i) a i
 
 pattern TypeVar :: a -> Text -> Type a
 pattern TypeVar a t <- TypeVar_ _ a t
-  where TypeVar a t = TypeVar_ (leafFlags1 0 ctorSalt_TypeVar t) a t
+  where TypeVar a t = TypeVar_ (leafFlags1 0 ctorSaltTypeVar t) a t
 
 pattern TypeLevelString :: a -> PSString -> Type a
 pattern TypeLevelString a s <- TypeLevelString_ _ a s
-  where TypeLevelString a s = TypeLevelString_ (leafFlags1 0 ctorSalt_TypeLevelString s) a s
+  where TypeLevelString a s = TypeLevelString_ (leafFlags1 0 ctorSaltTypeLevelString s) a s
 
 pattern TypeLevelInt :: a -> Integer -> Type a
 pattern TypeLevelInt a n <- TypeLevelInt_ _ a n
-  where TypeLevelInt a n = TypeLevelInt_ (leafFlags1 0 ctorSalt_TypeLevelInt n) a n
+  where TypeLevelInt a n = TypeLevelInt_ (leafFlags1 0 ctorSaltTypeLevelInt n) a n
 
 pattern TypeWildcard :: a -> WildcardData -> Type a
 pattern TypeWildcard a w <- TypeWildcard_ _ a w
-  where TypeWildcard a w = TypeWildcard_ (leafFlags1 (tfBits tfHasWildcards) ctorSalt_TypeWildcard w) a w
+  where TypeWildcard a w = TypeWildcard_ (leafFlags1 (tfBits tfHasWildcards) ctorSaltTypeWildcard w) a w
 
 pattern TypeConstructor :: a -> Qualified (ProperName 'TypeName) -> Type a
 pattern TypeConstructor a q <- TypeConstructor_ _ a q
-  where TypeConstructor a q = TypeConstructor_ (leafFlags1 0 ctorSalt_TypeConstructor q) a q
+  where TypeConstructor a q = TypeConstructor_ (leafFlags1 0 ctorSaltTypeConstructor q) a q
 
 pattern TypeOp :: a -> Qualified (OpName 'TypeOpName) -> Type a
 pattern TypeOp a q <- TypeOp_ _ a q
-  where TypeOp a q = TypeOp_ (leafFlags1 0 ctorSalt_TypeOp q) a q
+  where TypeOp a q = TypeOp_ (leafFlags1 0 ctorSaltTypeOp q) a q
 
 pattern TypeApp :: a -> Type a -> Type a -> Type a
 pattern TypeApp a t1 t2 <- TypeApp_ _ a t1 t2
-  where TypeApp a t1 t2 = TypeApp_ (binaryNodeFlags ctorSalt_TypeApp t1 t2) a t1 t2
+  where TypeApp a t1 t2 = TypeApp_ (binaryNodeFlags ctorSaltTypeApp t1 t2) a t1 t2
 
 pattern KindApp :: a -> Type a -> Type a -> Type a
 pattern KindApp a t1 t2 <- KindApp_ _ a t1 t2
-  where KindApp a t1 t2 = KindApp_ (binaryNodeFlags ctorSalt_KindApp t1 t2) a t1 t2
+  where KindApp a t1 t2 = KindApp_ (binaryNodeFlags ctorSaltKindApp t1 t2) a t1 t2
 
 pattern ForAll :: a -> TypeVarVisibility -> Text -> Maybe (Type a) -> Type a -> Maybe SkolemScope -> Type a
 pattern ForAll a vis ident mbK ty sco <- ForAll_ _ a vis ident mbK ty sco
@@ -510,7 +510,7 @@ pattern Skolem a t mbK i s <- Skolem_ _ a t mbK i s
 
 pattern REmpty :: a -> Type a
 pattern REmpty a <- REmpty_ _ a
-  where REmpty a = REmpty_ (TypeFlags 0 ctorSalt_REmpty) a
+  where REmpty a = REmpty_ (TypeFlags 0 ctorSaltREmpty) a
 
 pattern RCons :: a -> Label -> Type a -> Type a -> Type a
 pattern RCons a l ty rest <- RCons_ _ a l ty rest
@@ -518,15 +518,15 @@ pattern RCons a l ty rest <- RCons_ _ a l ty rest
 
 pattern KindedType :: a -> Type a -> Type a -> Type a
 pattern KindedType a ty k <- KindedType_ _ a ty k
-  where KindedType a ty k = KindedType_ (binaryNodeFlags ctorSalt_KindedType ty k) a ty k
+  where KindedType a ty k = KindedType_ (binaryNodeFlags ctorSaltKindedType ty k) a ty k
 
 pattern BinaryNoParensType :: a -> Type a -> Type a -> Type a -> Type a
 pattern BinaryNoParensType a t1 t2 t3 <- BinaryNoParensType_ _ a t1 t2 t3
-  where BinaryNoParensType a t1 t2 t3 = BinaryNoParensType_ (ternaryNodeFlags ctorSalt_BinaryNoParensType t1 t2 t3) a t1 t2 t3
+  where BinaryNoParensType a t1 t2 t3 = BinaryNoParensType_ (ternaryNodeFlags ctorSaltBinaryNoParensType t1 t2 t3) a t1 t2 t3
 
 pattern ParensInType :: a -> Type a -> Type a
 pattern ParensInType a t <- ParensInType_ _ a t
-  where ParensInType a t = ParensInType_ (unaryNodeFlags ctorSalt_ParensInType t) a t
+  where ParensInType a t = ParensInType_ (unaryNodeFlags ctorSaltParensInType t) a t
 
 {-# COMPLETE TUnknown, TypeVar, TypeLevelString, TypeLevelInt, TypeWildcard, TypeConstructor, TypeOp, TypeApp, KindApp, ForAll, ConstrainedType, Skolem, REmpty, RCons, KindedType, BinaryNoParensType, ParensInType #-}
 
