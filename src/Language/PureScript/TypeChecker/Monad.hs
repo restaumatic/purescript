@@ -14,6 +14,7 @@ import Control.Monad.State.Strict qualified as StrictState
 
 import Data.Maybe (fromMaybe)
 import Data.IntMap.Lazy qualified as IM
+import Data.HashSet qualified as HS
 import Data.Map qualified as M
 import Data.Set qualified as S
 import Data.Text (Text, isPrefixOf, unpack)
@@ -133,7 +134,7 @@ data CheckState = CheckState
   , checkConstructorImportsForCoercible :: S.Set (ModuleName, Qualified (ProperName 'ConstructorName))
   -- ^ Newtype constructors imports required to solve Coercible constraints.
   -- We have to keep track of them so that we don't emit unused import warnings.
-  , unificationCache :: S.Set (SourceType, SourceType)
+  , unificationCache :: HS.HashSet (SourceType, SourceType)
   }
 
 -- | Create an empty @CheckState@

@@ -22,9 +22,9 @@ import Language.PureScript.Names (ProperName, ProperNameType(..), Qualified)
 import Language.PureScript.TypeChecker.Monad (getEnv, TypeCheckM)
 import Language.PureScript.Types
   ( SourceType, Type(..), TypeFlags
-  , combineFlags, completeBinderList, constraintNodeFlags, everythingOnTypes, forAllNodeFlags
-  , getAnnForType, hasFlag, overConstraintArgsAll, replaceAllTypeVars
-  , setFlag, skolemNodeFlags, tfSynonymsFree, typeFlags
+  , completeBinderList, everythingOnTypes
+  , getAnnForType, hasFlag, modifyFlags, overConstraintArgsAll
+  , replaceAllTypeVars, setFlag, tfSynonymsFree, typeFlags
   )
 
 -- | Type synonym information (arguments with kinds, aliased type), indexed by name
@@ -50,34 +50,20 @@ replaceAllTypeSynonyms' syns kinds
   sf :: TypeFlags -> TypeFlags
   sf = setFlag tfSynonymsFree
 
-  -- Mark a single node as synonym-free (no recursion)
+  -- Mark a single node as synonym-free (no recursion). 'modifyFlags' is
+  -- INLINEd, so GHC fuses construction (via pattern synonym) + flag mutation
+  -- into a single allocation via case-of-known-constructor.
   markSF :: SourceType -> SourceType
-  markSF (TUnknown_ f a b) = TUnknown_ (sf f) a b
-  markSF (TypeVar_ f a b) = TypeVar_ (sf f) a b
-  markSF (TypeLevelString_ f a b) = TypeLevelString_ (sf f) a b
-  markSF (TypeLevelInt_ f a b) = TypeLevelInt_ (sf f) a b
-  markSF (TypeWildcard_ f a b) = TypeWildcard_ (sf f) a b
-  markSF (TypeConstructor_ f a b) = TypeConstructor_ (sf f) a b
-  markSF (TypeOp_ f a b) = TypeOp_ (sf f) a b
-  markSF (TypeApp_ f a t1 t2) = TypeApp_ (sf f) a t1 t2
-  markSF (KindApp_ f a t1 t2) = KindApp_ (sf f) a t1 t2
-  markSF (ForAll_ f a v i k t s) = ForAll_ (sf f) a v i k t s
-  markSF (ConstrainedType_ f a c t) = ConstrainedType_ (sf f) a c t
-  markSF (Skolem_ f a n k i s) = Skolem_ (sf f) a n k i s
-  markSF (REmpty_ f a) = REmpty_ (sf f) a
-  markSF (RCons_ f a l t r) = RCons_ (sf f) a l t r
-  markSF (KindedType_ f a t k) = KindedType_ (sf f) a t k
-  markSF (BinaryNoParensType_ f a t1 t2 t3) = BinaryNoParensType_ (sf f) a t1 t2 t3
-  markSF (ParensInType_ f a t) = ParensInType_ (sf f) a t
+  markSF = modifyFlags sf
 
   -- Main walk: try synonym expansion at potential application sites,
   -- then recurse into children. Sets tfSynonymsFree on all output nodes.
   walk :: SourceType -> Either MultipleErrors SourceType
   walk t | hasFlag tfSynonymsFree (typeFlags t) = Right t
-  walk t@(TypeApp_ _ _ _ _) = trySyn t >>= walkChildren
-  walk t@(KindApp_ _ _ _ _) = trySyn t >>= walkChildren
-  walk t@(TypeConstructor_ _ _ _) = trySyn t >>= \t' -> case t' of
-    TypeConstructor_ _ _ _ -> Right (markSF t')  -- leaf
+  walk t@(TypeApp _ _ _) = trySyn t >>= walkChildren
+  walk t@(KindApp _ _ _) = trySyn t >>= walkChildren
+  walk t@(TypeConstructor _ _) = trySyn t >>= \t' -> case t' of
+    TypeConstructor _ _ -> Right (markSF t')  -- leaf
     _ -> walkChildren t'  -- synonym expanded to non-leaf
   walk t = walkChildren t
 
@@ -101,36 +87,38 @@ replaceAllTypeSynonyms' syns kinds
   go ss c kargs args (KindApp _ f arg) = go ss c (arg : kargs) args f
   go _ _ _ _ _ = return Nothing
 
-  -- Walk children and reconstruct with recomputed structural flags + tfSynonymsFree.
-  -- Uses raw constructors to set flags in a single allocation.
+  -- Walk children and reconstruct via pattern synonyms (which compute flags)
+  -- + markSF (which sets the synonym-free bit). The pattern synonym builder
+  -- and modifyFlags are both INLINE; GHC fuses them via case-of-known-
+  -- constructor into a single allocation per node.
   walkChildren :: SourceType -> Either MultipleErrors SourceType
-  walkChildren (TypeApp_ _ ann t1 t2) = do
+  walkChildren (TypeApp ann t1 t2) = do
     t1' <- walk t1; t2' <- walk t2
-    return $! TypeApp_ (sf (typeFlags t1' `combineFlags` typeFlags t2')) ann t1' t2'
-  walkChildren (KindApp_ _ ann t1 t2) = do
+    return $! markSF (TypeApp ann t1' t2')
+  walkChildren (KindApp ann t1 t2) = do
     t1' <- walk t1; t2' <- walk t2
-    return $! KindApp_ (sf (typeFlags t1' `combineFlags` typeFlags t2')) ann t1' t2'
-  walkChildren (ForAll_ _ ann vis ident mbK ty sco) = do
+    return $! markSF (KindApp ann t1' t2')
+  walkChildren (ForAll ann vis ident mbK ty sco) = do
     mbK' <- traverse walk mbK; ty' <- walk ty
-    return $! ForAll_ (sf (forAllNodeFlags mbK' ty' sco)) ann vis ident mbK' ty' sco
-  walkChildren (ConstrainedType_ _ ann c ty) = do
+    return $! markSF (ForAll ann vis ident mbK' ty' sco)
+  walkChildren (ConstrainedType ann c ty) = do
     c' <- overConstraintArgsAll (mapM walk) c; ty' <- walk ty
-    return $! ConstrainedType_ (sf (constraintNodeFlags c' ty')) ann c' ty'
-  walkChildren (Skolem_ _ ann name mbK i sc) = do
+    return $! markSF (ConstrainedType ann c' ty')
+  walkChildren (Skolem ann name mbK i sc) = do
     mbK' <- traverse walk mbK
-    return $! Skolem_ (sf (skolemNodeFlags mbK')) ann name mbK' i sc
-  walkChildren (RCons_ _ ann name ty rest) = do
+    return $! markSF (Skolem ann name mbK' i sc)
+  walkChildren (RCons ann name ty rest) = do
     ty' <- walk ty; rest' <- walk rest
-    return $! RCons_ (sf (typeFlags ty' `combineFlags` typeFlags rest')) ann name ty' rest'
-  walkChildren (KindedType_ _ ann ty k) = do
+    return $! markSF (RCons ann name ty' rest')
+  walkChildren (KindedType ann ty k) = do
     ty' <- walk ty; k' <- walk k
-    return $! KindedType_ (sf (typeFlags ty' `combineFlags` typeFlags k')) ann ty' k'
-  walkChildren (BinaryNoParensType_ _ ann t1 t2 t3) = do
+    return $! markSF (KindedType ann ty' k')
+  walkChildren (BinaryNoParensType ann t1 t2 t3) = do
     t1' <- walk t1; t2' <- walk t2; t3' <- walk t3
-    return $! BinaryNoParensType_ (sf (typeFlags t1' `combineFlags` typeFlags t2' `combineFlags` typeFlags t3')) ann t1' t2' t3'
-  walkChildren (ParensInType_ _ ann t) = do
+    return $! markSF (BinaryNoParensType ann t1' t2' t3')
+  walkChildren (ParensInType ann t) = do
     t' <- walk t
-    return $! ParensInType_ (sf (typeFlags t')) ann t'
+    return $! markSF (ParensInType ann t')
   walkChildren other = return $! markSF other
 
   lookupKindArgs :: Qualified (ProperName 'TypeName) -> [Text]

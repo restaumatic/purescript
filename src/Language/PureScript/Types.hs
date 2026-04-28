@@ -2,8 +2,108 @@
 -- Data types for types
 --
 module Language.PureScript.Types
-  ( module Language.PureScript.Types
+  ( -- * Core types
+    SourceType
+  , SourceConstraint
+  , SkolemScope(..)
+  , WildcardData(..)
+  , TypeVarVisibility(..)
+  , TypeFlags(..)
+  , typeVarVisibilityPrefix
+    -- * Type AST
+    -- | The 'Type' data type's underlying constructors carry a 'TypeFlags'
+    -- field with a cached structural hash. Construction must go through
+    -- the bidirectional pattern synonyms (without the @_@ suffix) to ensure
+    -- the hash stays consistent. The underscore-suffixed constructors are
+    -- intentionally /not/ exported — use 'modifyFlags' to mutate flags
+    -- without invalidating the hash.
   , Type(TUnknown, TypeVar, TypeLevelString, TypeLevelInt, TypeWildcard, TypeConstructor, TypeOp, TypeApp, KindApp, ForAll, ConstrainedType, Skolem, REmpty, RCons, KindedType, BinaryNoParensType, ParensInType)
+  , pattern REmptyKinded
+  , Constraint(..)
+  , ConstraintData(..)
+  , RowListItem(..)
+    -- * Flag helpers
+  , tfHasWildcards
+  , tfHasUnscopedForAlls
+  , tfSynonymsFree
+  , hasFlag
+  , setFlag
+  , modifyFlags
+  , typeFlags
+    -- * Smart constructors
+  , srcTUnknown
+  , srcTypeVar
+  , srcTypeLevelString
+  , srcTypeLevelInt
+  , srcTypeWildcard
+  , srcTypeConstructor
+  , srcTypeApp
+  , srcKindApp
+  , srcForAll
+  , srcConstrainedType
+  , srcREmpty
+  , srcRCons
+  , srcKindedType
+  , srcConstraint
+  , srcInstanceType
+  , srcRowListItem
+    -- * JSON
+  , typeToJSON
+  , typeFromJSON
+  , typeVarVisToJSON
+  , typeVarVisFromJSON
+  , constraintToJSON
+  , constraintFromJSON
+  , constraintDataToJSON
+  , constraintDataFromJSON
+    -- * Equality / comparison
+  , eqType
+  , eqMaybeType
+  , compareType
+  , compareMaybeType
+  , eqConstraint
+  , compareConstraint
+    -- * Queries
+  , isMonoType
+  , isREmpty
+  , containsForAll
+  , containsUnknowns
+  , unknowns
+  , usedTypeVariables
+  , freeTypeVariables
+  , unapplyTypes
+  , unapplyConstraints
+  , annForType
+  , getAnnForType
+  , setAnnForType
+  , toREmptyKinded
+    -- * Traversals
+  , everythingOnTypes
+  , everythingWithContextOnTypes
+  , everywhereOnTypes
+  , everywhereOnTypesM
+  , everywhereOnTypesTopDownM
+    -- * Substitution / quantification
+  , replaceAllTypeVars
+  , replaceTypeVars
+  , mkForAll
+  , quantify
+  , addVisibility
+  , moveQuantifiersToFront
+  , completeBinderList
+  , genPureName
+  , eraseForAllKindAnnotations
+  , eraseKindApps
+    -- * Rows
+  , alignRowsWith
+  , rowFromList
+  , rowToList
+  , rowToSortedList
+    -- * Constraint helpers
+  , mapConstraintArgs
+  , mapConstraintArgsAll
+  , overConstraintArgs
+  , overConstraintArgsAll
   ) where
 
 import Prelude
@@ -20,6 +120,7 @@ import Data.Aeson qualified as A
 import Data.Aeson.Types qualified as A
 import Data.Bits ((.&.), (.|.))
 import Data.Foldable (fold, foldl')
+import Data.Hashable (Hashable(..))
 import Data.IntSet qualified as IS
 import Data.List (sortOn)
 import Data.Maybe (isJust)
@@ -45,6 +146,8 @@ newtype SkolemScope = SkolemScope { runSkolemScope :: Int }
 
 instance NFData SkolemScope
 instance Serialise SkolemScope
+instance Hashable SkolemScope where
+  hashWithSalt s (SkolemScope i) = hashWithSalt s i
 
 -- |
 -- Describes how a TypeWildcard should be presented to the user during
@@ -57,6 +160,7 @@ data WildcardData = HoleWildcard Text | UnnamedWildcard | IgnoredWildcard
 
 instance NFData WildcardData
 instance Serialise WildcardData
+instance Hashable WildcardData
 
 data TypeVarVisibility
   = TypeVarVisible
@@ -65,6 +169,7 @@ data TypeVarVisibility
 
 instance NFData TypeVarVisibility
 instance Serialise TypeVarVisibility
+instance Hashable TypeVarVisibility
 
 typeVarVisibilityPrefix :: TypeVarVisibility -> Text
 typeVarVisibilityPrefix = \case
@@ -75,72 +180,50 @@ typeVarVisibilityPrefix = \case
 -- Type flags: cached structural properties of a type subtree
 -- ---------------------------------------------------------------------------
 
--- | Cached information about what a type subtree contains. Stored per-node
--- so that traversals can short-circuit when a subtree is known to not
--- contain the nodes they are looking for.
-newtype TypeFlags = TypeFlags Word8
+-- | Cached information about what a type subtree contains, plus a structural
+-- hash. Stored per-node so that traversals can short-circuit when a subtree
+-- is known to not contain the nodes they are looking for, and so that
+-- 'eqType' / 'Hashable Type' run in O(1) up to a hash collision.
+data TypeFlags = TypeFlags { tfBits :: {-# UNPACK #-} !Word8, tfHash :: {-# UNPACK #-} !Int }
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData TypeFlags
 instance Serialise TypeFlags
 
--- | No flags set.
-noFlags :: TypeFlags
-noFlags = TypeFlags 0
-
 -- | Subtree contains a 'TypeWildcard'.
 tfHasWildcards :: TypeFlags
-tfHasWildcards = TypeFlags 0x01
+tfHasWildcards = TypeFlags 0x01 0
 
 -- | Subtree contains a 'ForAll' without a 'SkolemScope'.
 tfHasUnscopedForAlls :: TypeFlags
-tfHasUnscopedForAlls = TypeFlags 0x02
+tfHasUnscopedForAlls = TypeFlags 0x02 0
 
 -- | Subtree has been fully synonym-expanded by 'replaceAllTypeSynonyms'.
 tfSynonymsFree :: TypeFlags
-tfSynonymsFree = TypeFlags 0x04
-
--- | Combine flags from child subtrees. Only structural flags
--- ('tfHasWildcards', 'tfHasUnscopedForAlls') propagate; the processing flag
--- 'tfSynonymsFree' is always cleared.
---
--- Why clear 'tfSynonymsFree'? Constructing a new type from synonym-free
--- children can still create a new synonym application at the parent, even
--- when both children are themselves synonym-free. Example:
---
--- @
---   Before substitution: TypeApp (TUnknown u) someArg    -- no synonyms
---   Substitution:        u -> TypeConstructor SomeAlias  -- standalone, fine
---   After substitution:  TypeApp (TypeConstructor SomeAlias) someArg
---                        -- now a fully-applied synonym that needs expansion!
--- @
---
--- In PureScript the convention is to expand synonyms before unification, so
--- the substitution /values/ are synonym-free in isolation. But when a
--- 'TUnknown' in function position is substituted with a synonym constructor,
--- the /resulting/ parent @TypeApp@ is a synonym application that must be
--- expanded. We can't detect this from the children's flags alone without
--- inspecting the spine, so we conservatively clear the flag and let
--- 'replaceAllTypeSynonyms' re-scan when asked.
-combineFlags :: TypeFlags -> TypeFlags -> TypeFlags
-combineFlags (TypeFlags a) (TypeFlags b) = TypeFlags ((a .|. b) .&. structuralMask)
+tfSynonymsFree = TypeFlags 0x04 0
 
 -- | Mask of flags that propagate structurally from children to parents.
--- Processing flags (like 'tfSynonymsFree') are excluded — see 'combineFlags'.
+-- Processing flags (like 'tfSynonymsFree') are excluded — only flags
+-- describing structural properties of the subtree bubble up.
 structuralMask :: Word8
 structuralMask = w .|. w' where
-  TypeFlags w  = tfHasWildcards
-  TypeFlags w' = tfHasUnscopedForAlls
+  TypeFlags w  _ = tfHasWildcards
+  TypeFlags w' _ = tfHasUnscopedForAlls
 
 -- | Test whether a specific flag is set.
 hasFlag :: TypeFlags -> TypeFlags -> Bool
-hasFlag (TypeFlags mask) (TypeFlags w) = w .&. mask /= 0
+hasFlag (TypeFlags mask _) (TypeFlags w _) = w .&. mask /= 0
 
--- | Set a flag.
+-- | Set a flag (preserves the existing hash).
 setFlag :: TypeFlags -> TypeFlags -> TypeFlags
-setFlag (TypeFlags f) (TypeFlags w) = TypeFlags (w .|. f)
+setFlag (TypeFlags f _) (TypeFlags w h) = TypeFlags (w .|. f) h
 
 -- | Extract the flags from a Type node.
+--
+-- Note: with the @UNPACK@ pragma on @TypeFlags@ in every 'Type' constructor,
+-- this function reconstructs a 'TypeFlags' value from the unpacked Word8 +
+-- Int fields, which means each call boxes if not inlined. Hot paths that
+-- only need the cached hash should use 'typeHash' directly to avoid the box.
 typeFlags :: Type a -> TypeFlags
 typeFlags (TUnknown_ f _ _) = f
 typeFlags (TypeVar_ f _ _) = f
@@ -159,23 +242,189 @@ typeFlags (RCons_ f _ _ _ _) = f
 typeFlags (KindedType_ f _ _ _) = f
 typeFlags (BinaryNoParensType_ f _ _ _ _) = f
 typeFlags (ParensInType_ f _ _) = f
+{-# INLINE typeFlags #-}
 
--- | Mask to extract only structural flags (clearing processing flags).
-maskStructural :: TypeFlags -> TypeFlags
-maskStructural (TypeFlags w) = TypeFlags (w .&. structuralMask)
+-- | Direct accessor for a Type's cached hash, avoiding TypeFlags boxing.
+-- Hot paths that read the hash should use this rather than
+-- @tfHash . typeFlags@.
+typeHash :: Type a -> Int
+typeHash (TUnknown_ (TypeFlags _ h) _ _) = h
+typeHash (TypeVar_ (TypeFlags _ h) _ _) = h
+typeHash (TypeLevelString_ (TypeFlags _ h) _ _) = h
+typeHash (TypeLevelInt_ (TypeFlags _ h) _ _) = h
+typeHash (TypeWildcard_ (TypeFlags _ h) _ _) = h
+typeHash (TypeConstructor_ (TypeFlags _ h) _ _) = h
+typeHash (TypeOp_ (TypeFlags _ h) _ _) = h
+typeHash (TypeApp_ (TypeFlags _ h) _ _ _) = h
+typeHash (KindApp_ (TypeFlags _ h) _ _ _) = h
+typeHash (ForAll_ (TypeFlags _ h) _ _ _ _ _ _) = h
+typeHash (ConstrainedType_ (TypeFlags _ h) _ _ _) = h
+typeHash (Skolem_ (TypeFlags _ h) _ _ _ _ _) = h
+typeHash (REmpty_ (TypeFlags _ h) _) = h
+typeHash (RCons_ (TypeFlags _ h) _ _ _ _) = h
+typeHash (KindedType_ (TypeFlags _ h) _ _ _) = h
+typeHash (BinaryNoParensType_ (TypeFlags _ h) _ _ _ _) = h
+typeHash (ParensInType_ (TypeFlags _ h) _ _) = h
+{-# INLINE typeHash #-}
+
+-- | Apply a function to the flags of a Type node, preserving structure.
+-- Used by callers (e.g. 'replaceAllTypeSynonyms') that need to set a
+-- processing flag bit without recomputing the cached structural hash.
+-- Going through this helper is the only intended way to mutate flags
+-- from outside this module — the underscore-suffixed data constructors
+-- are not exported, so the cached hash cannot accidentally be invalidated.
+modifyFlags :: (TypeFlags -> TypeFlags) -> Type a -> Type a
+modifyFlags f = \case
+  TUnknown_ flags a x          -> TUnknown_ (f flags) a x
+  TypeVar_ flags a x           -> TypeVar_ (f flags) a x
+  TypeLevelString_ flags a x   -> TypeLevelString_ (f flags) a x
+  TypeLevelInt_ flags a x      -> TypeLevelInt_ (f flags) a x
+  TypeWildcard_ flags a x      -> TypeWildcard_ (f flags) a x
+  TypeConstructor_ flags a x   -> TypeConstructor_ (f flags) a x
+  TypeOp_ flags a x            -> TypeOp_ (f flags) a x
+  TypeApp_ flags a t1 t2       -> TypeApp_ (f flags) a t1 t2
+  KindApp_ flags a t1 t2       -> KindApp_ (f flags) a t1 t2
+  ForAll_ flags a v i k t s    -> ForAll_ (f flags) a v i k t s
+  ConstrainedType_ flags a c t -> ConstrainedType_ (f flags) a c t
+  Skolem_ flags a n k i s      -> Skolem_ (f flags) a n k i s
+  REmpty_ flags a              -> REmpty_ (f flags) a
+  RCons_ flags a l t r         -> RCons_ (f flags) a l t r
+  KindedType_ flags a t k      -> KindedType_ (f flags) a t k
+  BinaryNoParensType_ flags a t1 t2 t3 -> BinaryNoParensType_ (f flags) a t1 t2 t3
+  ParensInType_ flags a t      -> ParensInType_ (f flags) a t
+{-# INLINE modifyFlags #-}
+
+-- ---------------------------------------------------------------------------
+-- Hash mixing for the per-node structural hash
+-- ---------------------------------------------------------------------------
+
+-- | Per-constructor salt. Distinct so two leaves with the same payload but
+-- different constructors get different hashes (e.g. @TypeVar "x"@ vs
+-- @TypeLevelString "x"@). Values are arbitrary primes.
+ctorSalt_TUnknown, ctorSalt_TypeVar, ctorSalt_TypeLevelString,
+  ctorSalt_TypeLevelInt, ctorSalt_TypeWildcard, ctorSalt_TypeConstructor,
+  ctorSalt_TypeOp, ctorSalt_TypeApp, ctorSalt_KindApp, ctorSalt_ForAll,
+  ctorSalt_ConstrainedType, ctorSalt_Skolem, ctorSalt_REmpty, ctorSalt_RCons,
+  ctorSalt_KindedType, ctorSalt_BinaryNoParensType, ctorSalt_ParensInType
+  :: Int
+ctorSalt_TUnknown            = 1009
+ctorSalt_TypeVar             = 1013
+ctorSalt_TypeLevelString     = 1019
+ctorSalt_TypeLevelInt        = 1021
+ctorSalt_TypeWildcard        = 1031
+ctorSalt_TypeConstructor     = 1033
+ctorSalt_TypeOp              = 1039
+ctorSalt_TypeApp             = 1049
+ctorSalt_KindApp             = 1051
+ctorSalt_ForAll              = 1061
+ctorSalt_ConstrainedType     = 1063
+ctorSalt_Skolem              = 1069
+ctorSalt_REmpty              = 1087
+ctorSalt_RCons               = 1091
+ctorSalt_KindedType          = 1093
+ctorSalt_BinaryNoParensType  = 1097
+ctorSalt_ParensInType        = 1103
+
+-- | Build TypeFlags for a leaf node, hashing one payload value.
+leafFlags1 :: Hashable x => Word8 -> Int -> x -> TypeFlags
+leafFlags1 bits salt x = TypeFlags bits (salt `hashWithSalt` x)
+{-# INLINE leafFlags1 #-}
+
+-- | Compute hash of a 'Constraint' from its already-hashed children.
+constraintHash :: Constraint a -> Int
+constraintHash c =
+  ctorSalt_ConstrainedType
+    `hashWithSalt` constraintClass c
+    `hashWithSalt` constraintData c
+    `hashWithSalt` map (tfHash . typeFlags) (constraintKindArgs c)
+    `hashWithSalt` map (tfHash . typeFlags) (constraintArgs c)
+{-# INLINE constraintHash #-}
 
 -- | Compute ForAll flags from its components.
-forAllNodeFlags :: Maybe (Type a) -> Type a -> Maybe SkolemScope -> TypeFlags
-forAllNodeFlags mbK ty Nothing = maybe noFlags (maskStructural . typeFlags) mbK `combineFlags` maskStructural (typeFlags ty) `combineFlags` tfHasUnscopedForAlls
-forAllNodeFlags mbK ty (Just _) = maybe noFlags (maskStructural . typeFlags) mbK `combineFlags` maskStructural (typeFlags ty)
+forAllNodeFlags :: TypeVarVisibility -> Text -> Maybe (Type a) -> Type a -> Maybe SkolemScope -> TypeFlags
+forAllNodeFlags vis ident mbK ty sco =
+    TypeFlags bits hash_
+  where
+    bits =
+      ((maybe 0 (tfBits . typeFlags) mbK .|. tfBits (typeFlags ty)) .&. structuralMask)
+        .|. unscoped
+    unscoped = case sco of Nothing -> tfBits tfHasUnscopedForAlls; _ -> 0
+    hash_ =
+      ctorSalt_ForAll
+        `hashWithSalt` vis
+        `hashWithSalt` ident
+        `hashWithSalt` fmap (tfHash . typeFlags) mbK
+        `hashWithSalt` tfHash (typeFlags ty)
+        `hashWithSalt` sco
+{-# INLINE forAllNodeFlags #-}
 
 -- | Compute ConstrainedType flags from its components.
 constraintNodeFlags :: Constraint a -> Type a -> TypeFlags
-constraintNodeFlags c ty = foldl' combineFlags (maskStructural (typeFlags ty)) (map (maskStructural . typeFlags) (constraintKindArgs c) ++ map (maskStructural . typeFlags) (constraintArgs c))
+constraintNodeFlags c ty =
+    TypeFlags bits hash_
+  where
+    bits =
+      foldl'
+        (\acc f -> acc .|. tfBits f)
+        (tfBits (typeFlags ty))
+        (map typeFlags (constraintKindArgs c) ++ map typeFlags (constraintArgs c))
+        .&. structuralMask
+    hash_ = constraintHash c `hashWithSalt` tfHash (typeFlags ty)
+{-# INLINE constraintNodeFlags #-}
 
 -- | Compute Skolem flags from its components.
-skolemNodeFlags :: Maybe (Type a) -> TypeFlags
-skolemNodeFlags = maybe noFlags (maskStructural . typeFlags)
+skolemNodeFlags :: Text -> Maybe (Type a) -> Int -> SkolemScope -> TypeFlags
+skolemNodeFlags name mbK i sco =
+    TypeFlags bits hash_
+  where
+    bits = maybe 0 (tfBits . typeFlags) mbK .&. structuralMask
+    hash_ =
+      ctorSalt_Skolem
+        `hashWithSalt` name
+        `hashWithSalt` fmap (tfHash . typeFlags) mbK
+        `hashWithSalt` i
+        `hashWithSalt` sco
+{-# INLINE skolemNodeFlags #-}
+
+-- | Compute flags for a binary inner node (TypeApp, KindApp, KindedType).
+binaryNodeFlags :: Int -> Type a -> Type a -> TypeFlags
+binaryNodeFlags salt t1 t2 =
+    TypeFlags
+      ((tfBits f1 .|. tfBits f2) .&. structuralMask)
+      (salt `hashWithSalt` tfHash f1 `hashWithSalt` tfHash f2)
+  where
+    f1 = typeFlags t1
+    f2 = typeFlags t2
+{-# INLINE binaryNodeFlags #-}
+
+-- | Compute flags for an RCons node.
+rconsNodeFlags :: Label -> Type a -> Type a -> TypeFlags
+rconsNodeFlags l ty rest =
+    TypeFlags
+      ((tfBits f1 .|. tfBits f2) .&. structuralMask)
+      (ctorSalt_RCons `hashWithSalt` l `hashWithSalt` tfHash f1 `hashWithSalt` tfHash f2)
+  where
+    f1 = typeFlags ty
+    f2 = typeFlags rest
+{-# INLINE rconsNodeFlags #-}
+
+-- | Compute flags for BinaryNoParensType (3 children).
+ternaryNodeFlags :: Int -> Type a -> Type a -> Type a -> TypeFlags
+ternaryNodeFlags salt t1 t2 t3 =
+    TypeFlags
+      ((tfBits f1 .|. tfBits f2 .|. tfBits f3) .&. structuralMask)
+      (salt `hashWithSalt` tfHash f1 `hashWithSalt` tfHash f2 `hashWithSalt` tfHash f3)
+  where
+    f1 = typeFlags t1
+    f2 = typeFlags t2
+    f3 = typeFlags t3
+{-# INLINE ternaryNodeFlags #-}
+
+-- | Compute flags for a unary inner node (ParensInType).
+unaryNodeFlags :: Int -> Type a -> TypeFlags
+unaryNodeFlags salt t = TypeFlags (tfBits f .&. structuralMask) (salt `hashWithSalt` tfHash f)
+  where f = typeFlags t
+{-# INLINE unaryNodeFlags #-}
 
 -- ---------------------------------------------------------------------------
 -- The type of types
@@ -185,23 +434,23 @@ skolemNodeFlags = maybe noFlags (maskStructural . typeFlags)
 -- a 'TypeFlags' field. Use the pattern synonyms (without suffix) which
 -- auto-compute flags on construction and ignore them on matching.
 data Type a
-  = TUnknown_ !TypeFlags a Int
-  | TypeVar_ !TypeFlags a Text
-  | TypeLevelString_ !TypeFlags a PSString
-  | TypeLevelInt_ !TypeFlags a Integer
-  | TypeWildcard_ !TypeFlags a WildcardData
-  | TypeConstructor_ !TypeFlags a (Qualified (ProperName 'TypeName))
-  | TypeOp_ !TypeFlags a (Qualified (OpName 'TypeOpName))
-  | TypeApp_ !TypeFlags a (Type a) (Type a)
-  | KindApp_ !TypeFlags a (Type a) (Type a)
-  | ForAll_ !TypeFlags a TypeVarVisibility Text (Maybe (Type a)) (Type a) (Maybe SkolemScope)
-  | ConstrainedType_ !TypeFlags a (Constraint a) (Type a)
-  | Skolem_ !TypeFlags a Text (Maybe (Type a)) Int SkolemScope
-  | REmpty_ !TypeFlags a
-  | RCons_ !TypeFlags a Label (Type a) (Type a)
-  | KindedType_ !TypeFlags a (Type a) (Type a)
-  | BinaryNoParensType_ !TypeFlags a (Type a) (Type a) (Type a)
-  | ParensInType_ !TypeFlags a (Type a)
+  = TUnknown_ {-# UNPACK #-} !TypeFlags a Int
+  | TypeVar_ {-# UNPACK #-} !TypeFlags a Text
+  | TypeLevelString_ {-# UNPACK #-} !TypeFlags a PSString
+  | TypeLevelInt_ {-# UNPACK #-} !TypeFlags a Integer
+  | TypeWildcard_ {-# UNPACK #-} !TypeFlags a WildcardData
+  | TypeConstructor_ {-# UNPACK #-} !TypeFlags a (Qualified (ProperName 'TypeName))
+  | TypeOp_ {-# UNPACK #-} !TypeFlags a (Qualified (OpName 'TypeOpName))
+  | TypeApp_ {-# UNPACK #-} !TypeFlags a (Type a) (Type a)
+  | KindApp_ {-# UNPACK #-} !TypeFlags a (Type a) (Type a)
+  | ForAll_ {-# UNPACK #-} !TypeFlags a TypeVarVisibility Text (Maybe (Type a)) (Type a) (Maybe SkolemScope)
+  | ConstrainedType_ {-# UNPACK #-} !TypeFlags a (Constraint a) (Type a)
+  | Skolem_ {-# UNPACK #-} !TypeFlags a Text (Maybe (Type a)) Int SkolemScope
+  | REmpty_ {-# UNPACK #-} !TypeFlags a
+  | RCons_ {-# UNPACK #-} !TypeFlags a Label (Type a) (Type a)
+  | KindedType_ {-# UNPACK #-} !TypeFlags a (Type a) (Type a)
+  | BinaryNoParensType_ {-# UNPACK #-} !TypeFlags a (Type a) (Type a) (Type a)
+  | ParensInType_ {-# UNPACK #-} !TypeFlags a (Type a)
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
 instance NFData a => NFData (Type a)
@@ -213,43 +462,43 @@ instance Serialise a => Serialise (Type a)
 
 pattern TUnknown :: a -> Int -> Type a
 pattern TUnknown a i <- TUnknown_ _ a i
-  where TUnknown a i = TUnknown_ noFlags a i
+  where TUnknown a i = TUnknown_ (leafFlags1 0 ctorSalt_TUnknown i) a i
 
 pattern TypeVar :: a -> Text -> Type a
 pattern TypeVar a t <- TypeVar_ _ a t
-  where TypeVar a t = TypeVar_ noFlags a t
+  where TypeVar a t = TypeVar_ (leafFlags1 0 ctorSalt_TypeVar t) a t
 
 pattern TypeLevelString :: a -> PSString -> Type a
 pattern TypeLevelString a s <- TypeLevelString_ _ a s
-  where TypeLevelString a s = TypeLevelString_ noFlags a s
+  where TypeLevelString a s = TypeLevelString_ (leafFlags1 0 ctorSalt_TypeLevelString s) a s
 
 pattern TypeLevelInt :: a -> Integer -> Type a
 pattern TypeLevelInt a n <- TypeLevelInt_ _ a n
-  where TypeLevelInt a n = TypeLevelInt_ noFlags a n
+  where TypeLevelInt a n = TypeLevelInt_ (leafFlags1 0 ctorSalt_TypeLevelInt n) a n
 
 pattern TypeWildcard :: a -> WildcardData -> Type a
 pattern TypeWildcard a w <- TypeWildcard_ _ a w
-  where TypeWildcard a w = TypeWildcard_ tfHasWildcards a w
+  where TypeWildcard a w = TypeWildcard_ (leafFlags1 (tfBits tfHasWildcards) ctorSalt_TypeWildcard w) a w
 
 pattern TypeConstructor :: a -> Qualified (ProperName 'TypeName) -> Type a
 pattern TypeConstructor a q <- TypeConstructor_ _ a q
-  where TypeConstructor a q = TypeConstructor_ noFlags a q
+  where TypeConstructor a q = TypeConstructor_ (leafFlags1 0 ctorSalt_TypeConstructor q) a q
 
 pattern TypeOp :: a -> Qualified (OpName 'TypeOpName) -> Type a
 pattern TypeOp a q <- TypeOp_ _ a q
-  where TypeOp a q = TypeOp_ noFlags a q
+  where TypeOp a q = TypeOp_ (leafFlags1 0 ctorSalt_TypeOp q) a q
 
 pattern TypeApp :: a -> Type a -> Type a -> Type a
 pattern TypeApp a t1 t2 <- TypeApp_ _ a t1 t2
-  where TypeApp a t1 t2 = TypeApp_ (typeFlags t1 `combineFlags` typeFlags t2) a t1 t2
+  where TypeApp a t1 t2 = TypeApp_ (binaryNodeFlags ctorSalt_TypeApp t1 t2) a t1 t2
 
 pattern KindApp :: a -> Type a -> Type a -> Type a
 pattern KindApp a t1 t2 <- KindApp_ _ a t1 t2
-  where KindApp a t1 t2 = KindApp_ (typeFlags t1 `combineFlags` typeFlags t2) a t1 t2
+  where KindApp a t1 t2 = KindApp_ (binaryNodeFlags ctorSalt_KindApp t1 t2) a t1 t2
 
 pattern ForAll :: a -> TypeVarVisibility -> Text -> Maybe (Type a) -> Type a -> Maybe SkolemScope -> Type a
 pattern ForAll a vis ident mbK ty sco <- ForAll_ _ a vis ident mbK ty sco
-  where ForAll a vis ident mbK ty sco = ForAll_ (forAllNodeFlags mbK ty sco) a vis ident mbK ty sco
+  where ForAll a vis ident mbK ty sco = ForAll_ (forAllNodeFlags vis ident mbK ty sco) a vis ident mbK ty sco
 
 pattern ConstrainedType :: a -> Constraint a -> Type a -> Type a
 pattern ConstrainedType a c ty <- ConstrainedType_ _ a c ty
@@ -257,27 +506,27 @@ pattern ConstrainedType a c ty <- ConstrainedType_ _ a c ty
 
 pattern Skolem :: a -> Text -> Maybe (Type a) -> Int -> SkolemScope -> Type a
 pattern Skolem a t mbK i s <- Skolem_ _ a t mbK i s
-  where Skolem a t mbK i s = Skolem_ (skolemNodeFlags mbK) a t mbK i s
+  where Skolem a t mbK i s = Skolem_ (skolemNodeFlags t mbK i s) a t mbK i s
 
 pattern REmpty :: a -> Type a
 pattern REmpty a <- REmpty_ _ a
-  where REmpty a = REmpty_ noFlags a
+  where REmpty a = REmpty_ (TypeFlags 0 ctorSalt_REmpty) a
 
 pattern RCons :: a -> Label -> Type a -> Type a -> Type a
 pattern RCons a l ty rest <- RCons_ _ a l ty rest
-  where RCons a l ty rest = RCons_ (typeFlags ty `combineFlags` typeFlags rest) a l ty rest
+  where RCons a l ty rest = RCons_ (rconsNodeFlags l ty rest) a l ty rest
 
 pattern KindedType :: a -> Type a -> Type a -> Type a
 pattern KindedType a ty k <- KindedType_ _ a ty k
-  where KindedType a ty k = KindedType_ (typeFlags ty `combineFlags` typeFlags k) a ty k
+  where KindedType a ty k = KindedType_ (binaryNodeFlags ctorSalt_KindedType ty k) a ty k
 
 pattern BinaryNoParensType :: a -> Type a -> Type a -> Type a -> Type a
 pattern BinaryNoParensType a t1 t2 t3 <- BinaryNoParensType_ _ a t1 t2 t3
-  where BinaryNoParensType a t1 t2 t3 = BinaryNoParensType_ (typeFlags t1 `combineFlags` typeFlags t2 `combineFlags` typeFlags t3) a t1 t2 t3
+  where BinaryNoParensType a t1 t2 t3 = BinaryNoParensType_ (ternaryNodeFlags ctorSalt_BinaryNoParensType t1 t2 t3) a t1 t2 t3
 
 pattern ParensInType :: a -> Type a -> Type a
 pattern ParensInType a t <- ParensInType_ _ a t
-  where ParensInType a t = ParensInType_ (maskStructural (typeFlags t)) a t
+  where ParensInType a t = ParensInType_ (unaryNodeFlags ctorSalt_ParensInType t) a t
 
 {-# COMPLETE TUnknown, TypeVar, TypeLevelString, TypeLevelInt, TypeWildcard, TypeConstructor, TypeOp, TypeApp, KindApp, ForAll, ConstrainedType, Skolem, REmpty, RCons, KindedType, BinaryNoParensType, ParensInType #-}
 
@@ -961,6 +1210,14 @@ instance Eq (Type a) where
 instance Ord (Type a) where
   compare = compareType
 
+-- | Hashing uses the cached hash on the node — O(1) and ignores the
+-- annotation, matching 'eqType'.
+instance Hashable (Type a) where
+  hash = typeHash
+  {-# INLINE hash #-}
+  hashWithSalt s t = s `hashWithSalt` typeHash t
+  {-# INLINE hashWithSalt #-}
+
 eqType :: Type a -> Type b -> Bool
 eqType (TUnknown _ a) (TUnknown _ a') = a == a'
 eqType (TypeVar _ a) (TypeVar _ a') = a == a'
@@ -1037,6 +1294,14 @@ instance Eq (Constraint a) where
 
 instance Ord (Constraint a) where
   compare = compareConstraint
+
+-- | Hashing uses 'constraintHash' — uses children's cached hashes and
+-- ignores the annotation, matching 'eqConstraint'.
+instance Hashable (Constraint a) where
+  hash = constraintHash
+  hashWithSalt s c = s `hashWithSalt` constraintHash c
+
+instance Hashable ConstraintData
 
 eqConstraint :: Constraint a -> Constraint b -> Bool
 eqConstraint (Constraint _ a b c d) (Constraint _ a' b' c' d') = a == a' && and (zipWith eqType b b') && and (zipWith eqType c c') && d == d'

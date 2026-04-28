@@ -9,6 +9,7 @@ import Prelude
 import Codec.Serialise (Serialise)
 import Control.DeepSeq (NFData)
 import Data.Aeson ((.=), (.:))
+import Data.Hashable (Hashable)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Language.PureScript.Comments (Comment)
@@ -26,6 +27,8 @@ data SourcePos = SourcePos
   , sourcePosColumn :: Int
     -- ^ Column number
   } deriving (Show, Eq, Ord, Generic, NFData, Serialise)
+
+instance Hashable SourcePos
 
 displaySourcePos :: SourcePos -> Text
 displaySourcePos sp =

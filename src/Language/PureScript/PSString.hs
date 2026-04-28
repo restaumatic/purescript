@@ -18,6 +18,7 @@ import Control.Applicative ((<|>))
 import Data.Char qualified as Char
 import Data.Bits (shiftR)
 import Data.Either (fromRight)
+import Data.Hashable (Hashable(..))
 import Data.List (unfoldr)
 import Data.Scientific (toBoundedInteger)
 import Data.String (IsString(..))
@@ -53,6 +54,8 @@ newtype PSString = PSString { toUTF16CodeUnits :: [Word16] }
 
 instance NFData PSString
 instance Serialise PSString
+instance Hashable PSString where
+  hashWithSalt s (PSString ws) = hashWithSalt s ws
 
 instance Show PSString where
   show = show . codePoints

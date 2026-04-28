@@ -78,7 +78,7 @@ genTypeAnnotatedWith genTypeAnn genConstraintAnn = genType where
   genQualified ctor = Qualified ByNullSourcePos . ctor <$> genText
 
   genTypeFlags :: Gen TypeFlags
-  genTypeFlags = TypeFlags <$> arbitrary
+  genTypeFlags = TypeFlags <$> arbitrary <*> arbitrary
 
   genSkolemScope :: Gen SkolemScope
   genSkolemScope = SkolemScope <$> arbitrary

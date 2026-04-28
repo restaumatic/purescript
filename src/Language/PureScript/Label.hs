@@ -4,6 +4,7 @@ import Prelude
 import GHC.Generics (Generic)
 import Codec.Serialise (Serialise)
 import Control.DeepSeq (NFData)
+import Data.Hashable (Hashable(..))
 import Data.Monoid ()
 import Data.String (IsString(..))
 import Data.Aeson qualified as A
@@ -19,3 +20,5 @@ newtype Label = Label { runLabel :: PSString }
 
 instance NFData Label
 instance Serialise Label
+instance Hashable Label where
+  hashWithSalt s (Label p) = hashWithSalt s p
