@@ -427,6 +427,86 @@ baseline; the prelude regression is structural.
   +6.4% prelude) is parked as the canonical falsifier of this
   hypothesis.
 
+## 99.9% of unifyTypes calls at the 3 hot sites are trivially equal (`funapp-lineage-survey`)
+
+Lineage histogram on a from-scratch full pr-admin compile (post-type-hash
+baseline 5713e832, env-gated `PURS_FUNAPP_LINEAGE=1` recording
+`(callsite, hash t1, hash t2)`):
+
+| Callsite        | Calls    | Distinct (h1, h2) pairs | Top pair share |
+|-----------------|---------:|------------------------:|---------------:|
+| funAppHead      | 175,272  | 5                       | 99.998%        |
+| checkAbsArrow   |  29,720  | 140                     | 99.5%          |
+| checkArrayHead  |   9,276  | 63                      | 99.3%          |
+
+**214,049 of 214,268 calls (99.9%) are `tyFunction ~ tyFunction` or
+`tyArray ~ tyArray` — same constant on both sides.** The remaining
+0.1% is calls where `t1` is a fresh `TUnknown` (each gets a distinct
+hash; needs to actually be solved).
+
+The pattern `TypeApp _ (TypeApp _ x argTy) retTy` at these 3 sites
+matches *structurally* — it doesn't statically prove that `x` is
+`tyFunction`/`tyArray`. So the existing code asserts the head with
+`unifyTypes x tyFunction`. In 99.9% of compile-time calls, x already
+**is** the constant. The cache catches these as hits, but the call is
+still made — pure waste at the call-graph level that the cache
+amortises but doesn't eliminate.
+
+**Why this characterisation matters more than the earlier
+`unify-callsite-survey` cache-hit count.** The earlier survey weighted
+by *cache hits*; this one weights by raw structural redundancy and
+shows that the dominant pairs aren't just frequent — they're a tiny
+constant set (5 distinct pairs at funAppHead). That's the right
+signal for an algorithmic fix that bypasses both the call and the
+cache.
+
+**Implication.** The follow-up `funapp-pattern-match` falsified the
+code-gen hypothesis. Replacing the call with a nested constructor
+pattern (`TypeApp _ (TypeApp _ (TypeConstructor _ C.Function) …) …`)
+produced **+7.0% prelude** on the same baseline — same shape as
+`unify-pattern-survey` Phase 2 (+7.1%) and `skip-redundant-funapp-unify`
+(+6.4%). Three different implementations skip the call three different
+ways, all regress prelude by the same ~7%. The mechanism is therefore
+not how the skip is expressed in source — it's structural to skipping
+the `unifyTypes` call at these 3 sites.
+
+**Takeaway:** the unification cache plus its `unifyTypes` wrapper
+(substituteType + hint stack + cache lookup) at funAppHead /
+checkAbsArrow / checkArrayHead is doing something the prelude
+cascade depends on, beyond just memoizing equal pairs. Skipping
+the call — by any mechanism — costs ~7% on prelude. Don't pursue
+further variants of "skip the call at these 3 sites" without first
+characterising what the call is contributing on the cascade path
+(beyond the cache hit it ultimately resolves to).
+
+## `stack test --fast` re-installs an unoptimised binary in-place (`funapp-pattern-match`)
+
+`stack test --fast` rebuilds the library *with* `--fast` (no
+optimisations) and re-installs the resulting `purs` binary on top
+of the optimised one. Sequence that bit:
+
+1. `rm -rf .stack-work && stack build` → 49.1 MB optimised binary.
+2. `stack test --fast` → tests pass, but binary is now 46.7 MB
+   (unoptimised).
+3. `exp run … --skip-build` → benchmarks run against the
+   unoptimised binary → catastrophic numbers
+   (full +138%, prelude +166%, leaf +59%, nochange +40%).
+
+**Diagnostic signal:** binary size dropped 49.1 → 46.7 MB
+between the build and the benchmark, with `stack test --fast` in
+between. Same shape as the documented Unify.hs / stale-incremental
+"binary shrinks → perf collapses" signals.
+
+**Takeaways:**
+- Run benchmarks *before* `stack test --fast`, or run a clean
+  `stack build` (no `--fast`) after testing and before measuring.
+- Don't combine `stack test --fast` with `exp run … --skip-build`.
+  Either omit `--skip-build` (the harness will rebuild the
+  optimised binary) or `stack build` manually first.
+- Binary size remains the cheapest contamination check across
+  all variants of this trap. Always check it before trusting
+  benchmark results.
+
 ## Stack incremental builds can produce slow binaries (`skip-redundant-funapp-unify`)
 
 The first benchmark of skip-redundant-funapp-unify produced

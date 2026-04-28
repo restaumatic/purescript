@@ -49,6 +49,7 @@ agent-facing overview.
 
 | Id                                             | Status  | Verdict | Baseline | Headline Δ                          | Tags            |
 | ---------------------------------------------- | ------- | ------- | -------- | ----------------------------------- | --------------- |
+| [funapp-pattern-match](funapp-pattern-match/EXPERIMENT.md) | closed | no-win | 5713e832 | full -0.2%, nochange -2.4%, prelude **+7.0%**, leaf +1.4% — same shape as skip-redundant-funapp-unify; falsifies code-gen hypothesis | unification, constructor-pattern, code-gen, types |
 | [skip-redundant-funapp-unify](skip-redundant-funapp-unify/EXPERIMENT.md) | closed | no-win | 799e8208 + 43f6b613 | phase 2 (HashSet baseline, the right one): prelude **+6.4%**, others neutral — same shape as unify-pattern-survey phase 2 | unification, redundancy, types, skip |
 | [unify-cache](unify-cache/EXPERIMENT.md)       | abandoned | no-win | 43f6b613 | drop = +24%, UnifyKey wrap = +8% (no-win) | unification, caching, measurement |
 | [unify-pattern-survey](unify-pattern-survey/EXPERIMENT.md) | abandoned | no-win | 43f6b613 | survey: 99.9% hits hash-equal; opt phases neutral or unsound | unification, caching, characterization |

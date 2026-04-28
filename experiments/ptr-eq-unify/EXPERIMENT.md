@@ -5,7 +5,7 @@ verdict: tbd
 branch: ptr-eq-unify
 worktree: /workspace/p/ptr-eq-unify
 baseline_sha: 5713e832
-head_sha: b9fcf10c
+head_sha: ed1f0cdc
 hypothesis: >
   At the top of `unifyTypes`, before substituteType / withErrorMessageHint /
   cache lookup, add `reallyUnsafePtrEquality# t1 t2`. When both arguments
