@@ -1,11 +1,11 @@
 ---
 id: unify-leaf-fast-path
 status: closed
-verdict: no-win
+verdict: partial
 branch: unify-leaf-fast-path
 worktree: /workspace/p/unify-leaf-fast-path
 baseline_sha: 5713e832
-head_sha: f37a6062
+head_sha: 95aadd51
 hypothesis: >
   unify-cache-anatomy showed 86% of cache hits are on 1-2-node pairs
   (constructor-self recurrences from recursive descent through
@@ -17,7 +17,13 @@ hypothesis: >
   leaf-equality; this only triggers on trivially-equal leaves
   regardless of call site, so plausibly avoids the structural
   regression mechanism.
-headline_delta: full +0.4%, nochange -1.2%, prelude -0.9%, leaf +2.2% — neutral; eliminating 86% of cache hits is invisible at wall-clock, but doesn't reproduce the prelude +7% regression of prior wrap-skip experiments
+headline_delta: |
+  Phase 1 (leaf fast-path alone): full +0.4%, nochange -1.2%,
+  prelude -0.9%, leaf +2.2% — neutral.
+  Phase 2 (+ cache dropped): full -0.3%, nochange -5.5%,
+  prelude +3.4%, leaf +2.5% — leaf fast-path absorbs ~all of
+  cache's full-build value (vs +24% from naked cache drop);
+  residual cache value is prelude-cascade amortisation only.
 tags: [unification, fast-path, leaf, caching]
 started: 2026-04-29
 closed: 2026-04-29

@@ -648,7 +648,56 @@ measurable wall-clock change.**
   tells you which 86% slice doesn't matter, narrowing the search
   space for what does. The remaining 14% is now the live target
   for any cache-replacement experiment.
-- Future direction: combine leaf fast-path with cache removal
-  or LRU/bounded variant. With 86% caught upstream, the residual
-  cost of replacing the cache should be much smaller than the
-  +24% measured by the original `unify-cache` drop.
+
+### Phase 2: leaf fast-path + cache dropped
+
+Same baseline 5713e832, leaf fast-path applied, then
+`unifyTypes''` cache wrapper removed (the catch-all calls
+`unifyTypes'` directly through `substituteType` /
+`withErrorMessageHint`):
+
+| Scenario | Δ vs baseline |
+|---|---:|
+| full | -0.3% |
+| nochange | -5.5% |
+| prelude | +3.4% |
+| leaf | +2.5% |
+
+Comparison to the original `unify-cache` drop (no leaf fast-
+path): full was **+24%** then, **-0.3%** now. The leaf fast-
+path absorbs essentially all of the cache's full-build value.
+
+**Three findings worth keeping:**
+
+1. **The leaf fast-path captures the cache's full-build value.**
+   The 14% non-leaf hits the cache catches don't matter for
+   from-scratch compiles — confirmed by the +24% → -0.3%
+   collapse on full when the leaf fast-path is added on top
+   of cache removal.
+
+2. **The cache's residual value is on prelude only.** +3.4% on
+   prelude when dropping the cache (after leaf fast-path) =
+   the cross-module cascade amortisation. The HashSet catches
+   the same trivial pairs in one bucket walk per pair per
+   module across the 1342-module prelude cascade; without it,
+   each TypeApp recursion re-walks structure.
+
+3. **The wrap-skip prelude +7% regression is roughly 2× the
+   cache's prelude value.** Pure cache drop (after leaf fast-
+   path): +3.4% prelude. Prior 3 wrap-skip experiments
+   (still using the cache): +6.4-7.1% prelude. So skipping
+   the `unifyTypes` wrapper at whole call sites is more
+   expensive than just removing the cache — there's a
+   second mechanism beyond cache amortisation that the
+   wrapper participates in (probably the cascade-wide hint-
+   stack / substituteType pattern interacting with GHC
+   inlining, but not yet characterised).
+
+**Takeaway:** if cross-module cascade amortisation is the
+load-bearing cache property, a bounded structure (LRU / ring
+buffer / size-thresholded HashSet) that retains *only* the
+cascade-friendly entries should recover the +3.4% prelude
+without the unbounded HashSet bookkeeping. The leaf fast-
+path makes this affordable: it's no longer 86% of cache
+content competing with the cross-module reuse pattern. This
+is the open territory for future cache work.
