@@ -514,9 +514,9 @@ vs 2.6% of hits. Big pairs are typically novel.
   only bypasses for tag-equal leaves regardless of call site.
 - Soundness of leaf fast-path: trivial — identical constructors
   unify to themselves, no substitution change, no error possible.
-- Untested whether this regresses prelude. The prior call-site
-  skips all hit ~+7% on prelude — the leaf fast-path may or may not
-  share that mechanism. Tracked as proposed `unify-leaf-fast-path`.
+- **Tested as `unify-leaf-fast-path`: neutral on all four scenarios**
+  (full +0.4%, nochange -1.2%, prelude -0.9%, leaf +2.2%, all within
+  noise). See the lesson below.
 
 **Takeaway:** when a cache shows up high in profile, characterise
 its contents by *cost* (here: pair size) before designing a
@@ -582,3 +582,73 @@ baseline at neutral perf.
   worktree binary** is the fastest way to spot contamination,
   before kicking off a 5-run × 4-scenario harness invocation.
   (Same recipe as the Unify.hs lesson, but applies generally.)
+
+## Cache-hit work isn't always cache-hit time (`unify-leaf-fast-path`)
+
+`unify-cache-anatomy` characterised that 86% of unification-cache
+hits are 1-2-node pairs (constructor-self recurrences). The
+follow-up `unify-leaf-fast-path` lifted those cases to a pre-
+substitute pattern clause on `unifyTypes`:
+
+```haskell
+unifyTypes (TypeConstructor _ c1) (TypeConstructor _ c2) | c1 == c2 = pure ()
+unifyTypes (TypeVar _ v1)         (TypeVar _ v2)         | v1 == v2 = pure ()
+unifyTypes (TypeLevelString _ s1) (TypeLevelString _ s2) | s1 == s2 = pure ()
+unifyTypes (TypeLevelInt _ n1)    (TypeLevelInt _ n2)    | n1 == n2 = pure ()
+unifyTypes (Skolem _ _ _ s1 _)    (Skolem _ _ _ s2 _)    | s1 == s2 = pure ()
+unifyTypes t1 t2 = do
+  sub <- gets checkSubstitution
+  withErrorMessageHint (ErrorUnifyingTypes t1 t2) $
+    unifyTypes'' (substituteType sub t1) (substituteType sub t2)
+  ...
+```
+
+Result on baseline 5713e832 (median of 6, clean run, load avg 3.2):
+
+| Scenario | Δ |
+|---|---:|
+| full | +0.4% |
+| nochange | -1.2% |
+| prelude | -0.9% |
+| leaf | +2.2% |
+
+All within ±2.2% noise. **Eliminating 86% of cache hits = no
+measurable wall-clock change.**
+
+**Two intertwined findings:**
+
+1. **The cache's hit volume is not its time cost.** 354,804 of
+   412,665 hits per pr-admin compile are on tiny pairs — the
+   HashSet bookkeeping for them is essentially free. Cost-centre
+   data already showed `unifyTypes`/`substituteType`/
+   `withErrorMessageHint` at 0.0% inherited time; the leaf fast-
+   path measurement confirms that operationally. Whatever load-
+   bearing work the cache does is in the 14% non-leaf hits (~58k
+   per compile, mostly 3-10 nodes).
+
+2. **The wrap-skip prelude regression is structural to whole-site
+   skipping, not to bypassing unification work.** The prior 3
+   experiments (`skip-redundant-funapp-unify`,
+   `unify-pattern-survey` Phase 2, `funapp-pattern-match`) all
+   reproduced prelude +6.4-7.1% across multiple runs by skipping
+   the wrapper at whole call sites. The leaf fast-path skips at a
+   finer granularity (only on trivially-equal leaves, regardless
+   of site) and **doesn't reproduce that regression** on a clean
+   system. So the regression mechanism in those 3 experiments
+   isn't an inherent cost of bypassing `unifyTypes` — it's
+   specifically about the call-site shape interacting with the
+   cache's amortisation pattern across the prelude cascade.
+
+**Takeaways:**
+- Don't optimise a cache by its hit count; optimise by its hit
+  *cost*. A 39% hit rate where 86% of hits are constructor-self
+  recurrences is a different beast than a 39% hit rate on big-
+  tree pairs.
+- A neutral result is informative when paired with a survey: it
+  tells you which 86% slice doesn't matter, narrowing the search
+  space for what does. The remaining 14% is now the live target
+  for any cache-replacement experiment.
+- Future direction: combine leaf fast-path with cache removal
+  or LRU/bounded variant. With 86% caught upstream, the residual
+  cost of replacing the cache should be much smaller than the
+  +24% measured by the original `unify-cache` drop.
