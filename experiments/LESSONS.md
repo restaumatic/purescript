@@ -701,3 +701,72 @@ without the unbounded HashSet bookkeeping. The leaf fast-
 path makes this affordable: it's no longer 86% of cache
 content competing with the cross-module reuse pattern. This
 is the open territory for future cache work.
+
+## type-hash's value is contingent on having a cache (`unify-leaf-no-hash`)
+
+type-hash shipped at -15.4% on full and is essentially "make
+the unificationCache cheap" (O(1) Hashable hash + ~1 eqType per
+HashSet op vs S.Set's O(log n) compareType). It was load-bearing
+*only because the cache was load-bearing*.
+
+`unify-leaf-no-hash` tested the alternative: start from
+pre-type-hash baseline 799e8208 (S.Set cache), apply leaf
+fast-path + drop the cache. Result vs 5713e832 (current shipped
+tip with type-hash + HashSet cache):
+
+| Scenario | Δ |
+|---|---:|
+| full | **-0.4%** |
+| nochange | -1.4% |
+| prelude | +1.4% |
+| leaf | +2.6% |
+
+vs 799e8208 (the direct pre-type-hash base): full **-18.6%** —
+larger than type-hash's -15.4% standalone improvement.
+
+**Implications:**
+
+1. **The leaf fast-path absorbs type-hash's full-build value
+   entirely.** type-hash exists to make the cache cheap; if the
+   cache is replaced by the leaf fast-path, type-hash has
+   nothing to make cheap.
+
+2. **The simpler codebase is competitive with the more complex
+   one.** 5 pattern clauses on `unifyTypes` replace: per-node
+   `tfHash` field, hash-combine in pattern-synonym smart
+   constructors, `Hashable Type` instance with UNPACK / INLINE
+   pragmas, and the HashSet cache itself. Binary size drops
+   from 49.1 MB to 48.6 MB.
+
+3. **The GHC representation footguns documented for type-hash
+   (UNPACK on multi-field record costing +107% if missed,
+   INLINE on Hashable methods costing +102% if missed) become
+   non-issues.** No Hashable instance, no multi-field
+   TypeFlags record.
+
+**Takeaways:**
+
+- An optimisation that depends on a load-bearing data
+  structure is only as durable as the data structure. type-
+  hash made the cache cheaper; replacing the cache with a
+  fast-path reveals that type-hash's value was contingent
+  on the cache existing in the first place.
+
+- When considering a complex GHC-specific optimisation
+  (carefully-tuned UNPACK / INLINE / pattern-synonym
+  hash-combine), check whether the thing it's optimising
+  has a simpler algorithmic alternative. A hot path
+  reduced upstream beats the most aggressively-tuned hot
+  path.
+
+- Survey-driven characterisation (`unify-cache-anatomy`,
+  `funapp-lineage-survey`) made this finding reachable —
+  knowing 86% of cache hits were on 1-2-node pairs pointed
+  at the leaf fast-path; without that, the cache looked
+  irreplaceable.
+
+**Deployment note:** the experiment's branch (`unify-leaf-
+no-hash`) is off the pre-type-hash base. The deployment path
+is to revert type-hash from the post-type-hash tip + apply
+the leaf fast-path + drop the cache; equivalent end state but
+cleaner diff history.
