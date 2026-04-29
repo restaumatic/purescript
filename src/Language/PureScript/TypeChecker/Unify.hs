@@ -17,7 +17,7 @@ module Language.PureScript.TypeChecker.Unify
 import Prelude
 
 import Control.Exception (assert)
-import Control.Monad (forM_, void, when)
+import Control.Monad (forM_, void)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets, modify, state)
 import Control.Monad.Writer.Class (MonadWriter(..))
@@ -34,7 +34,6 @@ import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, un
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, hasFlag, mkForAll, rowFromList, srcTUnknown, tfHasWildcards, typeFlags)
-import Data.Set qualified as S
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: TypeCheckM SourceType
@@ -112,16 +111,29 @@ unknownsInType t = everythingOnTypes (.) go t []
   go _ = id
 
 -- | Unify two types, updating the current substitution
+--
+-- Pre-substitute leaf fast-path: trivially-equal leaves
+-- (TypeConstructor/TypeVar/TypeLevelString/TypeLevelInt/Skolem
+-- with equal payload) short-circuit before substituteType /
+-- withErrorMessageHint. Per unify-cache-anatomy on post-type-hash
+-- baseline 5713e832: 86% of cache hits were on 1-2-node pairs
+-- of this shape — the pattern is structural to recursive descent
+-- so the same survey shape applies pre-type-hash.
+--
+-- The S.Set unification cache is dropped — relying on the leaf
+-- fast-path to catch the dominant recurrence pattern. Combined
+-- effect tested against 799e8208 (pre-type-hash, S.Set) baseline
+-- and 5713e832 (post-type-hash, HashSet) tip.
 unifyTypes :: SourceType -> SourceType -> TypeCheckM ()
+unifyTypes (TypeConstructor _ c1) (TypeConstructor _ c2) | c1 == c2 = pure ()
+unifyTypes (TypeVar _ v1)         (TypeVar _ v2)         | v1 == v2 = pure ()
+unifyTypes (TypeLevelString _ s1) (TypeLevelString _ s2) | s1 == s2 = pure ()
+unifyTypes (TypeLevelInt _ n1)    (TypeLevelInt _ n2)    | n1 == n2 = pure ()
+unifyTypes (Skolem _ _ _ s1 _)    (Skolem _ _ _ s2 _)    | s1 == s2 = pure ()
 unifyTypes t1 t2 = do
   sub <- gets checkSubstitution
-  withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes'' (substituteType sub t1) (substituteType sub t2)
+  withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes' (substituteType sub t1) (substituteType sub t2)
   where
-  unifyTypes'' t1' t2'= do
-    cache <- gets unificationCache
-    when (S.notMember (t1', t2') cache) $ do
-      modify $ \st -> st { unificationCache = S.insert (t1', t2') cache }
-      unifyTypes' t1' t2'
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()
   unifyTypes' (TUnknown _ u) t = solveType u t
   unifyTypes' t (TUnknown _ u) = solveType u t
