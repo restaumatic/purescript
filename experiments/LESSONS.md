@@ -479,6 +479,51 @@ further variants of "skip the call at these 3 sites" without first
 characterising what the call is contributing on the cascade path
 (beyond the cache hit it ultimately resolves to).
 
+## 86% of unification cache hits are constructor-self pairs (`unify-cache-anatomy`)
+
+Hooked the cache lookup site (Unify.hs:121-123) on a from-scratch
+full pr-admin compile (5713e832 baseline) and bucketed the 412,665
+hits by combined pair node count:
+
+| Bucket   | Hits    | % of hits |
+|----------|--------:|----------:|
+| 1–2      | 354,804 | **85.98%** |
+| 3–10     |  47,111 | 11.42%    |
+| 11–50    |   9,803 |  2.38%    |
+| 51+      |     947 |  0.23%    |
+
+A pair of size 2 is two leaf nodes — almost always
+`(TypeConstructor c, TypeConstructor c)` or `(TypeVar v, TypeVar v)`.
+**The cache's load-bearing job is memoizing constructor-equal-itself
+recurrences from recursive descent**, not memoizing big-tree work
+(only 0.23% of hits are >50 nodes). 214k of these hits originate at
+the 3 hot funApp/abs/array sites (per `funapp-lineage-survey`); the
+remaining ~140k come from recursive `unifyTypes` calls inside
+`unifyTypes'` — particularly the TypeApp two-child recursion at
+Unify.hs:147-149.
+
+Misses, by contrast, skew bigger: 27% of misses are pairs ≥11 nodes
+vs 2.6% of hits. Big pairs are typically novel.
+
+**Implications:**
+- A pre-substitute leaf fast-path on `unifyTypes` for
+  `(TypeConstructor c, TypeConstructor c)` and `(TypeVar v, TypeVar v)`
+  could catch the 86% of cache hits without a HashSet. This is
+  finer-grained than the call-site skips that all regressed prelude
+  +7% — those bypassed the wrapper for whole call sites; this one
+  only bypasses for tag-equal leaves regardless of call site.
+- Soundness of leaf fast-path: trivial — identical constructors
+  unify to themselves, no substitution change, no error possible.
+- Untested whether this regresses prelude. The prior call-site
+  skips all hit ~+7% on prelude — the leaf fast-path may or may not
+  share that mechanism. Tracked as proposed `unify-leaf-fast-path`.
+
+**Takeaway:** when a cache shows up high in profile, characterise
+its contents by *cost* (here: pair size) before designing a
+replacement. A HashSet earning 86% of its keep on 1-2-node pairs
+is doing very different work than one earning its keep on
+50+-node pairs — and the algorithmic alternatives are different.
+
 ## `stack test --fast` re-installs an unoptimised binary in-place (`funapp-pattern-match`)
 
 `stack test --fast` rebuilds the library *with* `--fast` (no

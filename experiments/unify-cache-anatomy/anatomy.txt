@@ -1,0 +1,19 @@
+=== unify-cache-anatomy ===
+Run: full pr-admin from-scratch compile, single thread.
+Baseline: 5713e832 (post-type-hash tip).
+Date: 2026-04-29.
+
+total lookups:      1049340
+total hits:          412665  (39.33% hit rate)
+
+hits by combined pair node count:
+  1-2      :     354804  (85.98%)
+  3-10     :      47111  (11.42%)
+  11-50    :       9803  (2.38%)
+  51+      :        947  (0.23%)
+
+misses by combined pair node count:
+  1-2      :     225264  (35.38%)
+  3-10     :     238491  (37.46%)
+  11-50    :     117282  (18.42%)
+  51+      :      55638  (8.74%)

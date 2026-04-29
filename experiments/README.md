@@ -44,6 +44,7 @@ agent-facing overview.
 | [unify-callsite-survey](unify-callsite-survey/EXPERIMENT.md) | done (research) | tbd | 799e8208 | survey: 75% of cache hits at 3 sites in Types.hs (97-99% hit rate) | unification, callsites, characterization |
 | [ptr-eq-unify](ptr-eq-unify/EXPERIMENT.md) | in-progress | partial | 5713e832 | full **-7.5%**, nochange -3.6%, prelude +4.8%, leaf +3.4%, PR #17 | unification, fast-path, pointer-equality |
 | [funapp-lineage-survey](funapp-lineage-survey/EXPERIMENT.md) | done (research) | tbd | 5713e832 | 99.9% of calls at 3 hot sites are trivially equal — only 5/140/63 distinct (h1,h2) pairs | unification, callsites, characterization, lineage |
+| [unify-cache-anatomy](unify-cache-anatomy/EXPERIMENT.md) | done (research) | tbd | 5713e832 | 86% of cache hits are 1-2-node pairs (constructor-self recurrences); 97% ≤10 nodes — points to a leaf-tag fast-path | unification, caching, characterization, anatomy |
 
 ## Closed experiments
 
