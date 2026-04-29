@@ -110,20 +110,11 @@ unknownsInType t = everythingOnTypes (.) go t []
   go (TUnknown ann u) = ((ann, u) :)
   go _ = id
 
--- | Unify two types, updating the current substitution
+-- | Unify two types, updating the current substitution.
 --
--- Pre-substitute leaf fast-path: trivially-equal leaves
--- (TypeConstructor/TypeVar/TypeLevelString/TypeLevelInt/Skolem
--- with equal payload) short-circuit before substituteType /
--- withErrorMessageHint. Per unify-cache-anatomy on post-type-hash
--- baseline 5713e832: 86% of cache hits were on 1-2-node pairs
--- of this shape — the pattern is structural to recursive descent
--- so the same survey shape applies pre-type-hash.
---
--- The S.Set unification cache is dropped — relying on the leaf
--- fast-path to catch the dominant recurrence pattern. Combined
--- effect tested against 799e8208 (pre-type-hash, S.Set) baseline
--- and 5713e832 (post-type-hash, HashSet) tip.
+-- Equal-leaf cases short-circuit before substituteType, which
+-- is a no-op on these constructors, and the error-hint bracket,
+-- which can't fire on equal leaves.
 unifyTypes :: SourceType -> SourceType -> TypeCheckM ()
 unifyTypes (TypeConstructor _ c1) (TypeConstructor _ c2) | c1 == c2 = pure ()
 unifyTypes (TypeVar _ v1)         (TypeVar _ v2)         | v1 == v2 = pure ()
