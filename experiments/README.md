@@ -40,7 +40,6 @@ agent-facing overview.
 | [tc-queries](tc-queries/EXPERIMENT.md)         | blocked      | no-win  | 2e89bd4f   | +0.1% full, +9% prelude-edit         | incrementality, rock, caching  |
 | [rust-interning](rust-interning/EXPERIMENT.md) | in-progress  | tbd     | (varies)   | conflicting — see EXPERIMENT.md      | interning, psstring, label     |
 | [row-cons-opt](row-cons-opt/EXPERIMENT.md)     | in-progress  | tbd     | e0125163   | -2.2% full, neutral others           | unification, rows, entailment  |
-| [type-hash](type-hash/EXPERIMENT.md)           | ready-to-ship | win    | 799e8208   | -15.4% full, neutral incremental      | typechecker, hashing, type-flags |
 | [unify-callsite-survey](unify-callsite-survey/EXPERIMENT.md) | done (research) | tbd | 799e8208 | survey: 75% of cache hits at 3 sites in Types.hs (97-99% hit rate) | unification, callsites, characterization |
 | [ptr-eq-unify](ptr-eq-unify/EXPERIMENT.md) | in-progress | partial | 5713e832 | full **-7.5%**, nochange -3.6%, prelude +4.8%, leaf +3.4%, PR #17 | unification, fast-path, pointer-equality |
 | [funapp-lineage-survey](funapp-lineage-survey/EXPERIMENT.md) | done (research) | tbd | 5713e832 | 99.9% of calls at 3 hot sites are trivially equal — only 5/140/63 distinct (h1,h2) pairs | unification, callsites, characterization, lineage |
@@ -51,6 +50,7 @@ agent-facing overview.
 | Id                                             | Status  | Verdict | Baseline | Headline Δ                          | Tags            |
 | ---------------------------------------------- | ------- | ------- | -------- | ----------------------------------- | --------------- |
 | [unify-leaf-no-hash](unify-leaf-no-hash/EXPERIMENT.md) | shipped | win | 799e8208 | full **-18.6%**, nochange +3.9%, prelude -0.9%, leaf -0.1% — leaf fast-path replaces type-hash + cache, merged via PR #18 | unification, fast-path, simplification, type-hash |
+| [type-hash](type-hash/EXPERIMENT.md)           | abandoned | abandoned | 799e8208 | -15.4% full standalone — superseded by unify-leaf-no-hash (-18.6% same baseline, simpler diff). Never merged. | typechecker, hashing, type-flags, superseded |
 | [unify-leaf-fast-path](unify-leaf-fast-path/EXPERIMENT.md) | closed | partial | 5713e832 | Phase 1 (leaf fast-path alone): neutral. Phase 2 (+ cache dropped): full -0.3%, nochange -5.5%, prelude **+3.4%**, leaf +2.5% — leaf fast-path absorbs ~all of cache's full-build value; residual cache value is prelude-cascade amortisation | unification, fast-path, leaf, caching |
 | [funapp-pattern-match](funapp-pattern-match/EXPERIMENT.md) | closed | no-win | 5713e832 | full -0.2%, nochange -2.4%, prelude **+7.0%**, leaf +1.4% — same shape as skip-redundant-funapp-unify; falsifies code-gen hypothesis | unification, constructor-pattern, code-gen, types |
 | [skip-redundant-funapp-unify](skip-redundant-funapp-unify/EXPERIMENT.md) | closed | no-win | 799e8208 + 43f6b613 | phase 2 (HashSet baseline, the right one): prelude **+6.4%**, others neutral — same shape as unify-pattern-survey phase 2 | unification, redundancy, types, skip |

@@ -1,7 +1,7 @@
 ---
 id: type-hash
-status: ready-to-ship
-verdict: win
+status: abandoned
+verdict: abandoned
 branch: type-hash
 worktree: /workspace/p/type-hash
 baseline_sha: 799e8208
@@ -15,10 +15,23 @@ hypothesis: >
 headline_delta: "-15.4% full, neutral incremental"
 tags: [typechecker, hashing, type-flags, unification]
 started: 2026-04-25
-closed: null
+closed: 2026-04-30
 ---
 
 # type-hash — precomputed structural hash on Type
+
+> **Superseded by [`unify-leaf-no-hash`](../unify-leaf-no-hash/EXPERIMENT.md)
+> (shipped via PR #18, 2026-04-30).** This experiment hit -15.4% on full
+> by adding a per-`Type`-node hash field + Hashable instance + HashSet
+> cache. `unify-leaf-no-hash` reached -18.6% on full from the same
+> baseline (799e8208) by going the opposite direction — a 5-line leaf
+> fast-path on `unifyTypes` that catches 86% of cache hits upstream,
+> letting the cache *and* the hash machinery be removed entirely. Ranked
+> against each other, the simpler approach was strictly better, so this
+> branch was abandoned without merging. See `experiments/LESSONS.md`
+> entry "type-hash's value is contingent on having a cache". The
+> hypothesis and design notes below remain as a record of how the
+> direction was reached.
 
 ## Hypothesis
 
