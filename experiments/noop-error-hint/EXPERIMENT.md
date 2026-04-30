@@ -1,11 +1,11 @@
 ---
 id: noop-error-hint
-status: proposed
-verdict: tbd
+status: abandoned
+verdict: no-win
 branch: noop-error-hint
 worktree: /workspace/p/noop-error-hint
 baseline_sha: 6e04203c
-head_sha: f3982880
+head_sha: 25249c0b
 hypothesis: >
   Quantify the per-call cost of `withErrorMessageHint` by replacing
   its body with `action` (no-op, dropping all hint context from
@@ -14,10 +14,10 @@ hypothesis: >
   SPECIALIZE pragma — calls go through dictionary indirection unless
   GHC happens to inline across the module boundary. Result is an
   upper bound on what specialising/optimising the bracket could buy.
-headline_delta: tbd
+headline_delta: "+0.1% to +3.0% (slower) on incremental scenarios; bracket cost is ≤0% on success path. full scenario corrupted, not re-run"
+closed: 2026-04-30
 tags: [typechecker, error-hints, characterization, do-not-ship]
 started: 2026-04-30
-closed: null
 ---
 
 # noop-error-hint
