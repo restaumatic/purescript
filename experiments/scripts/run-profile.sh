@@ -92,8 +92,10 @@ run_once() {
     local SCENARIO="$2"           # full | nochange | prelude | leaf
     local PROFILE_MODE="${3:-}"   # empty or "profile"
     local LABEL="${4:-current}"
+    # Per-variant output dir lets us interleave baseline/head rounds without
+    # cache leakage between binaries that emit incompatible externs.
+    local OUTPUT_DIR="${5:-$PR_ADMIN_DIR/output}"
 
-    local OUTPUT_DIR="$PR_ADMIN_DIR/output"
     local PRELUDE="/workspace/restaumatic/libs/ps/restaumatic-prelude/src/Restaumatic/Prelude.purs"
     local LEAF=""
 
@@ -140,9 +142,9 @@ run_once() {
     (
         cd "$PR_ADMIN_DIR"
         if [[ "$PROFILE_MODE" == "profile" ]]; then
-            "$PURS_BIN" compile $SOURCES +RTS -p -hc -RTS 1>/dev/null 2>"$PURS_STDERR"
+            "$PURS_BIN" compile -o "$OUTPUT_DIR" $SOURCES +RTS -p -hc -RTS 1>/dev/null 2>"$PURS_STDERR"
         else
-            "$PURS_BIN" compile $SOURCES 1>/dev/null 2>"$PURS_STDERR"
+            "$PURS_BIN" compile -o "$OUTPUT_DIR" $SOURCES 1>/dev/null 2>"$PURS_STDERR"
         fi
     )
     PURS_EXIT=$?
@@ -187,6 +189,23 @@ run_once() {
 # Multi-run orchestration for one scenario. Discards run 1 as warm-up.
 ################################################################################
 
+# Writes "median min max n" to stdout for the given samples.
+stats_of() {
+    if [[ $# -eq 0 ]]; then
+        echo "0 0 0 0"
+        return
+    fi
+    local SORTED N MIN MAX MEDIAN MID
+    SORTED=$(printf '%s\n' "$@" | sort -n)
+    N=$#
+    MIN=$(echo "$SORTED" | head -1)
+    MAX=$(echo "$SORTED" | tail -1)
+    MID=$(( (N + 1) / 2 ))
+    MEDIAN=$(echo "$SORTED" | sed -n "${MID}p")
+    echo "$MEDIAN $MIN $MAX $N"
+}
+
+# Single-variant: N runs of one binary against its own output dir.
 # Writes "median min max n" to stdout.
 run_scenario() {
     local PURS_BIN="$1"
@@ -194,17 +213,20 @@ run_scenario() {
     local RUNS="$3"
     local PROFILE_MODE="$4"
     local LABEL="$5"
+    local OUTPUT_DIR="${6:-$PR_ADMIN_DIR/output}"
+
+    # Incremental scenarios need a populated output dir before the
+    # first timed run. Skip if already populated.
+    if [[ "$SCENARIO" != "full" && ! -f "$OUTPUT_DIR/cache-db.json" ]]; then
+        log "  (pre-populating $OUTPUT_DIR for $SCENARIO)"
+        run_once "$PURS_BIN" "full" "" "$LABEL" "$OUTPUT_DIR" >/dev/null
+    fi
 
     local -a RESULTS=()
     for ((i=1; i<=RUNS; i++)); do
-        # `nochange` needs a populated output/ before the first timed run.
-        if [[ "$SCENARIO" == "nochange" && $i -eq 1 ]]; then
-            log "  (populating output/ with a full build before first nochange run)"
-            run_once "$PURS_BIN" "full" "" "$LABEL" >/dev/null
-        fi
 
         local T
-        T=$(run_once "$PURS_BIN" "$SCENARIO" "$PROFILE_MODE" "$LABEL")
+        T=$(run_once "$PURS_BIN" "$SCENARIO" "$PROFILE_MODE" "$LABEL" "$OUTPUT_DIR")
         if [[ $i -eq 1 ]]; then
             log "  run $i: ${T} ms (warm-up — discarded)"
         else
@@ -213,18 +235,56 @@ run_scenario() {
         fi
     done
 
-    if [[ ${#RESULTS[@]} -eq 0 ]]; then
-        echo "0 0 0 0"
-        return
+    stats_of "${RESULTS[@]}"
+}
+
+# Dual-variant interleaved: N rounds, each round runs baseline then head
+# back-to-back. Time-varying machine load (e.g. another process spiking
+# CPU mid-measurement) hits both variants near-equally instead of
+# afflicting whichever is unlucky enough to be running. Cache leakage
+# between binaries is prevented by per-variant output dirs.
+# Writes "BASE_MED HEAD_MED HEAD_MIN HEAD_MAX N BASE_MIN BASE_MAX" to stdout.
+run_scenario_interleaved() {
+    local BASE_PURS="$1"
+    local HEAD_PURS="$2"
+    local SCENARIO="$3"
+    local RUNS="$4"
+    local PROFILE_MODE="$5"
+    local BASE_OUT="$PR_ADMIN_DIR/output-baseline"
+    local HEAD_OUT="$PR_ADMIN_DIR/output-head"
+
+    # Incremental scenarios need each variant's output dir already
+    # populated. Skip if already populated by an earlier scenario in
+    # this run (cache-db.json is purs's build manifest).
+    if [[ "$SCENARIO" != "full" ]]; then
+        if [[ ! -f "$BASE_OUT/cache-db.json" ]]; then
+            log "  (pre-populating $BASE_OUT for $SCENARIO)"
+            run_once "$BASE_PURS" "full" "" "baseline" "$BASE_OUT" >/dev/null
+        fi
+        if [[ ! -f "$HEAD_OUT/cache-db.json" ]]; then
+            log "  (pre-populating $HEAD_OUT for $SCENARIO)"
+            run_once "$HEAD_PURS" "full" "" "head" "$HEAD_OUT" >/dev/null
+        fi
     fi
-    local SORTED N MIN MAX MEDIAN MID
-    SORTED=$(printf '%s\n' "${RESULTS[@]}" | sort -n)
-    N=${#RESULTS[@]}
-    MIN=$(echo "$SORTED" | head -1)
-    MAX=$(echo "$SORTED" | tail -1)
-    MID=$(( (N + 1) / 2 ))
-    MEDIAN=$(echo "$SORTED" | sed -n "${MID}p")
-    echo "$MEDIAN $MIN $MAX $N"
+
+    local -a BASE_RES=() HEAD_RES=()
+    for ((i=1; i<=RUNS; i++)); do
+        local BT HT
+        BT=$(run_once "$BASE_PURS" "$SCENARIO" "" "baseline" "$BASE_OUT")
+        HT=$(run_once "$HEAD_PURS" "$SCENARIO" "$PROFILE_MODE" "head" "$HEAD_OUT")
+        if [[ $i -eq 1 ]]; then
+            log "  round $i: base=${BT} head=${HT} ms (warm-up — discarded)"
+        else
+            log "  round $i: base=${BT} head=${HT} ms"
+            BASE_RES+=("$BT")
+            HEAD_RES+=("$HT")
+        fi
+    done
+
+    local BASE_MED BASE_MIN BASE_MAX BASE_N HEAD_MED HEAD_MIN HEAD_MAX HEAD_N
+    read -r BASE_MED BASE_MIN BASE_MAX BASE_N <<< "$(stats_of "${BASE_RES[@]}")"
+    read -r HEAD_MED HEAD_MIN HEAD_MAX HEAD_N <<< "$(stats_of "${HEAD_RES[@]}")"
+    echo "$BASE_MED $HEAD_MED $HEAD_MIN $HEAD_MAX $HEAD_N $BASE_MIN $BASE_MAX"
 }
 
 ################################################################################
@@ -307,15 +367,19 @@ cmd_run() {
         log "=== scenario: $SCN ==="
 
         local BASE_MED="" HEAD_MED="" HEAD_MIN HEAD_MAX HEAD_N
-        if [[ -n "$BASELINE_PURS" ]]; then
-            log "[baseline] running..."
-            read -r BASE_MED _ _ _ <<< "$(run_scenario "$BASELINE_PURS" "$SCN" "$RUNS" "" "baseline")"
-            log "[baseline] median=${BASE_MED} ms"
-        fi
+        local BASE_MIN="" BASE_MAX=""
 
-        log "[$VARIANT] running..."
-        read -r HEAD_MED HEAD_MIN HEAD_MAX HEAD_N <<< "$(run_scenario "$PURS" "$SCN" "$RUNS" "$PROFILE_MODE" "$VARIANT")"
-        log "[$VARIANT] median=${HEAD_MED} ms (min=${HEAD_MIN}, max=${HEAD_MAX}, n=${HEAD_N})"
+        if [[ -n "$BASELINE_PURS" ]]; then
+            log "[interleaved] base=$(basename "$(dirname "$BASELINE_PURS")") head=$VARIANT"
+            read -r BASE_MED HEAD_MED HEAD_MIN HEAD_MAX HEAD_N BASE_MIN BASE_MAX \
+                <<< "$(run_scenario_interleaved "$BASELINE_PURS" "$PURS" "$SCN" "$RUNS" "$PROFILE_MODE")"
+            log "[baseline] median=${BASE_MED} ms (min=${BASE_MIN}, max=${BASE_MAX}, n=${HEAD_N})"
+            log "[$VARIANT]  median=${HEAD_MED} ms (min=${HEAD_MIN}, max=${HEAD_MAX}, n=${HEAD_N})"
+        else
+            log "[$VARIANT] running..."
+            read -r HEAD_MED HEAD_MIN HEAD_MAX HEAD_N <<< "$(run_scenario "$PURS" "$SCN" "$RUNS" "$PROFILE_MODE" "$VARIANT")"
+            log "[$VARIANT] median=${HEAD_MED} ms (min=${HEAD_MIN}, max=${HEAD_MAX}, n=${HEAD_N})"
+        fi
 
         local DELTA_PCT="n/a"
         if [[ -n "$BASE_MED" && "$BASE_MED" -gt 0 ]]; then
@@ -323,7 +387,8 @@ cmd_run() {
                 'BEGIN { printf "%+.1f%%", (h - b) * 100 / b }')
         fi
 
-        local ROW_NOTES="median of $((RUNS-1)), ${HEAD_MIN}-${HEAD_MAX} ms"
+        local ROW_NOTES="median of $((RUNS-1)), head ${HEAD_MIN}-${HEAD_MAX} ms"
+        [[ -n "$BASE_MIN" ]] && ROW_NOTES="$ROW_NOTES, base ${BASE_MIN}-${BASE_MAX} ms"
         [[ -n "$NOTES" ]] && ROW_NOTES="$ROW_NOTES; $NOTES"
 
         append_result_row "$RESULTS_FILE" "$DATE" "$SCN" \
@@ -453,7 +518,12 @@ esac
 #    alongside the timing return. Fix: log to stderr; only numeric
 #    results reach stdout.
 # 4) Baseline/variant interleaved. Legacy alternated baseline-var-
-#    baseline-var, letting caches leak between them. Fix: run all
-#    iterations of one binary back-to-back; explicit scenarios for
-#    warm vs cold states.
+#    baseline-var, letting caches leak between them via a shared
+#    output/ dir. The "all iterations of one binary back-to-back"
+#    fix worked but was vulnerable to time-varying machine load
+#    (one variant runs while another tenant's CPU spikes hit; the
+#    other runs while the spike has subsided). Current design:
+#    interleaved per round, with per-variant output dirs
+#    (output-baseline/, output-head/) so neither variant ever reads
+#    externs the other one wrote.
 # ----------------------------------------------------------------------
