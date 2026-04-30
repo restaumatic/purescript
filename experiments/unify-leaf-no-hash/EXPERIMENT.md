@@ -1,6 +1,6 @@
 ---
 id: unify-leaf-no-hash
-status: ready-to-ship
+status: shipped
 verdict: win
 branch: unify-leaf-no-hash
 worktree: /workspace/p/unify-leaf-no-hash
@@ -23,7 +23,7 @@ hypothesis: >
   a simpler codebase.
 tags: [unification, fast-path, leaf, no-cache, type-hash, simplification]
 started: 2026-04-29
-closed: 2026-04-29
+closed: 2026-04-30
 ---
 
 # unify-leaf-no-hash
