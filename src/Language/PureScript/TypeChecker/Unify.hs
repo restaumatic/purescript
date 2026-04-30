@@ -17,7 +17,7 @@ module Language.PureScript.TypeChecker.Unify
 import Prelude
 
 import Control.Exception (assert)
-import Control.Monad (forM_, void, when)
+import Control.Monad (forM_, void)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.State.Class (MonadState(..), gets, modify, state)
 import Control.Monad.Writer.Class (MonadWriter(..))
@@ -34,7 +34,6 @@ import Language.PureScript.TypeChecker.Kinds (elaborateKind, instantiateKind, un
 import Language.PureScript.TypeChecker.Monad (CheckState(..), Substitution(..), UnkLevel(..), Unknown, getLocalContext, guardWith, lookupUnkName, withErrorMessageHint, TypeCheckM)
 import Language.PureScript.TypeChecker.Skolems (newSkolemConstant, skolemize)
 import Language.PureScript.Types (Constraint(..), pattern REmptyKinded, RowListItem(..), SourceType, Type(..), WildcardData(..), alignRowsWith, everythingOnTypes, everywhereOnTypes, everywhereOnTypesM, getAnnForType, hasFlag, mkForAll, rowFromList, srcTUnknown, tfHasWildcards, typeFlags)
-import Data.Set qualified as S
 
 -- | Generate a fresh type variable with an unknown kind. Avoid this if at all possible.
 freshType :: TypeCheckM SourceType
@@ -111,17 +110,21 @@ unknownsInType t = everythingOnTypes (.) go t []
   go (TUnknown ann u) = ((ann, u) :)
   go _ = id
 
--- | Unify two types, updating the current substitution
+-- | Unify two types, updating the current substitution.
+--
+-- Equal-leaf cases short-circuit before substituteType, which
+-- is a no-op on these constructors, and the error-hint bracket,
+-- which can't fire on equal leaves.
 unifyTypes :: SourceType -> SourceType -> TypeCheckM ()
+unifyTypes (TypeConstructor _ c1) (TypeConstructor _ c2) | c1 == c2 = pure ()
+unifyTypes (TypeVar _ v1)         (TypeVar _ v2)         | v1 == v2 = pure ()
+unifyTypes (TypeLevelString _ s1) (TypeLevelString _ s2) | s1 == s2 = pure ()
+unifyTypes (TypeLevelInt _ n1)    (TypeLevelInt _ n2)    | n1 == n2 = pure ()
+unifyTypes (Skolem _ _ _ s1 _)    (Skolem _ _ _ s2 _)    | s1 == s2 = pure ()
 unifyTypes t1 t2 = do
   sub <- gets checkSubstitution
-  withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes'' (substituteType sub t1) (substituteType sub t2)
+  withErrorMessageHint (ErrorUnifyingTypes t1 t2) $ unifyTypes' (substituteType sub t1) (substituteType sub t2)
   where
-  unifyTypes'' t1' t2'= do
-    cache <- gets unificationCache
-    when (S.notMember (t1', t2') cache) $ do
-      modify $ \st -> st { unificationCache = S.insert (t1', t2') cache }
-      unifyTypes' t1' t2'
   unifyTypes' (TUnknown _ u1) (TUnknown _ u2) | u1 == u2 = return ()
   unifyTypes' (TUnknown _ u) t = solveType u t
   unifyTypes' t (TUnknown _ u) = solveType u t
