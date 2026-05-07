@@ -50,6 +50,7 @@ agent-facing overview.
 
 | Id                                             | Status  | Verdict | Baseline | Headline Δ                          | Tags            |
 | ---------------------------------------------- | ------- | ------- | -------- | ----------------------------------- | --------------- |
+| [entailment-decl-memo](entailment-decl-memo/EXPERIMENT.md) | closed | abandoned | c84101d8 | unsound — solve.go's withFreshTypes + fundep unifications are non-idempotent state effects; cache hits cause "instance head contains unknown type variables" downstream. 9.12% structural-key hit rate (vs survey's 9–11× briefType reuse). | entailment, memo, decl-scope, abandoned |
 | [unify-leaf-no-hash](unify-leaf-no-hash/EXPERIMENT.md) | shipped | win | 799e8208 | full **-18.6%**, nochange +3.9%, prelude -0.9%, leaf -0.1% — leaf fast-path replaces type-hash + cache, merged via PR #18 | unification, fast-path, simplification, type-hash |
 | [type-hash](type-hash/EXPERIMENT.md)           | abandoned | abandoned | 799e8208 | -15.4% full standalone — superseded by unify-leaf-no-hash (-18.6% same baseline, simpler diff). Never merged. | typechecker, hashing, type-flags, superseded |
 | [unify-leaf-fast-path](unify-leaf-fast-path/EXPERIMENT.md) | closed | partial | 5713e832 | Phase 1 (leaf fast-path alone): neutral. Phase 2 (+ cache dropped): full -0.3%, nochange -5.5%, prelude **+3.4%**, leaf +2.5% — leaf fast-path absorbs ~all of cache's full-build value; residual cache value is prelude-cascade amortisation | unification, fast-path, leaf, caching |

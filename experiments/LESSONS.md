@@ -151,6 +151,88 @@ types in flight contain no unknowns at all. Walking them was pure overhead.
 caching the property that triggers the no-op on the constructor is cheap
 and effective. Use pattern synonyms so callers don't have to thread the flag.
 
+### `solve.go` is not pure: don't memo the whole call
+**From:** `entailment-decl-memo` (abandoned)
+
+Per-decl `entailment-redundancy` survey saw 9–11× within-decl
+reuse of `(className, briefType-arg-shape)` and concluded a
+within-decl `Map (className, [SourceType]) Expr` memo should win.
+After scaffolding the cache (separate module per Unify.hs
+sensitivity, decl-boundary clear from `withDeclTrace`,
+ByNullSourcePos-Var filter to keep decl-local fresh dicts out)
+the resulting compile produced new "instance head contains
+unknown type variables" errors at decls like
+`Restaumatic.PR.MenuV2.PackagingUnit:detailsSpec`.
+
+The Solved branch of `solve.go` performs three side effects whose
+output the cached `Expr` cannot replay:
+
+1. `pairwiseM unifyTypes` on the matching substitution.
+2. `withFreshTypes` allocates **new** `TUnknown`s for instance-head
+   args not covered by the match — non-idempotent.
+3. `zipWithM_ unifyTypes (tcdInstanceTypes tcd) tys''` propagates
+   info from the instance head into the global substitution.
+
+(2) is the killer. Each call generates fresh unknowns; skipping a
+call removes those unknowns from the substitution, so later
+constraints are missing inferences they would have had. Skipping
+the unifications is "fine" in the no-op case but unsound when the
+instance has unconstrained head args.
+
+The "9–11× reuse" the survey reported was a *briefType* (top-level
+constructor) collapse; under structural keying real intra-decl
+hit rates are ~9% on pr-admin (345k lookups, 31k hits per a stats
+build), and most safe ones overlap with what
+`skip-redundant-entailment-unify`'s `eqType` guard already covers.
+
+**Takeaways:**
+1. Before memoising a function that runs in a state-effect monad,
+   audit its writes. "Same input ⇒ same output" is necessary but
+   not sufficient — *side effects must also be idempotent*. Fresh
+   variable / supply / counter calls are silent landmines because
+   their effect (introducing a binding) only matters to *other*
+   callers.
+2. `briefType`-style fingerprints are upper bounds on cacheability,
+   not lower bounds. They lose information caches need.
+3. The `entailment-redundancy` survey told us solve volume is high
+   but it didn't measure how much of that volume is *idempotent*.
+   For the next attack on solve cost, instrument `solve.go` for
+   "fraction of calls where withFreshTypes is a no-op" before
+   designing another cache.
+
+### CAF lifting traps `unsafePerformIO` sentinels
+**From:** `entailment-decl-memo` (closed; soundness debug)
+
+A sentinel-style "monadic" reset call
+
+```haskell
+resetForDecl :: String -> ()
+resetForDecl !_tag = unsafePerformIO (writeIORef cache M.empty)
+{-# NOINLINE resetForDecl #-}
+```
+
+was visibly added in `withDeclTrace` via `let !_ = resetForDecl tag`,
+but a stats build showed `resets: 1` over a full pr-admin compile.
+GHC's optimiser noticed the body did not consume the argument, lifted
+the `unsafePerformIO` to a CAF, and shared the `()` result across
+every call. The bang on the unused parameter (`!_tag`) does not
+prevent this — by the time GHC's worker/wrapper sees the function,
+the unused arg has been stripped.
+
+**Fix:** the IO body must actually consume the argument. We added a
+`lastResetRef :: IORef String` and `writeIORef lastResetRef tag`
+inside the IO; resets jumped from 1 to 38,975 over the same
+compile.
+
+**Takeaway:** for any `argType -> ()` function whose body uses
+`unsafePerformIO`, write the argument into the IO action (or thread
+it back into the result via `seq`/`evaluate`). Otherwise GHC will
+share the `()` result and your "per-call" hook fires once per
+program run. This is the same trap as the LESSONS entry on
+"`unsafeDupablePerformIO` for sentinel calls" but the failure mode
+is silent — you find it by adding a counter and noticing it never
+goes above 1.
+
 ### Looking for redundant work, not just expensive work
 **From:** `skip-redundant-entailment-unify` (shipped — -15.5% full build alone)
 
