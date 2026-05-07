@@ -1,0 +1,62 @@
+=== entailment-redundancy ===
+Run: full pr-admin from-scratch compile, single thread.
+Baseline: c84101d8 (post-PR-#18 tip).
+Date: 2026-05-07.
+
+total solves:       375232
+distinct (className, fingerprint) pairs: 29636
+average solves per pair: 12.66
+
+top 30 most-frequent (className, args) shapes:
+      6902  Prim.RowList.RowToList                    {..} ?
+      4686  Restaumatic.Form.Internal.AddContext      ?
+      4079  Restaumatic.Form.Auto.Wrap                FormField' Cons ?
+      3269  Control.Bind.Discard                      Unit
+      3067  Control.Bind.Bind                         Builder
+      2809  Prim.RowList.RowToList                    ? ?
+      2309  Restaumatic.Form.Totality.MostPartial     ? ? ?
+      2184  Restaumatic.Form.Internal.HasFieldId      ?
+      2172  Data.Record.HasField                      'label' TranslationKey ?
+      2169  Control.Semigroupoid.Semigroupoid         Function
+      2016  Data.HeytingAlgebra.HeytingAlgebra        Boolean
+      1783  Prim.Row.Union                            ? ? ?
+      1763  Restaumatic.Form.Internal.AddContextRec…  Cons {..}
+      1704  Data.Enum.Generic.GenericBoundedEnum      NoArguments
+      1701  Data.Enum.Generic.GenericBoundedEnum      Constructor
+      1652  Data.Semigroup.Semigroup                  String
+      1649  Data.Show.ShowRecordFields                Cons {..}
+      1647  Data.Show.Show                            ?
+      1563  Unscramble.DecodeRecord                   Cons
+      1538  Restaumatic.Form.Internal.HasErrors       ?
+      1528  Foreign.Generic.Class.DecodeRecord        ? Cons
+      1505  Foreign.Generic.Class.EncodeRecord        ? Cons
+      1352  Prim.Row.Nub                              ? {..}
+      1344  Control.Bind.Bind                         Effect
+      1308  Restaumatic.Form.Internal.HasLabel        ?
+      1302  Data.Eq.Eq                                ?
+      1291  Data.Show.Generic.GenericShow             Constructor
+      1202  Effect.Class.MonadEffect                  Builder
+      1151  Data.Enum.Generic.GenericBoundedEnum      Sum
+      1144  Restaumatic.Form.Widgets.Bootstrap.Fiel…  ?
+
+solves per class (top 20):
+     42537  (11.34%)  Data.Record.HasField
+     41108  (10.96%)  Data.Symbol.IsSymbol
+     37226  ( 9.92%)  Prim.Row.Cons
+     15271  ( 4.07%)  Row.Extra.TestHasLabelRL
+     13224  ( 3.52%)  Prim.Row.Lacks
+     10748  ( 2.86%)  Prim.RowList.RowToList
+      7349  ( 1.96%)  Data.Show.Show
+      6263  ( 1.67%)  Data.Eq.Eq
+      6244  ( 1.66%)  Control.Bind.Bind
+      5565  ( 1.48%)  Restaumatic.Form.Query.Query
+      5564  ( 1.48%)  Restaumatic.Form.Internal.AddContext
+      5473  ( 1.46%)  Foreign.Generic.Class.Encode
+      5465  ( 1.46%)  Restaumatic.Form.Auto.Wrap
+      4861  ( 1.30%)  Data.Enum.Generic.GenericBoundedEnum
+      4521  ( 1.20%)  Prim.Row.Union
+      4451  ( 1.19%)  Unscramble.Decode
+      4044  ( 1.08%)  Data.Generic.Rep.Generic
+      4020  ( 1.07%)  Foreign.Generic.Class.Decode
+      3718  ( 0.99%)  Foreign.Generic.Class.EncodeWithOptions
+      3406  ( 0.91%)  Data.Functor.Functor
