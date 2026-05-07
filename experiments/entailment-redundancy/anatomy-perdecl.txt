@@ -1,0 +1,103 @@
+=== entailment-redundancy (per-decl) ===
+Run: full pr-admin from-scratch compile, single thread.
+Baseline: c84101d8 (post-PR-#18 tip).
+Date: 2026-05-07.
+Hook: Entailment.hs:259 + TypeChecker.hs:withDeclTrace.
+
+total solves:       375232
+distinct (className, fingerprint) pairs: 29636
+average solves per pair (global): 12.66
+
+top 30 decls by solve volume (with within-decl reuse rate):
+  solves    distinct  reuse   decl
+   20144      2026     9.94x  tc Restaumatic.PR.MenuV2.Menus val:spec
+   11775      1120    10.51x  tc Restaumatic.PR.MenuV2.Modifiers val:spec
+    6778       608    11.15x  tc Restaumatic.PR.Restaurant.Settings val:view
+    6594       824     8.00x  tc PR.GenerateTestHelpers val:main
+    6558      1150     5.70x  tc Restaumatic.PR.Restaurant.Settings val:control
+    6161       959     6.42x  tc Restaumatic.PR.MenuV2.MenuSection val:spec
+    5142      1178     4.37x  tc Restaumatic.PR.MenuV2.Product val:spec
+    4803       483     9.94x  tc Restaumatic.PR.MenuV2.AvailabilitySchedule val:spec
+    4722       726     6.50x  tc Restaumatic.PR.MenuV2.PackagingUnit val:detailsSpec
+    4620       826     5.59x  tc Restaumatic.PR.Restaurant.DeliveryZones val:component
+    4561       631     7.23x  tc Restaumatic.PR.MenuV2.PackagingUnit val:spec
+    3581       530     6.76x  tc Restaumatic.PR.MenuV2.Modifier val:spec
+    3526       541     6.52x  tc Restaumatic.PR.UnitSalesReports val:control
+    3258       645     5.05x  tc Restaumatic.PR.MenuV2.Parameters val:spec
+    3221       769     4.19x  tc Restaumatic.PR.Orders.List val:control
+    3071       508     6.05x  tc Restaumatic.PR.Restaurant.Dashboard.Address val:addressSection
+    3009       691     4.35x  tc Restaumatic.PR.MenuV2.Menus val:component
+    2934       626     4.69x  tc Restaumatic.Menu.V2.Creator val:init'
+    2877       635     4.53x  tc Restaumatic.PR.MenuV2.CrossSellingList val:spec
+    2759       652     4.23x  tc Restaumatic.PR.RosServingLocations.Edit val:control
+    2744       537     5.11x  tc Restaumatic.PR.MenuV2.CrossSellingList val:content
+    2740       540     5.07x  tc Restaumatic.PR.MenuV2.CrossSellingList val:detailsSpec
+    2325       509     4.57x  tc Restaumatic.Menu.V2.Creator val:init
+    2067       386     5.35x  tc Restaumatic.PR.MenuV2.Import val:updateExternalMenuView
+    1948       290     6.72x  tc Restaumatic.PR.MenuV2.AvailabilitySchedule.Stories val:availabilit…
+    1883       265     7.11x  tc Restaumatic.PR.UnitSalesReports val:view
+    1832       360     5.09x  tc Restaumatic.PR.Components.Dac7 val:dac7Spec
+    1827       372     4.91x  tc Restaumatic.PR.MenuV2.PackagingContainer val:spec
+    1819       410     4.44x  tc Restaumatic.PR.MenuV2.Modifiers val:content
+    1689       526     3.21x  tc Restaumatic.PR.Statistics.Sales.ProductsAndCategories val:control
+
+for the top 5 decls — most-frequent (className, args):
+
+  decl: tc Restaumatic.PR.MenuV2.Menus val:spec
+       680  Restaumatic.Form.Internal.AddContext      ?
+       579  Prim.Row.Union                            ? ? ?
+       574  Prim.RowList.RowToList                    {..} ?
+       434  Prim.RowList.RowToList                    ? ?
+       431  Restaumatic.Form.Auto.Wrap                FormField' Cons ?
+       384  Restaumatic.Form.Totality.MostPartial     ? ? ?
+       241  Restaumatic.Form.Internal.AddContextRec…  Cons {..}
+       199  Restaumatic.Form.Internal.DumpState       ?
+       190  Data.Variant.Generic.GToVariant           Constructor ?
+       190  Restaumatic.Form.Internal.Merge           ? ?
+
+  decl: tc Restaumatic.PR.MenuV2.Modifiers val:spec
+       432  Prim.RowList.RowToList                    {..} ?
+       364  Restaumatic.Form.Internal.AddContext      ?
+       242  Restaumatic.Form.Totality.MostPartial     ? ? ?
+       180  Row.Extra.TestHasLabelRL                  'ageRestricted' Cons ?
+       180  Row.Extra.TestHasLabelRL                  'availableWhen' Cons ?
+       169  Row.Extra.TestHasLabelRL                  'photo' Cons ?
+       152  Row.Extra.TestHasLabelRL                  'name' Cons ?
+       147  Restaumatic.Form.Internal.AddContextRec…  Cons {..}
+       140  Restaumatic.Form.Totality.MostPartial     ? Total ?
+       114  Restaumatic.Form.Auto.Wrap                FormField' Cons ?
+
+  decl: tc Restaumatic.PR.Restaurant.Settings val:view
+       376  Restaumatic.Form.Internal.HasErrors       ?
+       311  Restaumatic.Form.Auto.Wrap                FormField' Cons ?
+       251  Restaumatic.Form.Internal.HasFieldId      ?
+       226  Restaumatic.Form.Internal.HasLabel        ?
+       183  Data.Record.HasField                      'restaurant_settings' ? ?
+       149  Data.Eq.Eq                                ?
+       140  Data.Record.HasField                      'tips' ? ?
+       119  Restaumatic.Form.Internal.IsTextField     ?
+       115  Prim.RowList.RowToList                    ? ?
+       107  Data.Record.HasField                      'label' TranslationKey ?
+
+  decl: tc PR.GenerateTestHelpers val:main
+       697  Restaumatic.Form.TestHelpers.RecordToHe…  Cons
+       546  Restaumatic.Form.TestHelpers.ToHelper     FormField'
+       264  Restaumatic.Form.TestHelpers.RecordToHe…  ?
+       247  Prim.RowList.RowToList                    {..} ?
+       232  Restaumatic.Form.TestHelpers.RecordToHe…  Nil
+       214  Restaumatic.Form.Auto.Wrap                FormField' Cons ?
+       180  Prim.RowList.RowToList                    ? ?
+       159  Restaumatic.Form.TestHelpers.ToHelper     Record
+       134  Restaumatic.Form.TestHelpers.ToHelper     Action
+
+  decl: tc Restaumatic.PR.Restaurant.Settings val:control
+       194  Data.Record.HasField                      'label' TranslationKey ?
+       186  Prim.RowList.RowToList                    ? ?
+       160  Restaumatic.Form.Auto.Wrap                FormField' Cons ?
+       154  Prim.Row.Union                            ? ? ?
+       125  Prim.RowList.RowToList                    {..} ?
+        92  Restaumatic.Form.Internal.AddContext      ?
+        92  Restaumatic.Form.Totality.MostPartial     ? ? ?
+        65  Data.Record.HasField                      'preorder' ? ?
+        60  Data.Record.HasField                      'options' ? ?
+        56  Data.Record.HasField                      'prepaymentOptions' ? ?

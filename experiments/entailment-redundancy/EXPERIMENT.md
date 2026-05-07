@@ -20,7 +20,7 @@ hypothesis: >
   repeated identical solves on the same (className, args) within a
   single decl. Survey: count entails calls grouped by
   (className, brief arg shape) per decl, report top duplicates.
-headline_delta: 375k solves / 29.6k distinct (className, args) shapes / 12.66× avg occurrences (global). HasField+IsSymbol+Cons = 32% of solve volume. Top recurring shape `RowToList {..} ?` = 6,902 calls. Per-decl breakdown still needed.
+headline_delta: 375k solves / 29.6k distinct shapes / 12.66× avg global occurrences. Per-decl: top-3 decls have 9.94×/10.51×/11.15× within-decl reuse; 8/10 top decls have ≥5× reuse. MenuV2.Menus.spec alone: 20,144 solves on 2,026 distinct shapes (90% would be cache hits). Strong signal for within-decl entailment memo.
 tags: [entailment, solve, characterization, redundancy, anatomy]
 started: 2026-05-07
 closed: null

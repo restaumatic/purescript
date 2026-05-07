@@ -98,8 +98,104 @@ Recommendation: **do A first** — cheap (~1 hour), gives a clean
 signal whether B is worth building. If per-decl reuse on the
 top-5 decls is ≥3×, B becomes the obvious next experiment.
 
+## Per-decl refinement (2026-05-07)
+
+Extended the survey with a per-decl IORef set from
+`TypeChecker.hs:withDeclTrace`. Same run, same totals.
+
+### Top 30 decls by solve volume — with within-decl reuse rate
+
+| Decl | Solves | Distinct | **Reuse** |
+|---|---:|---:|---:|
+| `MenuV2.Menus.spec` | 20,144 | 2,026 | **9.94×** |
+| `MenuV2.Modifiers.spec` | 11,775 | 1,120 | **10.51×** |
+| `Restaurant.Settings.view` | 6,778 | 608 | **11.15×** |
+| `PR.GenerateTestHelpers.main` | 6,594 | 824 | 8.00× |
+| `Restaurant.Settings.control` | 6,558 | 1,150 | 5.70× |
+| `MenuV2.MenuSection.spec` | 6,161 | 959 | 6.42× |
+| `MenuV2.Product.spec` | 5,142 | 1,178 | 4.37× |
+| `MenuV2.AvailabilitySchedule.spec` | 4,803 | 483 | 9.94× |
+| `MenuV2.PackagingUnit.detailsSpec` | 4,722 | 726 | 6.50× |
+| `Restaurant.DeliveryZones.component` | 4,620 | 826 | 5.59× |
+
+(Full top-30 in `anatomy-perdecl.txt`.)
+
+### Within-decl reuse is decisive
+
+**8 of the top-10 decls have ≥5× within-decl reuse**, three of
+them >9×. The decl-level redundancy hypothesis is *confirmed* —
+this is not just cross-module coincidence.
+
+**`MenuV2.Menus.spec` alone**: 20,144 solves on 2,026 distinct
+shapes — 18,118 of those solves (90%) would be cache hits if we
+had a within-decl memo keyed exactly on the args fingerprint
+used here.
+
+### Top recurring shapes within hot decls
+
+The patterns are diagnostic of the structure:
+
+- `MenuV2.Menus.spec`: 680 × `AddContext ?`, 579 × `Row.Union ? ? ?`,
+  574 × `RowToList {..} ?`. Form-machinery dictionary lookups
+  hammered repeatedly as a wide record gets unfolded.
+- `MenuV2.Modifiers.spec`: 432 × `RowToList {..} ?`, then
+  field-by-field `TestHasLabelRL 'ageRestricted' Cons ?` × 180,
+  `'availableWhen' Cons ?` × 180, `'photo' Cons ?` × 169, etc.
+  Per-field repeated lookups on the same record.
+- `Restaurant.Settings.view`: 376 × `HasErrors ?`, 311 × `Wrap
+  FormField' Cons ?`, 251 × `HasFieldId ?`. Same form-widget
+  dictionaries asked for hundreds of times.
+- `PR.GenerateTestHelpers.main`: 697 × `RecordToHelper Cons`,
+  546 × `ToHelper FormField'`. Generated test helpers walking
+  every field of every record-typed test.
+- `Restaurant.Settings.control`: 194 × `HasField 'label'
+  TranslationKey ?`, 186 × `RowToList ? ?`. Repeated label-field
+  lookups.
+
+### Caveat on fingerprint precision
+
+The fingerprint uses `briefType` (top-level constructor only).
+Two solves with different actual args could collapse to the same
+fingerprint, **inflating** apparent reuse. The real within-decl
+reuse rate (under structural type equality, which is what an
+honest memo would need) is **upper-bounded** by these numbers.
+
+Even halving the rate, `MenuV2.Menus.spec` would still have ~5×
+real reuse — 16,000 of its 20,000 solves duplicating earlier
+work.
+
+### Recommendation: within-decl entailment memo
+
+This is now well-supported. **Proposed experiment:
+`entailment-decl-memo`.**
+
+Design sketch:
+- Add `declSolveCache :: Map (Qualified ClassName, [SourceType])
+  Expr` to `CheckState`, or equivalently to the per-decl scope.
+- Clear at the start of each value declaration's typecheck
+  (`withDeclTrace` boundary or `withFreshSubstitution`).
+- At the top of `entails.solve.go`, after `substituteType subst`
+  (so the args are post-substitution), look up the cache. On
+  hit, return the cached `Expr`. On miss, run solve, cache the
+  result before returning.
+- Soundness considerations:
+  - Args must be substituted before keying — otherwise unknowns
+    keyed differently across calls would be cache misses
+    spuriously.
+  - The cached `Expr` must not depend on per-call state that
+    could differ. It does not (it's a dictionary expression).
+  - Side effects of solve: solve writes to `inferred` context
+    via `WriterT`. On a cache hit we'd skip that. **This is the
+    main risk** — need to verify whether the WriterT writes are
+    idempotent (i.e., same constraint solved twice produces the
+    same writes; replaying on hit is unnecessary because the
+    first call already wrote).
+- Falsifiable on prelude: same risk pattern as 4 prior unify
+  experiments — caches that look great on full but regress
+  prelude. Likely safer because per-decl scope means the cache
+  doesn't accumulate across modules' worth of state.
+
 ## Verdict
 
-Survey done. Findings strongly support a within-decl entailment
-memo as a candidate. Next: refine to per-decl breakdown, then
-decide on the memo experiment.
+Survey done; findings strongly support a within-decl entailment
+memo. Recommend `entailment-decl-memo` as the next experiment.

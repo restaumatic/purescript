@@ -44,7 +44,7 @@ agent-facing overview.
 | [ptr-eq-unify](ptr-eq-unify/EXPERIMENT.md) | in-progress | partial | 5713e832 | full **-7.5%**, nochange -3.6%, prelude +4.8%, leaf +3.4%, PR #17 | unification, fast-path, pointer-equality |
 | [funapp-lineage-survey](funapp-lineage-survey/EXPERIMENT.md) | done (research) | tbd | 5713e832 | 99.9% of calls at 3 hot sites are trivially equal — only 5/140/63 distinct (h1,h2) pairs | unification, callsites, characterization, lineage |
 | [unify-cache-anatomy](unify-cache-anatomy/EXPERIMENT.md) | done (research) | tbd | 5713e832 | 86% of cache hits are 1-2-node pairs (constructor-self recurrences); 97% ≤10 nodes — points to a leaf-tag fast-path | unification, caching, characterization, anatomy |
-| [entailment-redundancy](entailment-redundancy/EXPERIMENT.md) | done (research) | tbd | c84101d8 | 375k solves / 29.6k distinct shapes / 12.66× avg global recurrence; HasField+IsSymbol+Cons = 32% — points to within-decl entailment memo | entailment, solve, characterization, redundancy, anatomy |
+| [entailment-redundancy](entailment-redundancy/EXPERIMENT.md) | done (research) | tbd | c84101d8 | 375k solves / 29.6k shapes / 12.66× avg global. Per-decl: top decls 9.94×/10.51×/11.15× within-decl reuse — confirms strong signal for within-decl entailment memo | entailment, solve, characterization, redundancy, anatomy |
 
 ## Closed experiments
 
