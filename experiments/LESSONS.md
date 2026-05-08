@@ -933,3 +933,77 @@ small to surface above noise on any of the four scenarios.
 
 **Branch:** `env-hashmap`, commit a45e938b. Not merged.
 
+## INLINABLE on polymorphic helpers across module boundaries pays a lot when the caller's monad is heavy (`traversal-inline`)
+
+Two-line change — add `{-# INLINABLE #-}` to
+`everywhereOnValuesTopDownM` and `everywhereOnValuesM` in
+`AST/Traversals.hs` — yielded:
+
+| Scenario | Run 1 | Run 2 |
+|---|---:|---:|
+| full | -9.6% | **-8.9%** |
+| nochange | +8.4% | -3.0% |
+| prelude | -0.5% | +1.6% |
+| leaf | -4.3% | -1.5% |
+
+(Other than full, all values within noise floor; the run-1 +8.4%
+nochange swung to -3.0% in run 2, showing it was load contamination
+on a 643ms wallclock.) Hypothesis was -1% to -3%; got -9%.
+
+**Mechanism:**
+The hot caller `Entailment.replaceTypeClassDictionaries` runs the
+traversal once per typechecked declaration with monad
+`m = WriterT (Any, [...]) (StateT InstanceContext TypeCheckM)` —
+four transformer layers, each with its own `>>=` per recursive
+descent. The traversal helper was polymorphic over `Monad m =>` but
+*not* `INLINABLE`, so GHC could only see its body in the defining
+module. Across module boundaries it called the helper through the
+runtime `Monad` dictionary — every recursive bind paying full
+unspecialised dispatch overhead.
+
+`{-# INLINABLE #-}` exposes the unfolding in the `.hi` file. GHC's
+specialiser at each call site can then produce a flat,
+monad-specialised loop. Per-node bind overhead collapses from
+"polymorphic dispatch + four nested binds" to "direct call."
+
+**Cost:**
+- 2 lines.
+- +213 KB binary (+0.4%) for the few specialised copies GHC emits.
+- No measurable `stack build` time impact.
+
+**Takeaways:**
+
+- **Polymorphic helpers without `INLINABLE` can hide large wins
+  when callers use heavy monad stacks.** GHC can specialise within
+  a module without `INLINABLE`, but cross-module specialisation
+  requires the unfolding to be exposed. AST traversal helpers are
+  classic cross-module hotspots — they're called from Sugar, Linter,
+  TypeChecker, Entailment, etc., often with deeply transformed
+  monads. Mark them `INLINABLE` by default.
+- **Cheap structural fixes can outperform expensive structural
+  migrations.** The same workload `env-hashmap` (a 19-file Map →
+  HashMap migration) couldn't move beyond noise was pushed -9% by
+  two pragmas. The lesson generalises: before committing to a
+  multi-file structural change, look for one-line GHC-hints
+  (`INLINABLE`, `SPECIALISE`, `INLINE`) that the cost-centre table
+  might already imply.
+- **Trust the cost-centre table — read it for *why the code is
+  hot*, not just where.** The cluster was credited to
+  `everywhereOnValuesTopDownM.g'` 3.5%; the `g'` SCC is on the
+  recursive descent, where the bind-per-node overhead lives. If
+  `g'` had been a thin wrapper, the cost would have shifted to its
+  callees in the profile — it didn't, which is consistent with the
+  bind-overhead theory.
+- **Verify with two runs on different load conditions.** The
+  initial run-1 `+8.4%` nochange was alarming; run-2 `-3.0%`
+  contradicted it. A small absolute time (~600ms) divided by ~50ms
+  noise floor gives ±8% noise — large fluctuations on small numbers
+  are not real signal.
+
+**Related:** Same shape as PR #18's recovery of `compareType`
+specialisation in cache lookups — both are "GHC was emitting a
+generic dispatch where a specialised one would do."
+
+**Branch:** `traversal-inline`, commit b831b298. Recommended for
+merge — minimal diff, large win, no regressions.
+

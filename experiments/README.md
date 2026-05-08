@@ -53,6 +53,7 @@ agent-facing overview.
 | ---------------------------------------------- | ------- | ------- | -------- | ----------------------------------- | --------------- |
 | [entailment-decl-memo](entailment-decl-memo/EXPERIMENT.md) | closed | abandoned | c84101d8 | unsound — solve.go's withFreshTypes + fundep unifications are non-idempotent state effects; cache hits cause "instance head contains unknown type variables" downstream. 9.12% structural-key hit rate (vs survey's 9–11× briefType reuse). | entailment, memo, decl-scope, abandoned |
 | [env-hashmap](env-hashmap/EXPERIMENT.md) | abandoned | no-win | c84101d8 | full +1.4%, nochange -1.4%, prelude +1.3%, leaf +3.8% — Map→HashMap migration on `typeClasses` (337 keys), `types` (3642 keys), `typeClassDictionaries` inner. Hypothesis was -5% to -10%; per-lookup hash+eq cost roughly balances log₂(337) short-ASCII compares. | environment, hashmap, hashable, no-win |
+| [traversal-inline](traversal-inline/EXPERIMENT.md) | shipped | win | c84101d8 | full **-8.9% to -9.6%** across two runs, others within noise — 2-line diff (`{-# INLINABLE #-}` on `everywhereOnValuesTopDownM`/`everywhereOnValuesM` so GHC can specialise the polymorphic helper at the heavy `WriterT/StateT/TypeCheckM` call site in `Entailment.replaceTypeClassDictionaries`). +213 KB binary. | ast, traversal, inlinable, specialise, entailment, win |
 | [unify-leaf-no-hash](unify-leaf-no-hash/EXPERIMENT.md) | shipped | win | 799e8208 | full **-18.6%**, nochange +3.9%, prelude -0.9%, leaf -0.1% — leaf fast-path replaces type-hash + cache, merged via PR #18 | unification, fast-path, simplification, type-hash |
 | [type-hash](type-hash/EXPERIMENT.md)           | abandoned | abandoned | 799e8208 | -15.4% full standalone — superseded by unify-leaf-no-hash (-18.6% same baseline, simpler diff). Never merged. | typechecker, hashing, type-flags, superseded |
 | [unify-leaf-fast-path](unify-leaf-fast-path/EXPERIMENT.md) | closed | partial | 5713e832 | Phase 1 (leaf fast-path alone): neutral. Phase 2 (+ cache dropped): full -0.3%, nochange -5.5%, prelude **+3.4%**, leaf +2.5% — leaf fast-path absorbs ~all of cache's full-build value; residual cache value is prelude-cascade amortisation | unification, fast-path, leaf, caching |
@@ -79,7 +80,7 @@ drop on top of 799e8208). Profiled `-N1` run on pr-admin from
 | Cost Centre                      | Module                    | % time | Δ vs 799e8208 | Status                                       |
 | -------------------------------- | ------------------------- | ------ | ------------- | -------------------------------------------- |
 | `compare` (ProperName)           | Names.hs:192              | 3.9%   | +2.6 pp (was 1.3%) | new headline — Environment Map keys     |
-| `everywhereOnValuesTopDownM.g'`  | AST/Traversals.hs         | 3.5%   | +0.6 pp       | unattacked                                   |
+| `everywhereOnValuesTopDownM.g'`  | AST/Traversals.hs         | 3.5%   | +0.6 pp       | shipped via `traversal-inline` (-9% on full) |
 | `compare` (Qualified a)          | Names.hs:233              | 2.3%   | -1.8 pp (was 4.1%) | unattacked, shrank as compareType fell  |
 | `entails.solve.go.solveSubgoals` | Entailment.hs:445-447     | 1.7%   | new in top    | unattacked                                   |
 | `withErrorMessageHint`           | Monad.hs:188-194          | 1.6%   | new in top    | partially attacked — fast-path skips it     |
@@ -92,7 +93,7 @@ drop on top of 799e8208). Profiled `-N1` run on pr-admin from
 
 **Aggregate clusters** (better targets than individual centres):
 - **Name-compare cluster** ~7.6% — `compare (ProperName)` 3.9% + `compare (Qualified)` 2.3% + `==` (PSString) 1.4%. All driven by `Map (Qualified (ProperName _)) v` Environment lookups. Biggest unattacked aggregate.
-- **AST decl-traversal cluster** ~5% — `everywhereOnValuesTopDownM.g'` + `sndM` + `guardedExprM` + `everywhereOnValuesM.g'`.
+- **AST decl-traversal cluster** ~5% — `everywhereOnValuesTopDownM.g'` + `sndM` + `guardedExprM` + `everywhereOnValuesM.g'`. Partly shipped by `traversal-inline` (INLINABLE pragmas — full -9%); a re-profile is needed to see what residual remains.
 - **Synonym walk** ~2.8% — residual `replaceAllTypeSynonyms'.walkChildren/walk` after `synonym-opt` shipped.
 
 The pattern-synonym matcher cluster (`$mTypeApp.\`, `$mKindApp.\`, …)
