@@ -852,3 +852,84 @@ no-hash`) is off the pre-type-hash base. The deployment path
 is to revert type-hash from the post-type-hash tip + apply
 the leaf fast-path + drop the cache; equivalent end state but
 cleaner diff history.
+
+## HashMap migration on short-string keys at N≈300 doesn't pay (`env-hashmap`)
+
+Following `name-compare-survey`'s recommendation, env-hashmap migrated
+the three highest-volume Environment Maps to `HashMap`:
+
+- `typeClasses`: ~375k lookups/build, 337 distinct keys
+- `typeClassDictionaries` (class-keyed inner Map): ~795k lookups, 337 keys
+- `types`: ~237k lookups, 3642 keys
+
+All keyed on `Qualified (ProperName _)`, with INLINEd Hashable instances
+on every relevant type (PSString, ProperName, ModuleName, QualifiedBy,
+Qualified, SourcePos). 19 files changed, all 1340 tests pass. Result:
+
+| Scenario | Δ |
+|---|---:|
+| full | **+1.4%** |
+| nochange | -1.4% |
+| prelude | +1.3% |
+| leaf | +3.8% |
+
+Hypothesis was -5% to -10%. Got within-noise neutral / mild regression.
+
+**Why it didn't work** (four candidate reasons):
+
+1. **The 7.6% "name-compare cluster" in the cost-centre table was not
+   all from these Map lookups.** The pre-experiment hotspot table
+   credited `compare (ProperName)` 3.9%, `compare (Qualified)` 2.3%,
+   `==` (PSString) 1.4%. Those are aggregated across *every caller*:
+   `compareType`, `eqType`, AST sorting, JSON serialization, plus the
+   Map lookups. The survey measured 1.45M lookups but didn't measure
+   how much of the cluster's wall-clock time those lookups owned.
+   The migration only removed lookup-driven compares. If lookups were
+   <30% of the cluster, the win is in the noise.
+2. **Per-lookup costs are roughly balanced for short ASCII keys.** A
+   `Data.Map` probe at N=337 does ~8.4 short-string compares; each
+   compare on 12-char ASCII short-circuits in 2-4 byte ops. A
+   `HashMap` lookup hashes the qualifier-tag + ~10-char module name
+   + ~10-char class name (~20 ops total) plus one full equality. No
+   order-of-magnitude difference.
+3. **Cross-module Hashable inlining is fragile.** Even with `{-# INLINE #-}`
+   on every method on every instance, GHC's specialisation across
+   `Hashable (Qualified a)` → `Hashable (ProperName a)` → `Hashable Text`
+   may not produce a flat probe loop. Verifying requires Core inspection.
+4. **HAMT footprint vs `Data.Map`'s small balanced trees** for N≈337
+   may lose on cache locality.
+
+**Contrast with PR #18 (type-hash):** PR #18's -15.4% win came from
+replacing `compareType` (recursing through 10-30 nodes per probe of
+the unification cache, ~M probes per build) with hash+eq. The
+*per-probe* work fell by 1-2 orders of magnitude. Replacing
+short-string `compare` with hash+eq is at most a constant-factor
+move with a per-probe gain measured in single-digit cycles — too
+small to surface above noise on any of the four scenarios.
+
+**Takeaways:**
+
+- **Survey hits-volume, not hits × per-hit-cost.** A high lookup
+  count doesn't imply a high % of build time; the per-hit cost
+  matters too. `name-compare-survey` counted hits but didn't
+  attribute the 7.6% cluster to those specific call sites — and
+  *that* attribution is what the migration's value depends on.
+  Future characterisation should measure cycles, not just hit count.
+- **HashMap is a structural-cost win, not a per-operation win.**
+  Switching from `Data.Map` to `HashMap` only pays when log_n
+  matters (large N) AND each compare is expensive (deep-recursive,
+  not short-string). For ~300 keys with short ASCII, neither holds.
+- **Don't generalise PR #18.** The type-hash result conditioned us
+  to expect that wrapping any compare-heavy lookup in a HashMap
+  yields a big win. PR #18 worked because of the deep-recursive
+  compare it eliminated, not the HashMap representation per se.
+- **A clean migration that doesn't pan out is still cheap data.**
+  The work demonstrated that the migration is *safe and tractable*
+  (1340 tests pass, no soundness issue), so the no-win can be
+  trusted as "this lever doesn't move the needle" rather than "we
+  couldn't get it to compile properly." If a future change makes
+  per-class lookups expensive (e.g. a richer `TypeClassData`
+  scrutinised on the hot path), revisiting becomes interesting.
+
+**Branch:** `env-hashmap`, commit a45e938b. Not merged.
+
