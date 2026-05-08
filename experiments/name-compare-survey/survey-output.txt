@@ -1,0 +1,143 @@
+=== name-compare-survey ===
+total lookups recorded: 1448269
+
+## typeClassDictionaries (findDicts) — 794706 lookups, 337 distinct keys
+   top-25 cover 465019/794706 (58.51%)
+      121017  Data.Record.HasField
+       45718  Row.Extra.TestHasLabelRL
+       21860  Restaumatic.Form.Auto.Wrap
+       20791  Data.Show.Show
+       20407  Restaumatic.Form.Query.Query
+       18360  Control.Bind.Bind
+       17697  Data.Eq.Eq
+       16338  Foreign.Generic.Class.Encode
+       14556  Data.Enum.Generic.GenericBoundedEnum
+       14299  Restaumatic.Form.Internal.AddContext
+       13283  Unscramble.Decode
+       12061  Data.Generic.Rep.Generic
+       12011  Foreign.Generic.Class.Decode
+       11579  Data.Newtype.Newtype
+       11136  Foreign.Generic.Class.EncodeWithOptions
+       10743  Restaumatic.Form.Internal.Initialize
+        9971  Control.Bind.Discard
+        9891  Foreign.Generic.Class.DecodeWithOptions
+        9672  Data.Enum.Generic.GenericEnum
+        9668  Data.Functor.Functor
+        8848  Data.Bounded.Generic.GenericBottom
+        8798  Data.Ord.Ord
+        8785  Restaumatic.Form.Internal.Merge
+        8775  Unscramble.DecodeRecord
+        8755  Data.Show.Generic.GenericShow
+
+## typeClasses (Entailment.solve) — 375232 lookups, 337 distinct keys
+   top-25 cover 247589/375232 (65.98%)
+       42537  Data.Record.HasField
+       41108  Data.Symbol.IsSymbol
+       37226  Prim.Row.Cons
+       15271  Row.Extra.TestHasLabelRL
+       13224  Prim.Row.Lacks
+       10748  Prim.RowList.RowToList
+        7349  Data.Show.Show
+        6263  Data.Eq.Eq
+        6244  Control.Bind.Bind
+        5565  Restaumatic.Form.Query.Query
+        5564  Restaumatic.Form.Internal.AddContext
+        5473  Foreign.Generic.Class.Encode
+        5465  Restaumatic.Form.Auto.Wrap
+        4861  Data.Enum.Generic.GenericBoundedEnum
+        4521  Prim.Row.Union
+        4451  Unscramble.Decode
+        4044  Data.Generic.Rep.Generic
+        4020  Foreign.Generic.Class.Decode
+        3718  Foreign.Generic.Class.EncodeWithOptions
+        3406  Data.Functor.Functor
+        3366  Row.Extra.TestHasLabel
+        3339  Control.Bind.Discard
+        3300  Foreign.Generic.Class.DecodeWithOptions
+        3298  Data.Newtype.Newtype
+        3228  Data.Enum.Generic.GenericEnum
+
+## types (Kinds.TypeConstructor) — 237038 lookups, 3642 distinct keys
+   top-25 cover 137823/237038 (58.14%)
+       30619  Type.Proxy.Proxy
+       21191  Prim.Function
+       14915  Prim.Symbol
+       11644  Prim.Record
+        8993  Prim.String
+        6806  Data.Maybe.Maybe
+        4073  Prim.Array
+        3931  Data.Generic.Rep.Constructor
+        3675  Data.Unit.Unit
+        3496  Prim.Int
+        2951  Prim.Boolean
+        2885  Restaumatic.I18n.TranslationKeys.TranslationKey
+        2534  Prim.Type
+        2341  Effect.Effect
+        2191  Data.Generic.Rep.Sum
+        2098  Data.Generic.Rep.Argument
+        2017  Data.Generic.Rep.NoArguments
+        1967  Data.Record.HasField
+        1831  Data.Eq.Eq
+        1712  Restaumatic.Restaurant.Types.Id.RestaurantId
+        1498  Data.Show.Show
+        1214  Data.Ord.Ord
+        1137  Specular.Dom.Widget.Widget
+        1060  Data.Show.Show$Dict
+        1044  Data.Eq.Eq$Dict
+
+## dataConstructors (Types.infer') — 34956 lookups, 2850 distinct keys
+   top-25 cover 26383/34956 (75.47%)
+        7019  Data.Generic.Rep.Inr
+        4736  Data.CodePoint.Unicode.Internal.CharBlock
+        1951  Data.Generic.Rep.Constructor
+        1077  Data.Generic.Rep.Inl
+        1027  Data.Generic.Rep.Argument
+        1007  Data.Generic.Rep.NoArguments
+         999  Data.Show.Show$Dict
+         923  Data.Eq.Eq$Dict
+         858  Data.Generic.Rep.Generic$Dict
+         763  Foreign.Generic.Class.Encode$Dict
+         762  Foreign.Generic.Class.Decode$Dict
+         752  Unscramble.Decode$Dict
+         708  Data.Maybe.Just
+         708  Data.Newtype.Newtype$Dict
+         660  Restaumatic.Form.TestHelpers.ToFillFormType$Dict
+         650  Data.Tuple.Tuple
+         404  Data.Maybe.Nothing
+         249  Data.Ord.Ord$Dict
+         206  Data.CodePoint.Unicode.Internal.ConversionRule
+         192  Network.JsonRPC.RPCMethodName$Dict
+         171  Data.List.Types.Cons
+         154  Network.JsonRPC.RPC$Dict
+         150  Type.Proxy.Proxy
+         130  Data.Bounded.Bounded$Dict
+         127  Data.Either.Right
+
+## types (Kinds.ConstrainedType) — 6337 lookups, 399 distinct keys
+   top-25 cover 3487/6337 (55.02%)
+         500  Data.Record.HasField
+         381  Data.Ord.Ord
+         295  Data.Eq.Eq
+         292  Control.Monad.Monad
+         235  Data.Show.Show
+         143  Data.Functor.Functor
+         142  Data.Monoid.Monoid
+         131  Prim.Row.Cons
+         123  Effect.Class.MonadEffect
+         117  Prim.RowList.RowToList
+         116  Control.Applicative.Applicative
+         115  Data.Symbol.IsSymbol
+         104  Data.Foldable.Foldable
+          92  Specular.FRP.Base.MonadFRP
+          80  Data.Semigroup.Semigroup
+          79  Effect.Aff.Class.MonadAff
+          68  Restaumatic.Form.Internal.Initialize
+          67  Data.Newtype.Newtype
+          66  Unscramble.Decode
+          61  Prim.Row.Union
+          61  Restaumatic.Form.Query.Query
+          58  Foreign.Generic.Class.Encode
+          56  Restaumatic.Form.Internal.HasFieldId
+          53  Data.Generic.Rep.Generic
+          52  Control.Monad.Gen.Class.MonadGen
+
