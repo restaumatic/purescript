@@ -127,6 +127,7 @@ everywhereOnValuesTopDownM
      , Expr -> m Expr
      , Binder -> m Binder
      )
+{-# INLINABLE everywhereOnValuesTopDownM #-}
 everywhereOnValuesTopDownM f g h = (f' <=< f, g' <=< g, h' <=< h)
   where
 
@@ -197,6 +198,7 @@ everywhereOnValuesM
      , Expr -> m Expr
      , Binder -> m Binder
      )
+{-# INLINABLE everywhereOnValuesM #-}
 everywhereOnValuesM f g h = (f', g', h')
   where
 
