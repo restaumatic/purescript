@@ -2,21 +2,27 @@
 
 ## Headline
 
-| Scenario   | Baseline (c84101d8) | Head (a45e938b) | Δ        |
-| ---------- | ------------------: | --------------: | -------: |
-| full       | 46.8 s              | 47.4 s          | **+1.4%** |
-| nochange   | 0.580 s             | 0.572 s         | **-1.4%** |
-| prelude    | 3.97 s              | 4.02 s          | **+1.3%** |
-| leaf       | 1.567 s             | 1.626 s         | **+3.8%** |
+The migration was measured twice. **Both runs are too noisy to resolve
+a sub-3% delta**, but **both rule out the hypothesised -5% to -10%
+win** — an effect of that magnitude would survive the noise floor.
 
-**Verdict: no-win.** Hypothesis was -5% to -10% on full builds; we
-got +1.4%. The HashMap migration on `typeClasses`, `types`, and the
-class-keyed inner map of `typeClassDictionaries` did not yield a
-measurable win, and was slightly negative on three of four scenarios.
+| Scenario   | Run 1 (load avg ~9) | Run 2 (load 2→14) |
+| ---------- | ------------------: | ----------------: |
+| full       | +1.4%               | -1.1%             |
+| nochange   | -1.4%               | -0.5%             |
+| prelude    | +1.3%               | +2.2%             |
+| leaf       | +3.8%               | +1.5%             |
 
-(Final row in the auto-table below — `Head 0.0s -100%` for SHA
-a45e938b — is a `--profile` build run failed; ignore. Real numbers
-are the rows for c84101d8 above and the analysis here.)
+**Verdict: no-win.** The hypothesised -5% to -10% on full does not
+appear in either measurement. The full-build sign flip between runs
+(+1.4% ↔ -1.1%) and the wide per-run spreads (Run 2 baseline was 55-69
+s, a 25% spread on a code-unchanged binary) confirm both runs were
+CPU-contended and the true delta is somewhere in [-2%, +2%] —
+indistinguishable from zero.
+
+A run on a clean machine could resolve the sign of any small
+remaining effect, but it can't change the conclusion that the
+log-N → O(1) win we expected from the survey did not materialise.
 
 ## Raw runs (recorded by `exp run`)
 
@@ -28,6 +34,28 @@ are the rows for c84101d8 above and the analysis here.)
 | 2026-05-08 | prelude  | c84101d8     | c84101d8 |      4.0 |      4.0 |   +1.3% | median of 4, head 3907-4048 ms, base 3930-4064 ms |
 | 2026-05-08 | leaf     | c84101d8     | c84101d8 |      1.6 |      1.6 |   +3.8% | median of 4, head 1539-1679 ms, base 1562-1636 ms |
 | 2026-05-08 | full     | c84101d8     | a45e938b |     47.1 |      0.0 | -100.0% | bogus — head was a profiled build, --profile RTS flag rejected; ignore |
+
+## Noise discipline note (added after rerun)
+
+Both runs were on a contended machine. Run 1 (10:50, load avg 8.83/9.05/7.59
+for 1/5/15 min averages — Chrome puppeteer at 111% × 2 plus four Rails
+servers and a node test runner). Run 2 (13:53, load avg 2.04 at start
+but climbing to 7.90 / 14.04 / 11.31 by completion — concurrent
+`claude` sessions and a long-running storybook).
+
+Per-run variance:
+
+- **Run 1** (full scenario): base medians 46424, 46823, 46899, 47699
+  → spread 1275 ms (2.7%); head medians 47142, 47432, 47593, 47809
+  → spread 667 ms (1.4%). Tighter than Run 2 in absolute terms.
+- **Run 2** (full scenario): base medians 55158, 55416, 60029, 68957
+  → spread 13799 ms (25%) — clearly contaminated.
+
+Run 1 was actually the more usable data. The "low-load rerun" was
+not, in the end, lower-load: load climbed during execution.
+
+Conclusion: any effect bigger than ±3% would have shown up in both runs.
+None did. The hypothesis is falsified at that scale.
 
 ## Why no win — likely causes
 
@@ -104,3 +132,7 @@ enough to be lost in implementation overhead.
 Branch `env-hashmap`, commit `a45e938b`. 19 files changed, +157/-92.
 
 Tests: `stack test --fast` — 1340 examples, 0 failures.
+| 2026-05-08 | full     | c84101d8     | a45e938b |     55.4 |     54.8 |   -1.1% | median of 4, head 53906-59905 ms, base 55158-68957 ms; rerun under low load (load avg 2.04) |
+| 2026-05-08 | nochange | c84101d8     | a45e938b |      0.6 |      0.6 |   -0.5% | median of 4, head 581-633 ms, base 584-622 ms; rerun under low load (load avg 2.04) |
+| 2026-05-08 | prelude  | c84101d8     | a45e938b |      3.8 |      3.9 |   +2.2% | median of 4, head 3867-4152 ms, base 3739-4173 ms; rerun under low load (load avg 2.04) |
+| 2026-05-08 | leaf     | c84101d8     | a45e938b |      1.6 |      1.6 |   +1.5% | median of 4, head 1560-1634 ms, base 1552-1635 ms; rerun under low load (load avg 2.04) |
