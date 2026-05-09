@@ -9,6 +9,7 @@ Experiments reference baselines by `short-sha` in their
 
 | Short SHA | Branch at build | Built (UTC)          | GHC   | Stack resolver | Built by | Notes                  |
 | --------- | --------------- | -------------------- | ----- | -------------- | -------- | ---------------------- |
+| b831b298 | b831b298 | 2026-05-08 16:11 UTC | The Glorious Glasgow Haskell Compilation System, version 9.6.6 | lts-22.43 | user | new |
 | c84101d8 | c84101d8 | 2026-05-07 14:29 UTC | The Glorious Glasgow Haskell Compilation System, version 9.6.6 | lts-22.43 | user | new |
 | 6e04203c | 6e04203c | 2026-04-30 06:24 UTC | The Glorious Glasgow Haskell Compilation System, version 9.6.4 | lts-22.43 | user | new |
 | 5713e832 | 5713e832 | 2026-04-28 11:49 UTC | The Glorious Glasgow Haskell Compilation System, version 9.6.6 | lts-22.43 | user | new |

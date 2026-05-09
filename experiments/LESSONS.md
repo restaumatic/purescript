@@ -1007,3 +1007,67 @@ generic dispatch where a specialised one would do."
 **Branch:** `traversal-inline`, commit b831b298. Recommended for
 merge — minimal diff, large win, no regressions.
 
+## INLINABLE on stateless one-shot polymorphic helpers does NOT pay (`error-helpers-inline`)
+
+Direct follow-up to `traversal-inline`. After that experiment
+shipped -9% on full builds via INLINABLE on two AST-traversal
+helpers, an audit found Errors.hs's error-rewriting combinators
+(`rethrow`, `warnAndRethrow`, `rethrowWithPosition`,
+`warnWithPosition`, `warnAndRethrowWithPosition`) and Monad.hs's
+`withErrorMessageHint` had no inline pragma and the same shape:
+polymorphic over MonadError/MonadWriter/MonadState, called heavily
+from typechecker hot-path code with concrete TypeCheckM stacks.
+INLINABLE seemed like the obvious next move.
+
+Result on a clean machine: full -0.4%, nochange +1.4%, prelude
++1.1%, leaf +2.7%. **All within noise. Hypothesis was wrong.**
+
+**The smoking gun:** binary size grew by only +32 bytes vs
+traversal-inline's +213 KB. GHC did not actually specialise these
+helpers at the call sites despite the pragmas — and the diff in
+binary size confirms it directly.
+
+**The reason:** The error helpers are **stateless one-shot
+wrappers**, like:
+
+    rethrow f = flip catchError (throwError . f)
+
+The body makes a single call through the same MonadError
+dictionary the caller already has — there's no recursive descent,
+no per-element `>>=` chain, no structure for the specialiser to
+collapse. INLINABLE exposes the unfolding, but the unfolding is
+already a thin wrapper that GHC's regular dispatch handles fine.
+
+By contrast, `traversal-inline` worked because the helpers it
+marked do recursive descent over Expr trees with monadic bind on
+every step — `g' (Abs binder v) = Abs <$> ... >>= g'`. The win
+came from collapsing the chain of dictionary-mediated binds into
+a flat, monad-specialised loop. **A chain is required for
+specialisation to pay.**
+
+**Takeaways:**
+
+- **Recursive bind chain is the precondition for INLINABLE wins
+  on polymorphic helpers under heavy monad stacks.** One-shot
+  wrappers gain nothing from INLINABLE, even when the surrounding
+  monad is heavy.
+- **Verify specialisation actually happened by checking binary
+  size delta.** A flat ~0 KB delta means GHC didn't emit
+  specialised copies, even if the pragma is present and the build
+  succeeded. If you expected specialisation and don't see size
+  growth, the pragma is having no effect — and the experiment is
+  almost certainly a no-win before measuring.
+- **Don't generalise a winning pattern without checking the
+  precondition.** The pattern from traversal-inline is "INLINABLE
+  on recursive polymorphic helpers under heavy monad stacks" —
+  not "INLINABLE on any polymorphic helper under heavy monad
+  stacks". The latter is too broad.
+- **Don't trust noisy measurements.** The first run showed full
+  +4.7% (apparent regression with consistent per-round signal,
+  +3.5% to +8.5%). The clean rerun showed -0.4% (neutral). When
+  the absolute baseline time differs ~5% between runs of the same
+  binary, the machine is more contended than you think — discard
+  and rerun.
+
+**Branch:** `error-helpers-inline`, not merged.
+
