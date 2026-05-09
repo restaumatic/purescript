@@ -73,36 +73,40 @@ agent-facing overview.
 
 ## Hotspots being tracked
 
-Updated after each profile run. Current snapshot: `restaumatic` tip
-post-merge of `unify-leaf-no-hash` (PR #18 — leaf fast-path + cache
-drop on top of 799e8208). Profiled `-N1` run on pr-admin from
-2026-04-30 (see `experiments/unify-leaf-no-hash/profiles/head-full.meta.md`).
-Δ columns compare against the pre-`unify-leaf-no-hash` baseline `799e8208`.
+Updated after each profile run. Current snapshot: `traversal-inline`
+tip (b831b298) — recommend merging this branch first; it's the
+shipped post-PR-#18 win (-9% on full) currently sitting on a feature
+branch. Profiled `-N1` run on pr-admin from 2026-05-09 (see
+`experiments/traversal-inline/profiles/`). Δ columns compare against
+the pre-`unify-leaf-no-hash` baseline `799e8208` where the trail is
+clear, otherwise just `traversal-inline` tip.
 
-| Cost Centre                      | Module                    | % time | Δ vs 799e8208 | Status                                       |
-| -------------------------------- | ------------------------- | ------ | ------------- | -------------------------------------------- |
-| `compare` (ProperName)           | Names.hs:192              | 3.9%   | +2.6 pp (was 1.3%) | new headline — Environment Map keys     |
-| `everywhereOnValuesTopDownM.g'`  | AST/Traversals.hs         | 3.5%   | +0.6 pp       | shipped via `traversal-inline` (-9% on full) |
-| `compare` (Qualified a)          | Names.hs:233              | 2.3%   | -1.8 pp (was 4.1%) | unattacked, shrank as compareType fell  |
-| `entails.solve.go.solveSubgoals` | Entailment.hs:445-447     | 1.7%   | new in top    | unattacked                                   |
-| `withErrorMessageHint`           | Monad.hs:188-194          | 1.6%   | new in top    | partially attacked — fast-path skips it     |
-| `replaceAllTypeSynonyms'.walkChildren` | Synonyms.hs:107-134 | 1.6%   | new in top    | residual after `synonym-opt`                 |
-| `replaceIdents.replace`          | CoreImp/Optimizer/Common.hs:27-28 | 1.6% | new in top | unattacked (codegen, not typecheck)         |
-| `==` (PSString)                  | PSString.hs:52            | 1.4%   | -3.2 pp (was 4.6% as `compare`) | unattacked, ord→eq downgrade |
-| `replaceAllTypeSynonyms'.walk`   | Synonyms.hs:76-82         | 1.2%   | new in top    | residual after `synonym-opt`                 |
-| `compareType`                    | Types.hs:990–1027         | <1%    | -7+ pp (was 7.7%) | shipped via `unify-leaf-no-hash` cache drop |
-| `replaceAllTypeSynonyms'.go`     | TypeChecker/Synonyms.hs   | 0.2%   | (unchanged)   | shipped via `synonym-opt` (was 16.9%)        |
+| Cost Centre                      | Module                    | % time | Status                                       |
+| -------------------------------- | ------------------------- | ------ | -------------------------------------------- |
+| `compare` (Qualified a)          | Names.hs:233              | 3.6%   | unattacked — env-hashmap was no-win, so the cost is *not* from Environment Map lookups (those didn't move under HashMap migration); origin TBD |
+| `everywhereOnValuesTopDownM.g'`  | AST/Traversals.hs         | 2.6%   | partly attacked (was 3.5% pre-traversal-inline; -9% full overall) |
+| `replaceAllTypeSynonyms'.walk`   | Synonyms.hs:76-82         | 2.0%   | residual after `synonym-opt` — biggest unattacked single-source target |
+| `compare` (ProperName)           | Names.hs:192              | 1.6%   | unattacked (was 3.9% pre-traversal-inline; partly absorbed by ENV map-lookups disappearing as types/typeClasses lookup paths sped up) |
+| `replaceIdents.replace`          | CoreImp/Optimizer/Common.hs:27-28 | 1.4% | unattacked (codegen, not typecheck) |
+| `==` (PSString)                  | PSString.hs:52            | 1.4%   | unattacked, ord→eq downgrade   |
+| `>>=.\` `>>=.\.\` `fmap.\`       | Control.Monad.Logger      | 3.3% combined | profile-build SCC artefact — `logger-inline` confirmed it's not a real overhead in optimised builds |
+| `replaceAllTypeSynonyms'.walkChildren` | Synonyms.hs:107-134 | 1.2% | residual after `synonym-opt` |
+| `entails.solve.go.solveSubgoals` | Entailment.hs:445-447     | 1.1%   | unattacked (was 1.7% pre-traversal-inline) |
+| `withErrorMessageHint`           | Monad.hs:188-194          | 1.1%   | tried — `error-helpers-inline` was no-win |
+| `everywhereOnTypes.go`           | Types.hs                  | 1.7%   | already INLINE; called from substituteType etc. |
+| `applyAll`                       | CoreImp/Optimizer/Common.hs | 1.1% | unattacked (codegen) |
+| `applyExternsFileToEnvironment.applyDecl` | Externs.hs       | 0.9%   | unattacked (cold-start I/O cost) |
 
 **Aggregate clusters** (better targets than individual centres):
-- **Name-compare cluster** ~7.6% — `compare (ProperName)` 3.9% + `compare (Qualified)` 2.3% + `==` (PSString) 1.4%. All driven by `Map (Qualified (ProperName _)) v` Environment lookups. Biggest unattacked aggregate.
-- **AST decl-traversal cluster** ~5% — `everywhereOnValuesTopDownM.g'` + `sndM` + `guardedExprM` + `everywhereOnValuesM.g'`. Partly shipped by `traversal-inline` (INLINABLE pragmas — full -9%); a re-profile is needed to see what residual remains.
-- **Synonym walk** ~2.8% — residual `replaceAllTypeSynonyms'.walkChildren/walk` after `synonym-opt` shipped.
+
+- **Name-compare cluster** ~6.6% — `compare (Qualified)` 3.6% + `compare (ProperName)` 1.6% + `==` (PSString) 1.4%. NB: `env-hashmap` showed Map → HashMap migration on the surveyed Environment maps did *not* move this cluster — so the cost lives mostly elsewhere (likely `compareType`/`eqType` callers, AST sorting/dedup, JSON serialisation of types). **A new "where does compare actually fire from?" survey is required before another structural attack.**
+- **Synonym walk cluster** ~3.2% — residual `replaceAllTypeSynonyms'.walk` 2.0% + `walkChildren` 1.2% after `synonym-opt` shipped. Biggest *single-source* unattacked target.
+- **Codegen optimizer cluster** ~3.1% — `replaceIdents.replace` 1.4% + `applyAll` 1.1% + `inlineCommonOperators.runFn'.go` 0.3% + others. Different domain than typechecker work.
 
 The pattern-synonym matcher cluster (`$mTypeApp.\`, `$mKindApp.\`, …)
 shows up at ~28% combined in the cost-centre summary (down from ~36%
 on 799e8208), but that's a profile-build artifact — GHC suppresses
 inlining of bidirectional pattern synonyms when SCC annotations are
 present. In optimised builds those costs fold back into their callers.
-With `compareType` removed from the top, the matcher cluster's bulk
-now feeds `eqType`, `everywhereOnTypes`, and per-constructor `unifyTypes'`
-cases.
+The Logger SCC (~3.3%) is the same kind of artifact (confirmed by
+`logger-inline` no-win).
