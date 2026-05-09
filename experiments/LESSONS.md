@@ -1071,3 +1071,70 @@ specialisation to pay.**
 
 **Branch:** `error-helpers-inline`, not merged.
 
+## Profile-build cost centres on monad-class methods are mostly SCC artefacts (`logger-inline`)
+
+Second confirmation of the `error-helpers-inline` lesson, this
+time on `Control.Monad.Logger`'s Monad/Applicative/Functor
+instance methods. Cost-centre profile (post-traversal-inline)
+credited:
+
+| Cost centre  | Module               | %time |
+|--------------|----------------------|------:|
+| `>>=.\`      | Control.Monad.Logger | 1.3   |
+| `>>=.\.\`    | Control.Monad.Logger | 1.1   |
+| `fmap.\`     | Control.Monad.Logger | 0.9   |
+
+Logger is the underlying writer-via-IORef monad backing the
+typechecker's TypeCheckM newtype stack — so every `>>=` in the
+typechecker ultimately routes through it. The Monad instance had
+**no INLINE pragmas at all**. Adding `{-# INLINE #-}` on every
+Monad/Applicative/Functor/MonadIO/MonadWriter method (10 single-
+line pragmas, one file) seemed certain to pay.
+
+Result: full -1.1% / +0.9% (signs flipped between runs), nochange
+-3.4% / -1.5%, prelude +1.5% / -0.2%, leaf -0.4% / +1.8%. **All
+within noise floor; combined verdict no-win.**
+
+**Smoking gun #1:** binary size identical (48,839,456 bytes) but
+MD5s differ. GHC made *some* different inlining decisions; net
+code size unchanged. Whatever was newly inlined was offset by code
+that was previously inlined elsewhere becoming a call. A wash.
+
+**Smoking gun #2:** sign flips between runs. The first run showed
+full -1.1% (apparent small win, 3/4 negative rounds); the
+verification run showed full +0.9%. Per-round range -3.0% to
++7.0%. The signal is in the noise floor.
+
+**Why the cost centre is misleading.** Profile builds enable SCCs
+on top-level definitions. SCCs interfere with inlining (they're
+materialised at runtime to attribute time and allocations). In
+optimised non-profile builds, `Logger`'s `>>=` is already inlined
+by GHC's default class-method inlining. The 1.3% credited to
+`>>=.\` exists only because profiling forced GHC to keep the
+function uninlined. **Adding INLINE pragmas helps the optimised
+build only if the optimised build wasn't already inlining — and
+the binary-delta + measurement-noise tells us it was.**
+
+**Takeaways:**
+
+- **Discount profile %time on small wrapper class methods.** If a
+  Monad/Functor/Applicative method shows up in the cost-centre
+  table, ask first whether it's an SCC artefact (does the
+  optimised binary actually emit a call to it?) before
+  hypothesising an inlining gap.
+- **Verify the optimised binary changed shape *and direction*.**
+  Same-size + different-MD5 is consistent with no-net-change. A
+  real win has to flip GHC's inlining decisions in a way that
+  produces measurable runtime differences. Sign-flipping between
+  runs is the death knell.
+- **Don't generalise traversal-inline to "INLINE every monadic
+  helper".** The pattern requires (a) a recursive bind chain
+  (b) at concrete heavy monad types, (c) where GHC was previously
+  emitting genuine polymorphic dispatch. Logger's `>>=` lives
+  inside chains and at heavy types, but GHC was already inlining
+  it adequately — the third condition wasn't met.
+
+**Branch:** `logger-inline`, not merged. Two no-wins
+(`error-helpers-inline` and `logger-inline`) confirm the boundary
+of the `traversal-inline` pattern.
+
