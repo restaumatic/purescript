@@ -46,6 +46,7 @@ agent-facing overview.
 | [unify-cache-anatomy](unify-cache-anatomy/EXPERIMENT.md) | done (research) | tbd | 5713e832 | 86% of cache hits are 1-2-node pairs (constructor-self recurrences); 97% ≤10 nodes — points to a leaf-tag fast-path | unification, caching, characterization, anatomy |
 | [entailment-redundancy](entailment-redundancy/EXPERIMENT.md) | done (research) | tbd | c84101d8 | 375k solves / 29.6k shapes / 12.66× avg global. Per-decl: top decls 9.94×/10.51×/11.15× within-decl reuse — but follow-up `entailment-decl-memo` ruled the cache unsound (withFreshTypes non-idempotent) | entailment, solve, characterization, redundancy, anatomy |
 | [name-compare-survey](name-compare-survey/EXPERIMENT.md) | done (research) | tbd | c84101d8 | 1.45M Env-Map lookups across 4 sites: typeClassDictionaries 55% + typeClasses 26% dominate (337 keys each), `HasField` alone 15.2%. Top-25 cover 58–66%. Distribution motivates HashMap migration over closed-set fast-path — but `env-hashmap` (below) showed the migration itself is a no-win. | name-compare, environment, characterization |
+| [name-compare-lineage](name-compare-lineage/EXPERIMENT.md) | done (research) | tbd | b831b298 | Cycle-attribution survey on the residual 6.6% name-compare cluster (after env-hashmap no-win). 4.10% of `compare Qualified` (≈80% of the SCC) lives in `replaceAllTypeSynonyms'.go → M.lookup ctor syns` — the **SynonymMap**, which env-hashmap missed. PSString 1.4% is row-label compares (structural). Recommends `synonym-fast-path` — HashSet-of-ProperName miss-prefix filter, est. -1% to -3% on full builds. | name-compare, lineage, synonym-walker, characterization |
 
 ## Closed experiments
 
@@ -85,7 +86,7 @@ clear, otherwise just `traversal-inline` tip.
 | -------------------------------- | ------------------------- | ------ | -------------------------------------------- |
 | `compare` (Qualified a)          | Names.hs:233              | 3.6%   | unattacked — env-hashmap was no-win, so the cost is *not* from Environment Map lookups (those didn't move under HashMap migration); origin TBD |
 | `everywhereOnValuesTopDownM.g'`  | AST/Traversals.hs         | 2.6%   | partly attacked (was 3.5% pre-traversal-inline; -9% full overall) |
-| `replaceAllTypeSynonyms'.walk`   | Synonyms.hs:76-82         | 2.0%   | residual after `synonym-opt` — biggest unattacked single-source target |
+| `replaceAllTypeSynonyms'.walk`   | Synonyms.hs:76-82         | 2.0%   | residual after `synonym-opt`. `name-compare-lineage` (2026-05-09) showed that *also* most of the 3.6% `compare Qualified` (4.10% inherited) flows through this same call site via `M.lookup ctor syns`. Combined "synonym walker" cluster ≈ 6%. **Top unattacked target.** See `name-compare-lineage/results.md` for `synonym-fast-path` recommendation. |
 | `compare` (ProperName)           | Names.hs:192              | 1.6%   | unattacked (was 3.9% pre-traversal-inline; partly absorbed by ENV map-lookups disappearing as types/typeClasses lookup paths sped up) |
 | `replaceIdents.replace`          | CoreImp/Optimizer/Common.hs:27-28 | 1.4% | unattacked (codegen, not typecheck) |
 | `==` (PSString)                  | PSString.hs:52            | 1.4%   | unattacked, ord→eq downgrade   |

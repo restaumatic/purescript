@@ -1138,3 +1138,70 @@ the binary-delta + measurement-noise tells us it was.**
 (`error-helpers-inline` and `logger-inline`) confirm the boundary
 of the `traversal-inline` pattern.
 
+## Cost-attribution by call-tree ancestor walking, when `-fprof-late` won't run (`name-compare-lineage`)
+
+After env-hashmap didn't pay, the question was where in the codebase
+the residual 6.6% name-compare cluster (`compare Qualified` 3.6% +
+`compare ProperName` 1.6% + `==` PSString 1.4%) actually lives. The
+prior survey had measured Environment Map *lookup volume*; the
+followup migration showed that volume wasn't the right oracle.
+
+**Approach that worked.** Instead of profile-build-late (`-fprof-late`)
+SCC binning, walked the existing `-fprof-auto` profile's hierarchical
+call tree and aggregated each `compare` SCC's inherited %time by its
+*deepest non-skipped ancestor*. Skipped both transitive name-compares
+(compareType etc.) and AST pattern-synonym matchers (`$mTypeConstructor.\`
+etc.) — the matchers attract child SCCs because GHC's `-fprof-auto`
+puts an SCC at every pattern-synonym definition site, and child
+work in `case t of TypeConstructor _ q -> ...` blocks accumulates
+*under* the matcher SCC. Walking past those uncovers the user code
+that's actually doing the case analysis.
+
+The Python analyzer
+(`experiments/name-compare-lineage/analyze-prof.py`) bins by ancestor
+level (1 = parent, 2 = grandparent, ...). At level=1 the `compare
+Qualified` 5.10% inherited time decomposes:
+
+| %inh | caller |
+|---:|---|
+| **4.10%** | `replaceAllTypeSynonyms'.go` (Synonyms.hs:90-102) |
+| 0.70% | `applyExternsFileToEnvironment.applyDecl` |
+| 0.20% | `typeCheckAll.go.\` |
+| 0.10% | `applyExternsFileToEnvironment.applyDecl.updateMap` |
+
+80% of the cluster lives in the synonym walker's `M.lookup ctor syns`,
+keyed on `Qualified (ProperName 'TypeName)`. **This map (`SynonymMap`)
+was not touched by env-hashmap** (which migrated `typeClasses`,
+`typeClassDictionaries`, `types`). That explains the env-hashmap
+no-win — the cycles weren't where it was looking.
+
+**Why `-fprof-late` failed for us.** Built with
+`ghc-prof-options: -fprof-late` added to the library cabal stanza on
+top of `--profile`'s `-fprof-auto`. The resulting binary segfaulted
+on pr-admin (exit 139, signal 11) — likely an interaction between
+late-prof SCCs and `-O2 -prof-cafs` on this codebase / GHC 9.6.6
+combination. Reverted; the call-tree walk gave enough resolution
+without it.
+
+**Takeaways:**
+
+- **Call-tree walking + ancestor binning is a useful substitute for
+  `-fprof-late`.** GHC's `-fprof-auto` profile already records
+  ancestors per cost-centre instance; a small Python analyzer
+  recovers per-call-site attribution by skipping noise SCCs (transitive
+  compares, pattern-synonym matchers) on the way up.
+- **Cycles attribution is not lookup-count attribution.** The prior
+  `name-compare-survey` measured *which Environment Maps were
+  looked up most* (1.45M lookups across 4 sites). The follow-up
+  attribution showed that the cycles weren't where the lookup
+  volume was — they were in a different Map (SynonymMap) that wasn't
+  in the volume survey at all. Always weight by cycles before
+  designing a structural change.
+- **Pattern-synonym matchers are SCC noise to skip.** GHC inserts an
+  SCC at every pattern synonym matcher; in `case t of TypeConstructor
+  _ q -> body`, the body's cost gets attributed to `$mTypeConstructor.\`,
+  not to the calling function. Walk past these to find the user-
+  facing call site.
+
+**Branch:** `name-compare-lineage`, no source changes, research-only.
+
