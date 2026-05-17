@@ -142,6 +142,8 @@ data MakeActions m = MakeActions
   -- load .js files as ES modules.
   , outputPrimDocs :: m ()
   -- ^ If generating docs, output the documentation for the Prim modules
+  , getOutputDir :: FilePath
+  -- ^ The output directory path (for auxiliary cache files)
   }
 
 -- | Given the output directory, determines the location for the
@@ -203,6 +205,7 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
     writeCacheDb
     writePackageJson
     outputPrimDocs
+    outputDir
   where
 
   getInputTimestampsAndHashes

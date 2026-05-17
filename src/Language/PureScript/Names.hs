@@ -12,6 +12,7 @@ import Control.Applicative ((<|>))
 import Control.Monad.Supply.Class (MonadSupply(..))
 import Control.DeepSeq (NFData)
 import Data.Functor.Contravariant (contramap)
+import Data.Hashable (Hashable)
 import Data.Vector qualified as V
 
 import GHC.Generics (Generic)
@@ -190,7 +191,7 @@ coerceProperName = ProperName . runProperName
 --
 newtype ModuleName = ModuleName Text
   deriving (Show, Eq, Ord, Generic)
-  deriving newtype Serialise
+  deriving newtype (Serialise, Hashable)
 
 instance NFData ModuleName
 

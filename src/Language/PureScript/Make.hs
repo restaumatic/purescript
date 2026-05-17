@@ -10,45 +10,39 @@ module Language.PureScript.Make
 
 import Prelude
 
-import Control.Concurrent.Lifted as C
-import Control.DeepSeq (force)
-import Control.Exception.Lifted (onException, bracket_, evaluate)
-import Control.Monad (foldM, unless, void, when, (<=<))
-import Control.Monad.Base (MonadBase(liftBase))
+import Control.Concurrent.Async (forConcurrently)
+import Control.Exception (SomeException, fromException, throwIO, try)
+import Control.Monad (foldM, void, when)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.IO.Class (MonadIO(..))
+import Control.Monad.Reader (ask)
 import Control.Monad.Supply (evalSupplyT, runSupply, runSupplyT)
-import Control.Monad.Trans.Control (MonadBaseControl(..))
 import Control.Monad.Trans.State (runStateT)
 import Control.Monad.Writer.Class (MonadWriter(..), censor)
 import Control.Monad.Writer.Strict (runWriterT)
 import Data.Function (on)
 import Data.Foldable (fold, for_)
+import Data.IORef (newIORef, readIORef)
 import Data.List (foldl', sortOn)
+import Data.Maybe (isJust, mapMaybe)
 import Data.List.NonEmpty qualified as NEL
-import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Map qualified as M
 import Data.Set qualified as S
 import Data.Text qualified as T
-import Debug.Trace (traceMarkerIO)
-import Language.PureScript.AST (ErrorMessageHint(..), Module(..), SourceSpan(..), getModuleName, getModuleSourceSpan, importPrim)
+import Language.PureScript.AST (ErrorMessageHint(..), Module(..), getModuleName, getModuleSourceSpan, importPrim)
 import Language.PureScript.Crash (internalError)
 import Language.PureScript.CST qualified as CST
 import Language.PureScript.Docs.Convert qualified as Docs
 import Language.PureScript.Environment (initEnvironment)
-import Language.PureScript.Errors (MultipleErrors(..), SimpleErrorMessage(..), addHint, defaultPPEOptions, errorMessage', errorMessage'', prettyPrintMultipleErrors)
+import Language.PureScript.Errors (MultipleErrors(..), SimpleErrorMessage(..), addHint, defaultPPEOptions, errorMessage', errorMessage'', errorModule, prettyPrintMultipleErrors)
 import Language.PureScript.Externs (ExternsFile, applyExternsFileToEnvironment, moduleToExternsFile)
 import Language.PureScript.Linter (Name(..), lint, lintImports)
-import Language.PureScript.ModuleDependencies (DependencyDepth(..), moduleSignature, sortModules)
 import Language.PureScript.Names (ModuleName(..), isBuiltinModuleName, runModuleName)
 import Language.PureScript.Renamer (renameInModule)
 import Language.PureScript.Sugar (Env, collapseBindingGroups, createBindingGroups, desugar, desugarCaseGuards, externsEnv, primEnv)
 import Language.PureScript.TypeChecker (CheckState(..), emptyCheckState, typeCheckModule)
-import Language.PureScript.Make.BuildPlan (BuildJobResult(..), BuildPlan(..), getResult, isUpToDate)
-import Language.PureScript.Make.BuildPlan qualified as BuildPlan
-import Language.PureScript.Make.ExternsDiff (checkDiffs, emptyDiff, diffExterns)
-import Language.PureScript.Make.Cache qualified as Cache
 import Language.PureScript.Make.Actions as Actions
+import Language.PureScript.Make.Cache qualified as Cache
 import Language.PureScript.Make.Monad as Monad
     ( Make(..),
       writeTextFile,
@@ -69,9 +63,14 @@ import Language.PureScript.Make.Monad as Monad
       getTimestamp,
       getCurrentTime,
       copyFile )
+import Language.PureScript.Options (Options)
+import Language.PureScript.Make.Query (Query(..))
+import Language.PureScript.Make.Rules (makeRules, MakeError(..))
+import Language.PureScript.Make.Traces qualified as Traces
 import Language.PureScript.CoreFn qualified as CF
-import System.Directory (doesFileExist)
-import System.FilePath (replaceExtension)
+import Rock qualified
+import System.Directory (doesFileExist, getCurrentDirectory)
+import System.FilePath (replaceExtension, (</>))
 import Language.PureScript.TypeChecker.Monad (liftTypeCheckM)
 
 -- | Rebuild a single module.
@@ -145,7 +144,7 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
   -- a bug in the compiler, which should be reported as such.
   -- 2. We do not want to perform any extra work generating docs unless the
   -- user has asked for docs to be generated.
-  let docs = case Docs.convertModule externs exEnv env' m of
+  let docs = case Docs.convertModule externs exEnv env' withPrim of
                Left errs -> internalError $
                  "Failed to produce docs for " ++ T.unpack (runModuleName moduleName)
                  ++ "; details:\n" ++ prettyPrintMultipleErrors defaultPPEOptions errs
@@ -154,114 +153,127 @@ rebuildModuleWithIndex MakeActions{..} exEnv externs m@(Module _ _ moduleName _ 
   evalSupplyT nextVar'' $ codegen renamed docs exts
   return exts
 
-data MakeOptions = MakeOptions
-  { moCollectAllExterns :: Bool
-  }
-
--- | Compiles in "make" mode, compiling each module separately to a @.js@ file
--- and an @externs.cbor@ file.
+-- | Compiles in "make" mode using rock for demand-driven incremental compilation.
+-- Each module is compiled separately to a @.js@ file and an @externs.cbor@ file.
+-- Rock automatically memoizes query results within a build to avoid redundant work.
 --
--- If timestamps or hashes have not changed, existing externs files can be used
--- to provide upstream modules' types without having to typecheck those modules
--- again.
---
--- It collects and returns externs for all modules passed.
-make :: forall m. (MonadIO m, MonadBaseControl IO m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
-     => MakeActions m
+-- It collects and returns externs for all modules passed, in topological order.
+make :: MakeActions Make
      -> [CST.PartialResult Module]
-     -> m [ExternsFile]
-make  = make' (MakeOptions {moCollectAllExterns = True})
+     -> Make [ExternsFile]
+make ma ms = makeIncremental ma ms
 
--- | Compiles in "make" mode, compiling each module separately to a @.js@ file
--- and an @externs.cbor@ file.
---
--- This version of make returns nothing.
-make_ :: forall m. (MonadIO m, MonadBaseControl IO m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
-     => MakeActions m
-     -> [CST.PartialResult Module]
-     -> m ()
-make_ ma ms = void $ make' (MakeOptions {moCollectAllExterns = False}) ma ms
+-- | Like 'make' but discards the result.
+-- Uses a fast path to skip the rock pipeline when all modules are cached.
+make_ :: MakeActions Make
+      -> [CST.PartialResult Module]
+      -> Make ()
+make_ ma@MakeActions{..} ms = do
+  -- Fast path: if all modules are cached, skip rock entirely.
+  -- This avoids the overhead of dependency resolution, memoization,
+  -- and reading externs from disk when nothing needs to compile.
+  opts <- ask
+  cacheDb <- readCacheDb
+  let moduleNames = map (getModuleName . CST.resPartial) ms
+  let currentModules = S.fromList moduleNames
+  let graphFile = getOutputDir </> "module-graph.json"
+  cachedGraph <- liftIO $ Traces.readCachedGraph graphFile cacheDb currentModules
+  case cachedGraph of
+    Just _ -> do
+      allCached <- liftIO $ allModulesCached opts ma cacheDb moduleNames
+      if allCached then do
+        writeCacheDb cacheDb
+        writePackageJson
+        outputPrimDocs
+      else void $ makeIncremental ma ms
+    Nothing -> void $ makeIncremental ma ms
 
-make' :: forall m. (MonadIO m, MonadBaseControl IO m, MonadError MultipleErrors m, MonadWriter MultipleErrors m)
-     => MakeOptions
-     -> MakeActions m
-     -> [CST.PartialResult Module]
-     -> m [ExternsFile]
-make' MakeOptions{..} ma@MakeActions{..} ms = do
+-- | Rock-based incremental compilation.
+-- Defines queries for each compilation phase and lets rock handle
+-- memoization and dependency tracking.
+makeIncremental
+  :: MakeActions Make
+  -> [CST.PartialResult Module]
+  -> Make [ExternsFile]
+makeIncremental ma@MakeActions{..} ms = do
+  -- Validate module names (no Prim redefinitions, no duplicates)
   checkModuleNames
+
+  -- Get compiler options from the Make monad's Reader environment
+  opts <- ask
+
+  -- Build the module map for the rules to close over
+  let moduleMap = M.fromList
+        [ (getModuleName (CST.resPartial pr), pr) | pr <- ms ]
+
+  -- Read cache database for incremental build support
   cacheDb <- readCacheDb
 
-  (sorted, graph) <- sortModules Transitive (moduleSignature . CST.resPartial) ms
-  let opts = BuildPlan.Options {optPreloadAllExterns = moCollectAllExterns}
-  (buildPlan, newCacheDb) <- BuildPlan.construct opts ma cacheDb (sorted, graph)
+  -- Try to load cached module graph from previous build.
+  -- If valid (all input hashes match), we skip the expensive sortModules call.
+  let graphFile = getOutputDir </> "module-graph.json"
+  let currentModules = S.fromList $ M.keys moduleMap
+  cachedGraph <- liftIO $ Traces.readCachedGraph graphFile cacheDb currentModules
 
-  -- Limit concurrent module builds to the number of capabilities as
-  -- (by default) inferred from `+RTS -N -RTS` or set explicitly like `-N4`.
-  -- This is to ensure that modules complete fully before moving on, to avoid
-  -- holding excess memory during compilation from modules that were paused
-  -- by the Haskell runtime.
-  capabilities <- getNumCapabilities
-  let concurrency = max 1 capabilities
-  lock <- C.newQSem concurrency
+  -- IORefs for state accumulated during the rock build
+  warningsRef <- liftIO $ newIORef mempty
+  memoVar <- liftIO $ newIORef mempty
+  diffsRef <- liftIO $ newIORef M.empty
+  sharedEnvRef <- liftIO $ newIORef primEnv
+  newCacheDbRef <- liftIO $ newIORef cacheDb
+  timestampsRef <- liftIO $ newIORef M.empty
+  compiledRef <- liftIO $ newIORef S.empty
+  -- Captured graph data for persistence
+  graphRef <- liftIO $ newIORef (Nothing :: Maybe ([ModuleName], [(ModuleName, [ModuleName])]))
 
-  let sortedModuleNames = getModuleName . CST.resPartial <$> sorted
-  let toBeRebuilt = filter (BuildPlan.needsRebuild buildPlan . getModuleName . CST.resPartial) sorted
-  let totalModuleCount = length toBeRebuilt
-  for_ toBeRebuilt $ \m -> fork $ do
-    let moduleName = getModuleName . CST.resPartial $ m
-    let deps = fromMaybe (internalError "make: module not found in dependency graph.") (lookup moduleName graph)
-    buildModule lock buildPlan moduleName totalModuleCount
-      (spanName . getModuleSourceSpan . CST.resPartial $ m)
-      (fst $ CST.resFull m)
-      (fmap importPrim . snd $ CST.resFull m)
-      (deps `inOrderOf` sortedModuleNames)
+  let compileFn = rebuildModule' ma
 
-      -- Prevent hanging on other modules when there is an internal error
-      -- (the exception is thrown, but other threads waiting on MVars are released)
-      `onException` BuildPlan.markComplete buildPlan moduleName (BuildJobFailed mempty)
+  let rules :: Rock.Rules Query
+      rules = Rock.memoise memoVar
+            $ makeRules moduleMap opts ma warningsRef compileFn cacheDb diffsRef sharedEnvRef newCacheDbRef timestampsRef compiledRef cachedGraph graphRef
 
-  -- Wait for all threads to complete, and collect results (and errors).
-  (failures, successes) <-
-    let
-      splitResults = \case
-        BuildJobSucceeded _ exts _ ->
-          Right exts
-        BuildJobFailed errs ->
-          Left errs
-        BuildJobSkipped ->
-          Left mempty
-    in
-      M.mapEither splitResults <$> BuildPlan.collectResults buildPlan
+  -- Run the rock task: sort modules, then compile all in parallel.
+  -- Rock's memoise handles synchronization: if module B depends on A,
+  -- B's thread blocks on A's MVar until A completes. This gives us
+  -- natural parallelism bounded by the dependency graph.
+  let rockTask = Rock.runTask rules $ do
+        sorted <- Rock.fetch SortedModules
+        liftIO $ forConcurrently sorted $ \mn ->
+          Rock.runTask rules $ Rock.fetch (CompileModule mn)
+  result <- liftIO (try rockTask) :: Make (Either SomeException [ExternsFile])
 
-  -- Write the updated build cache database to disk
-  writeCacheDb $ Cache.removeModules (M.keysSet failures) newCacheDb
+  -- Collect warnings accumulated during rock execution and emit them
+  extraWarnings <- liftIO $ readIORef warningsRef
+  tell extraWarnings
 
-  writePackageJson
-
-  -- If generating docs, also generate them for the Prim modules
-  outputPrimDocs
-  -- All threads have completed, rethrow any caught errors.
-  let errors = M.elems failures
-  unless (null errors) $ throwError (mconcat errors)
-
-  -- Here we return all the ExternsFile in the ordering of the topological sort,
-  -- so they can be folded into an Environment. This result is used in the tests
-  -- and in PSCI.
-  let lookupResult mn@(ModuleName name) =
-        fromMaybe (internalError $ "make: module not found in results: " <> T.unpack name)
-        $ M.lookup mn successes
-
-  pure $
-    if moCollectAllExterns then
-      map lookupResult sortedModuleNames
-    else
-      mapMaybe (flip M.lookup successes) sortedModuleNames
+  case result of
+    Left exc
+      | Just (MakeError errs) <- fromException exc -> do
+          -- On failure, remove ONLY the failed modules from CacheDb.
+          newCacheDb <- liftIO $ readIORef newCacheDbRef
+          let failedModules = S.fromList $ mapMaybe errorModule (runMultipleErrors errs)
+          writeCacheDb $ Cache.removeModules failedModules newCacheDb
+          throwError errs
+      | otherwise -> liftIO $ throwIO exc
+    Right externs -> do
+      -- Write updated cache database
+      newCacheDb <- liftIO $ readIORef newCacheDbRef
+      writeCacheDb newCacheDb
+      -- Save module graph for next build
+      mbGraph <- liftIO $ readIORef graphRef
+      case mbGraph of
+        Just (sorted, graph) ->
+          liftIO $ Traces.writeCachedGraph graphFile sorted graph newCacheDb
+        Nothing -> pure ()
+      writePackageJson
+      outputPrimDocs
+      pure externs
 
   where
-  checkModuleNames :: m ()
+  checkModuleNames :: Make ()
   checkModuleNames = checkNoPrim *> checkModuleNamesAreUnique
 
-  checkNoPrim :: m ()
+  checkNoPrim :: Make ()
   checkNoPrim =
     for_ ms $ \m ->
       let mn = getModuleName $ CST.resPartial m
@@ -270,7 +282,7 @@ make' MakeOptions{..} ma@MakeActions{..} ms = do
              . errorMessage' (getModuleSourceSpan $ CST.resPartial m)
              $ CannotDefinePrimModules mn
 
-  checkModuleNamesAreUnique :: m ()
+  checkModuleNamesAreUnique :: Make ()
   checkModuleNamesAreUnique =
     for_ (findDuplicates (getModuleName . CST.resPartial) ms) $ \mss ->
       throwError . flip foldMap mss $ \ms' ->
@@ -284,87 +296,36 @@ make' MakeOptions{..} ma@MakeActions{..} ms = do
       [] -> Nothing
       xss -> Just xss
 
-  -- Sort a list so its elements appear in the same order as in another list.
-  inOrderOf :: (Ord a) => [a] -> [a] -> [a]
-  inOrderOf xs ys = let s = S.fromList xs in filter (`S.member` s) ys
-
-  buildModule :: QSem -> BuildPlan -> ModuleName -> Int -> FilePath -> [CST.ParserWarning] -> Either (NEL.NonEmpty CST.ParserError) Module -> [ModuleName] -> m ()
-  buildModule lock buildPlan moduleName cnt fp pwarnings mres deps = do
-    result <- flip catchError (return . BuildJobFailed) $ do
-      let pwarnings' = CST.toMultipleWarnings fp pwarnings
-      tell pwarnings'
-      m <- CST.unwrapParserError fp mres
-      -- We need to wait for dependencies to be built, before checking if the current
-      -- module should be rebuilt, so the first thing to do is to wait on the
-      -- MVars for the module's dependencies.
-      mexterns <- fmap unzip . sequence <$> traverse (getResult buildPlan) deps
-
-      case mexterns of
-        Just (_, depsDiffExterns) -> do
-          let externs = fst <$> depsDiffExterns
-          let prevResult = BuildPlan.getPrevResult buildPlan moduleName
-          let depsDiffs = traverse snd depsDiffExterns
-          let maySkipBuild moduleIndex
-                -- We may skip built only for up-to-date modules.
-                | Just (status, exts) <- prevResult
-                , isUpToDate status
-                -- Check if no dep's externs have changed. If any of the diffs
-                -- is Nothing means we can not check and need to rebuild.
-                , Just False <- checkDiffs m <$> depsDiffs = do
-                  -- We should update modification times to mark existing
-                  -- compilation results as actual. If it fails to update timestamp
-                  -- on any of exiting codegen targets, it will run the build process.
-                  updated <- updateOutputTimestamp moduleName
-                  if updated then do
-                    progress $ SkippingModule moduleName moduleIndex
-                    pure $ Just (exts, MultipleErrors [], Just (emptyDiff moduleName))
-                  else
-                    pure Nothing
-                | otherwise = pure Nothing
-
-          -- We need to ensure that all dependencies have been included in Env.
-          C.modifyMVar_ (bpEnv buildPlan) $ \env -> do
-            let
-              go :: Env -> ModuleName -> m Env
-              go e dep = case lookup dep (zip deps externs) of
-                Just exts
-                  | not (M.member dep e) -> externsEnv e exts
-                _ -> return e
-            foldM go env deps
-          env <- C.readMVar (bpEnv buildPlan)
-          idx <- C.takeMVar (bpIndex buildPlan)
-          C.putMVar (bpIndex buildPlan) (idx + 1)
-
-          (exts, warnings, diff) <- do
-            let doBuild = do
-                -- Bracket all of the per-module work behind the semaphore, including
-                -- forcing the result. This is done to limit concurrency and keep
-                -- memory usage down; see comments above.
-                  (exts, warnings) <- bracket_ (C.waitQSem lock) (C.signalQSem lock) $ do
-                    -- Eventlog markers for profiling; see debug/eventlog.js
-                    liftBase $ traceMarkerIO $ T.unpack (runModuleName moduleName) <> " start"
-                    -- Force the externs and warnings to avoid retaining excess module
-                    -- data after the module is finished compiling.
-                    extsAndWarnings <- evaluate . force <=< listen $ do
-                      rebuildModuleWithIndex ma env externs m (Just (idx, cnt))
-                    liftBase $ traceMarkerIO $ T.unpack (runModuleName moduleName) <> " end"
-                    return extsAndWarnings
-                  let diff = diffExterns exts <$> (snd <$> prevResult) <*> depsDiffs
-                  pure (exts, warnings, diff)
-            maySkipBuild (Just (idx, cnt)) >>= maybe doBuild pure
-          return $ BuildJobSucceeded (pwarnings' <> warnings) exts diff
-
-        -- If we got Nothing for deps externs, that means one of the deps failed
-        -- to compile. Though if we have a previous built result we will keep to
-        -- avoid potentially unnecessary recompilation next time.
-        Nothing -> return $
-          case BuildPlan.getPrevResult buildPlan moduleName of
-            Just (_, exts) ->
-              BuildJobSucceeded (MultipleErrors []) exts (Just (emptyDiff moduleName))
-            Nothing ->
-              BuildJobSkipped
-
-    BuildPlan.markComplete buildPlan moduleName result
+-- | Quick check: are all modules cached? Checks timestamps + hashes against
+-- CacheDb and verifies output exists. No externs are read.
+-- Runs all checks concurrently for speed.
+allModulesCached
+  :: Options
+  -> MakeActions Make
+  -> Cache.CacheDb
+  -> [ModuleName]
+  -> IO Bool
+allModulesCached opts MakeActions{..} cacheDb moduleNames = do
+  cwd <- getCurrentDirectory
+  results <- forConcurrently moduleNames $ \mn -> do
+    (result, _) <- runMake opts $ do
+      inputInfo <- getInputTimestampsAndHashes mn
+      case inputInfo of
+        Left RebuildAlways -> pure False
+        Left RebuildNever  -> do
+          -- Assume RebuildNever modules are always up to date
+          outputTs <- getOutputTimestamp mn
+          pure (isJust outputTs)
+        Right timestamps -> do
+          (_, upToDate) <- Cache.checkChanged cacheDb mn cwd timestamps
+          if upToDate then do
+            outputTs <- getOutputTimestamp mn
+            pure (isJust outputTs)
+          else pure False
+    pure $ case result of
+      Right True -> True
+      _          -> False
+  pure (and results)
 
 -- | Infer the module name for a module by looking for the same filename with
 -- a .js extension.

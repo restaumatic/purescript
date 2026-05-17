@@ -40,6 +40,24 @@ packages:
   original:
     hackage: aeson-better-errors-0.9.1.3
 - completed:
+    hackage: dependent-hashmap-0.1.0.1@sha256:6d1c20bd79f32d8daebd3cc741f884cc3d093118e3b876eb957defd4c594a966,1892
+    pantry-tree:
+      sha256: 817b36b81735d96696c5b165357c431e0b396dcf45afb8b4384fbfd4f4499cbb
+      size: 334
+  original:
+    hackage: dependent-hashmap-0.1.0.1
+- completed:
+    name: rock
+    pantry-tree:
+      sha256: cef9733314b1f4778ccecaf5fb6f80ef1004251ea76804073a498ddf02c00ed5
+      size: 751
+    sha256: 3b2ec18d31734ad105b5ff7cd795d06d4d0e9be925af5bcdb9a7ea20d414cbc7
+    size: 12242
+    url: https://github.com/ollef/rock/archive/2b007b75f2866b0c9dae82049a0a06582d883b0f.tar.gz
+    version: 0.3.1.2
+  original:
+    url: https://github.com/ollef/rock/archive/2b007b75f2866b0c9dae82049a0a06582d883b0f.tar.gz
+- completed:
     name: cheapskate
     pantry-tree:
       sha256: a2253619f50d26f0137a802e51e5e7103ee52b1f71bc060d93a0979dcbefa2c8
